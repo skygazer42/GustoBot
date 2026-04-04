@@ -311,6 +311,7 @@ secrets/
 *.p12
 .env.local
 .env.*.local
+!web/.env
 
 # macOS
 .DS_Store

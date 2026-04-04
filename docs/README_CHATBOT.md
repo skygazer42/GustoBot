@@ -49,7 +49,7 @@ npm run dev
 
 ### 3. 访问界面
 
-- **聊天界面**: http://localhost:5173/
+- **聊天界面**: http://localhost:5174/（若 5174 被占用，Vite 会自动选择下一个空闲端口）
 - **API 文档**: http://localhost:8000/docs
 
 ## 💬 使用说明

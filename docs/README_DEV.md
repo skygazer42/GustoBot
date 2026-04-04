@@ -58,7 +58,7 @@ npm install
 npm run dev
 ```
 
-默认访问：http://localhost:5173（可通过环境变量 `VITE_PORT` 修改端口）
+默认访问：http://localhost:5174（可通过环境变量 `VITE_PORT` 修改端口；若 5174 被占用，Vite 会自动选择下一个空闲端口）
 
 ## 📁 项目结构
 
@@ -105,16 +105,19 @@ MILVUS_PORT=19530
 
 # 应用配置
 DEBUG=true
-CORS_ORIGINS=http://localhost:5173
+CORS_ORIGINS=http://localhost:5174
 ```
 
 ### 前端环境变量
 
-在 `web` 目录下创建 `.env.local`：
+仓库已提供 `web/.env`，默认将前端开发端口固定为 `5174`。如需本地覆盖，再在 `web` 目录下创建 `.env.local`：
 
 ```env
-# 可选：指定后端地址（不填则使用 Vite proxy 转发 /api 与 /uploads）
-VITE_API_BASE_URL=http://localhost:8000
+# 最小配置：固定前端开发端口
+VITE_PORT=5174
+
+# 可选：仅当后端不在默认的 http://localhost:8000 时再显式指定
+# VITE_API_BASE_URL=http://localhost:18000
 ```
 
 ## 🛠️ 开发工作流

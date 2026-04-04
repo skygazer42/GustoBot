@@ -177,8 +177,7 @@ docker-compose up -d
 cd web
 npm install
 npm run dev
-# 仓库默认通过 web/.env 将前端开发端口固定为 5174
-# 如需本地覆盖，可在 web/.env.local 中设置 VITE_PORT
+# 如需固定前端端口，可在 web/.env.local 中设置 VITE_PORT
 # VITE_API_BASE_URL 仅在后端不走默认代理（http://localhost:8000）时才需要配置
 
 # 访问应用

@@ -110,7 +110,7 @@ CORS_ORIGINS=http://localhost:5174
 
 ### 前端环境变量
 
-仓库已提供 `web/.env`，默认将前端开发端口固定为 `5174`。如需本地覆盖，再在 `web` 目录下创建 `.env.local`：
+在 `web` 目录下创建 `.env.local`：
 
 ```env
 # 最小配置：固定前端开发端口

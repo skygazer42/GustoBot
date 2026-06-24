@@ -1,7 +1,13 @@
-# GustoBot - 智能菜谱客服
-
 <div align="center">
-  <h2>基于 Multi-Agent 架构的智能菜谱客服</h2>
+  <img
+    src="./docs/assets/gustobot-logo.png"
+    alt="GustoBot Logo"
+    width="360"
+  />
+
+  <h1>GustoBot</h1>
+  <p><strong>智能菜谱客服</strong></p>
+  <p>基于 Multi-Agent 架构的菜谱知识问答与多模态服务系统</p>
 
   ![Python](https://img.shields.io/badge/Python-3.10-blue?style=flat&logo=python)
   ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)

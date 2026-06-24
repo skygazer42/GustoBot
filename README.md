@@ -4,7 +4,7 @@
     alt="GustoBot Logo"
     width="360"
   />
-
+  
   <h3>智能菜谱客服</h3>
   <p>基于 Multi-Agent 架构的菜谱知识问答与多模态服务系统</p>
 

@@ -13,6 +13,7 @@ from gustobot.infrastructure.core.logger import get_logger
 from gustobot.infrastructure.knowledge import KnowledgeService
 from gustobot.application.services.llm_client import LLMClient
 from .prompts import build_knowledge_system_prompt
+from .sources import collect_sources, strip_generated_source_section
 from gustobot.infrastructure.tools.search import SearchTool
 
 logger = get_logger(service="kg-knowledge-agent")
@@ -31,7 +32,7 @@ class KnowledgeQueryOutputState(TypedDict):
 
     answer: str
     type: str
-    sources: List[str]
+    sources: List[Dict[str, str]]
     confidence: float
     metadata: Dict[str, Any]
     steps: List[str]
@@ -56,16 +57,6 @@ def _calculate_confidence(documents: List[Dict[str, Any]]) -> float:
         return 0.0
     avg_score = sum(scores) / len(scores)
     return float(min(max(avg_score, 0.0), 1.0))
-
-
-def _collect_sources(documents: List[Dict[str, Any]]) -> List[str]:
-    sources: List[str] = []
-    for doc in documents:
-        meta = doc.get("metadata") or {}
-        candidate = doc.get("source") or meta.get("source") or meta.get("url") or meta.get("id")
-        if candidate:
-            sources.append(str(candidate))
-    return sources
 
 
 def create_knowledge_query_node(
@@ -161,13 +152,12 @@ def create_knowledge_query_node(
                 else f"外部搜索结果：\n{web_context}"
             )
 
-        sources = _collect_sources(documents)
-        if web_results:
-            sources.extend(
-                item.get("url", "")
-                for item in web_results
-                if item.get("url")
-            )
+        sources = collect_sources(
+            [
+                ("milvus", documents),
+                ("external", web_results),
+            ]
+        )
         confidence = _calculate_confidence(documents)
 
         system_prompt = build_knowledge_system_prompt(context_snippet)
@@ -213,7 +203,7 @@ def create_knowledge_query_node(
             metadata["error"] = str(exc)
             answer = documents[0].get("content") or documents[0].get("document") or FALLBACK_MESSAGE
 
-        final_answer = answer.strip() or FALLBACK_MESSAGE
+        final_answer = strip_generated_source_section(answer.strip()) or FALLBACK_MESSAGE
 
         return KnowledgeQueryOutputState(
             answer=final_answer,

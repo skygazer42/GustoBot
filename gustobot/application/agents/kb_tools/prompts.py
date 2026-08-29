@@ -19,6 +19,7 @@ def build_knowledge_system_prompt(context: str) -> str:
         3. 回答要准确、详细、实用
         4. 如果是烹饪步骤，要按顺序清晰列出
         5. 回答要友好、自然
+        6. 不要自行生成参考资料或数据库名称，系统会单独展示真实检索来源
 
         参考文档：
         {context}

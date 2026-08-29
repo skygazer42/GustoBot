@@ -62,7 +62,13 @@
                 <span class="sources-title">参考来源</span>
                 <ul>
                   <li v-for="(source, sIdx) in message.sources" :key="sIdx">
-                    {{ formatSource(source) }}
+                    <a
+                      v-if="sourceLink(source)"
+                      :href="sourceLink(source) || undefined"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ formatSource(source) }}</a>
+                    <span v-else>{{ formatSource(source) }}</span>
                   </li>
                 </ul>
               </div>
@@ -122,12 +128,21 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 
+interface ChatSource extends Record<string, unknown> {
+  backend?: string;
+  source?: string;
+  document_id?: string;
+  name?: string;
+  title?: string;
+  url?: string;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   route?: string | null;
   routeLogic?: string | null;
-  sources?: Array<Record<string, unknown>>;
+  sources?: ChatSource[];
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
@@ -306,13 +321,29 @@ function linkify(text: string): string {
   );
 }
 
-function formatSource(source: Record<string, unknown>): string {
-  const docId = source.document_id || source.source || source.id || source.name;
-  const name = source.name || source.title || "";
-  if (name && docId && name !== docId) {
-    return `${name} (${docId})`;
+function formatSource(source: ChatSource): string {
+  const backendLabels: Record<string, string> = {
+    milvus: "Milvus",
+    postgres: "PostgreSQL",
+    external: "外部检索"
+  };
+  const backend = String(source.backend || "").toLowerCase();
+  const backendLabel = backendLabels[backend] || String(source.backend || "");
+  const name = String(source.name || source.title || "");
+  const origin = String(source.source || source.url || "");
+  const docId = String(source.document_id || source.id || "");
+
+  const parts = [backendLabel, name, origin !== name ? origin : ""].filter(Boolean);
+  let label = parts.join(" · ");
+  if (docId && docId !== origin && docId !== name) {
+    label += `${label ? " " : ""}（文档 ${docId}）`;
   }
-  return String(docId || JSON.stringify(source));
+  return label || JSON.stringify(source);
+}
+
+function sourceLink(source: ChatSource): string | null {
+  const url = String(source.url || "").trim();
+  return /^https?:\/\//i.test(url) ? url : null;
 }
 
 function handleKeydown(event: KeyboardEvent) {

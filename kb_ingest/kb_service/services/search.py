@@ -126,9 +126,12 @@ class VectorSearcher:
                 "distance": float(row[6]),
                 "score": similarity,
                 "document_id": str(row[2]) if row[2] is not None else str(row[0]),
-                "source": metadata_dict.get("source")
+                "source": metadata_dict.get("source_file")
+                or metadata_dict.get("ingest_source")
+                or metadata_dict.get("source")
                 or metadata_dict.get("url")
                 or metadata_dict.get("id")
+                or row[1]
                 or (str(row[2]) if row[2] is not None else str(row[0])),
             }
             results.append(item)

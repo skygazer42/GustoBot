@@ -268,6 +268,7 @@ class DataProcessor:
             return
 
         items = []
+        source_file = Path(self.config.excel_file_path).name
         for data in self.processed_data:
             original = data.get("original_data")
             parsed_original = original
@@ -276,6 +277,13 @@ class DataProcessor:
                     parsed_original = json.loads(original)
                 except Exception:
                     parsed_original = original
+
+            if isinstance(parsed_original, dict):
+                source_metadata = dict(parsed_original)
+            else:
+                source_metadata = {"original_data": parsed_original}
+            source_metadata.setdefault("source_file", source_file)
+            source_metadata.setdefault("source_sheet", data["source_table"])
 
             company_name = data.get("company_name")
             if not company_name and isinstance(parsed_original, dict):
@@ -291,7 +299,7 @@ class DataProcessor:
                 "company_name": company_name or "",
                 "report_year": data.get("report_year", ""),
                 "rewritten_content": data["rewritten_content"],
-                "original_data": parsed_original,
+                "original_data": source_metadata,
             }
             items.append(item)
 

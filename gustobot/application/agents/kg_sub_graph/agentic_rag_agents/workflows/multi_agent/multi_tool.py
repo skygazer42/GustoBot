@@ -39,6 +39,10 @@ from gustobot.application.agents.kg_sub_graph.agentic_rag_agents.components.cust
 from gustobot.application.agents.kg_sub_graph.agentic_rag_agents.components.text2cypher.text2sql_tool import create_text2sql_tool_node
 
 from gustobot.config import settings
+from gustobot.application.agents.kb_tools.sources import (
+    collect_sources,
+    strip_generated_source_section,
+)
 from gustobot.infrastructure.core.logger import get_logger
 from gustobot.infrastructure.knowledge import KnowledgeService
 
@@ -216,13 +220,13 @@ class KBWorkflowState(TypedDict):
     external_results: List[Dict[str, Any]]
     answer: str
     steps: Annotated[List[str], add]
-    sources: Annotated[List[str], add]
+    sources: Annotated[List[Dict[str, str]], add]
 
 
 class KBOutputState(TypedDict):
     answer: str
     steps: List[str]
-    sources: List[str]
+    sources: List[Dict[str, str]]
 
 
 def create_kb_multi_tool_workflow(
@@ -374,7 +378,8 @@ def create_kb_multi_tool_workflow(
                     "3. 语气专业、友好，回答使用简体中文。\n"
                     "4. 如问题超出菜谱文化范围，应委婉拒答并说明理由。\n"
                     "5. 区分并融合来自不同数据源的要点，避免重复叙述。\n"
-                    "6. 在结尾列出引用来源名称或编号（如有）。"
+                    "6. 不要在回答正文中生成参考资料、引用来源或数据库名称；"
+                    "系统会根据真实检索结果单独展示结构化来源。"
                 ),
             ),
             (
@@ -476,32 +481,6 @@ def create_kb_multi_tool_workflow(
                 tag = f"{tag}\n来源：{source}"
             snippets.append(tag)
         return "\n\n".join(snippets)
-
-    def _collect_sources(
-        *result_sets: List[Dict[str, Any]],
-    ) -> List[str]:
-        collected: List[str] = []
-        for dataset in result_sets:
-            for doc in dataset or []:
-                meta = doc.get("metadata") or {}
-                candidate = (
-                    doc.get("source")
-                    or doc.get("source_table")
-                    or doc.get("document_id")
-                    or doc.get("source_id")
-                    or doc.get("id")
-                    or meta.get("source")
-                    or meta.get("source_table")
-                    or meta.get("url")
-                    or meta.get("title")
-                )
-                if candidate:
-                    collected.append(str(candidate))
-        # 去重但保留顺序
-        seen: Dict[str, None] = {}
-        for source in collected:
-            seen.setdefault(source, None)
-        return list(seen.keys())
 
     async def guardrails(state: KBWorkflowState) -> Dict[str, Any]:
         question = state.get("question", "")
@@ -784,7 +763,13 @@ def create_kb_multi_tool_workflow(
         local_context = _format_combined_local_results(local_results)
         external_context = _format_external_results(external_results)
 
-        sources = _collect_sources(milvus_results, postgres_results, external_results)
+        sources = collect_sources(
+            [
+                ("milvus", milvus_results),
+                ("postgres", postgres_results),
+                ("external", external_results),
+            ]
+        )
 
         if not local_results and not external_results:
             fallback = "抱歉，菜谱文化知识库暂未找到相关记载，请尝试描述得更具体一些或稍后再试。"
@@ -812,8 +797,9 @@ def create_kb_multi_tool_workflow(
         if not answer:
             answer = "检索已完成，但当前无法生成可靠的菜谱文化回答。"
 
-        if sources:
-            sources = list(dict.fromkeys(sources))
+        answer = strip_generated_source_section(answer)
+        if not answer:
+            answer = "检索已完成，但当前无法生成可靠的菜谱文化回答。"
 
         return {
             "answer": answer,

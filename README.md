@@ -39,6 +39,10 @@
 - **知识来源可追溯**：每个答案都标注来源，支持多源信息融合
 - **安全防护机制**：Guardrails 层确保问题在服务范围内，拒绝越界查询
 
+### 内置数据来源
+
+仓库内置菜谱主数据来自 [OpenKG RecipeGraph](http://openkg.cn/dataset/recipegraph)；部分历史饮食文本和 8 条 pgvector 示例记录在原提交中没有保留可核验的上游出处，仅适合链路演示。完整的数据血缘、用途和许可注意事项见 [数据来源与血缘](docs/DATA_SOURCES.md)。
+
 ### 核心功能
  
 | 功能模块 | 说明 | 技术实现 |
@@ -425,7 +429,7 @@ graph TB
 ## 联系方式
 
 - 项目主页: https://github.com/skygazer42/GustoBot
-- 问题反馈: https://github.com/skygazer42/skygazer42/issues
+- 问题反馈: https://github.com/skygazer42/GustoBot/issues
 - 邮箱: 207829897@qq.com
 
  

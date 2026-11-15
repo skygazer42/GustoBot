@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>陶陶 · 餐桌手记预览</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; padding: 20px; overflow: hidden; background: #e9e7e2; color: #5e574e; font: 12px/1.5 "Microsoft YaHei", sans-serif; display: flex; flex-direction: column; gap: 14px; }
+  #viewport { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; }
+  #stage { position: relative; flex: none; margin: auto; background: #f8f2e9; box-shadow: 0 5px 30px #30251c14; }
+  iframe { position: absolute; inset: 0; width: 1440px; height: 900px; border: 0; transform-origin: top left; }
+  footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .controls { display: flex; gap: 6px; align-items: center; }
+  button, a { font: inherit; color: inherit; }
+  button { cursor: pointer; padding: 5px 10px; border: 1px solid transparent; border-radius: 4px; background: none; }
+  button[aria-pressed="true"] { background: #fffdf8; border-color: #d1c8bc; }
+  a { text-underline-offset: 3px; }
+  button:focus-visible, a:focus-visible { outline: 2px solid #a45139; outline-offset: 3px; }
+</style>
+</head>
+<body>
+<main id="viewport"><div id="stage"><iframe src="taotao.html" title="陶陶桌面交互预览"></iframe></div></main>
+<footer>
+  <div class="controls"><button id="fit" aria-pressed="true">适应窗口</button><button id="actual" aria-pressed="false">100%</button><span>1440 × 900</span></div>
+  <a href="taotao.html" target="_blank" rel="noopener">独立打开 ↗</a>
+</footer>
+<script>
+  const stage = document.getElementById('stage');
+  const viewport = document.getElementById('viewport');
+  const frame = document.querySelector('iframe');
+  const fit = document.getElementById('fit');
+  const actual = document.getElementById('actual');
+  let fitWindow = true;
+  function resizePreview() {
+    const scale = fitWindow ? Math.min(1, viewport.clientWidth / 1440, viewport.clientHeight / 900) : 1;
+    stage.style.width = `${1440 * scale}px`;
+    stage.style.height = `${900 * scale}px`;
+    frame.style.transform = `scale(${scale})`;
+    fit.setAttribute('aria-pressed', String(fitWindow));
+    actual.setAttribute('aria-pressed', String(!fitWindow));
+  }
+  fit.addEventListener('click', () => { fitWindow = true; resizePreview(); });
+  actual.addEventListener('click', () => { fitWindow = false; resizePreview(); });
+  addEventListener('resize', resizePreview);
+  resizePreview();
+</script>
+</body>
+</html>

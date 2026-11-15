@@ -1,0 +1,5 @@
+# Keep the standalone preview despite the repository-wide HTML crawl ignore.
+!index.html
+!round-02.html
+!taotao.html
+!taotao-preview.html

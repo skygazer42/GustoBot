@@ -4,9 +4,11 @@ LightRAG 问答检索 API 路由
 提供基于 LightRAG 的问答检索服务的 REST API
 """
 
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Literal, Union
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from gustobot.application.services.lightrag_service import (
     get_lightrag_service,
@@ -17,10 +19,40 @@ from gustobot.application.services.lightrag_service import (
     SearchMode,
 )
 from gustobot.infrastructure.core.logger import get_logger
+from gustobot.infrastructure.core.resources import close_on_exit
 
 logger = get_logger(service="lightrag-api")
 
 router = APIRouter(prefix="/lightrag", tags=["LightRAG"])
+
+
+class IndexFileStats(BaseModel):
+    exists: bool
+    size_bytes: int
+    size_mb: float
+
+
+class IndexStatsResponse(BaseModel):
+    working_dir: str
+    total_size_mb: float
+    files: dict[str, IndexFileStats]
+    initialized: bool
+
+
+class ModeQuerySuccess(BaseModel):
+    success: Literal[True]
+    response: str
+    response_length: int
+
+
+class ModeQueryFailure(BaseModel):
+    success: Literal[False]
+    error: str
+
+
+class ModeComparisonResponse(BaseModel):
+    query: str
+    results: dict[str, Union[ModeQuerySuccess, ModeQueryFailure]]
 
 
 @router.post("/query", response_model=LightRAGQueryResponse)
@@ -72,7 +104,7 @@ async def query_lightrag(request: LightRAGQueryRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"查询失败: {str(e)}", exc_info=True)
+        logger.exception(f"查询失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"查询失败: {str(e)}",
@@ -120,21 +152,15 @@ async def query_lightrag_stream(request: LightRAGQueryRequest):
         # 将异步生成器包装为 StreamingResponse
         async def event_generator() -> AsyncIterator[str]:
             try:
-                # `response_gen` is expected to be an async generator, but some providers may
-                # return a plain string even when stream=True. Be defensive to keep SSE stable.
-                if isinstance(response_gen, str):
-                    if response_gen:
-                        yield f"data: {response_gen}\n\n"
-                else:
+                async with close_on_exit(response_gen.aclose):
                     async for chunk in response_gen:
                         # SSE 格式: data: <content>\n\n
                         yield f"data: {chunk}\n\n"
             except Exception as e:
-                logger.error(f"流式响应中发生错误: {str(e)}", exc_info=True)
+                logger.exception(f"流式响应中发生错误: {str(e)}")
                 yield f"data: [ERROR] {str(e)}\n\n"
-            finally:
-                # 发送结束标记（无论是否出错都发，方便客户端收尾）
-                yield "data: [DONE]\n\n"
+            # Do not yield while handling GeneratorExit or request cancellation.
+            yield "data: [DONE]\n\n"
 
         logger.info(f"开始流式查询 | 模式: {request.mode}")
         return StreamingResponse(
@@ -143,7 +169,7 @@ async def query_lightrag_stream(request: LightRAGQueryRequest):
         )
 
     except Exception as e:
-        logger.error(f"流式查询失败: {str(e)}", exc_info=True)
+        logger.exception(f"流式查询失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"流式查询失败: {str(e)}",
@@ -197,14 +223,14 @@ async def insert_documents(request: LightRAGInsertRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"插入文档失败: {str(e)}", exc_info=True)
+        logger.exception(f"插入文档失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"插入文档失败: {str(e)}",
         )
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=IndexStatsResponse)
 async def get_index_stats():
     """
     获取 LightRAG 索引文件统计信息
@@ -243,20 +269,20 @@ async def get_index_stats():
     """
     try:
         service = get_lightrag_service()
-        stats = service.get_index_stats()
+        stats = await run_in_threadpool(service.get_index_stats)
 
         logger.info(f"获取索引统计 | 总大小: {stats['total_size_mb']} MB")
         return stats
 
     except Exception as e:
-        logger.error(f"获取统计信息失败: {str(e)}", exc_info=True)
+        logger.exception(f"获取统计信息失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取统计信息失败: {str(e)}",
         )
 
 
-@router.post("/test-modes")
+@router.post("/test-modes", response_model=ModeComparisonResponse)
 async def test_all_modes(query: str = "红烧肉怎么做？"):
     """
     测试所有检索模式并返回对比结果
@@ -296,7 +322,7 @@ async def test_all_modes(query: str = "红烧肉怎么做？"):
                     "response_length": len(response),
                 }
             except Exception as e:
-                logger.error(f"模式 {mode} 测试失败: {str(e)}")
+                logger.exception(f"模式 {mode} 测试失败: {str(e)}")
                 results[mode] = {
                     "success": False,
                     "error": str(e),
@@ -308,7 +334,7 @@ async def test_all_modes(query: str = "红烧肉怎么做？"):
         }
 
     except Exception as e:
-        logger.error(f"测试失败: {str(e)}", exc_info=True)
+        logger.exception(f"测试失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"测试失败: {str(e)}",

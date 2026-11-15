@@ -3,6 +3,7 @@ API v1 router aggregation.
 
 Anonymous session management - no authentication required.
 """
+
 from fastapi import APIRouter
 
 from gustobot.interfaces.http.v1 import sessions, chat, upload

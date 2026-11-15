@@ -1,4 +1,4 @@
-﻿"""
+"""
 Text2SQL State Definitions
 
 文本到 SQL 工作流使用到的 TypedDict 定义。
@@ -15,6 +15,7 @@ class Text2SQLState(TypedDict, total=False):
     question: str
     connection_id: Optional[int]
     db_type: Optional[str]
+    max_rows: int
 
     # Schema 检索
     schema_context: Dict[str, Any]
@@ -55,6 +56,7 @@ class Text2SQLInputState(TypedDict):
     connection_id: Optional[int]
     max_retries: Optional[int]
     db_type: Optional[str]
+    max_rows: Optional[int]
 
 
 class Text2SQLOutputState(TypedDict):
@@ -63,6 +65,7 @@ class Text2SQLOutputState(TypedDict):
     answer: str
     sql_statement: Optional[str]
     execution_results: Optional[List[Dict[str, Any]]]
+    execution_error: Optional[str]
     explanation: Optional[str]
     visualization: Optional[Dict[str, Any]]
     visualization_config: Optional[Dict[str, Any]]

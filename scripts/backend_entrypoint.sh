@@ -7,6 +7,8 @@ KB_MILVUS_SENTINEL="${KB_MILVUS_SENTINEL:-/app/data/.kb_milvus_ingested}"
 AUTO_BOOTSTRAP_LIGHTRAG="${AUTO_BOOTSTRAP_LIGHTRAG:-true}"
 LIGHTRAG_BOOTSTRAP_DIR="${LIGHTRAG_BOOTSTRAP_DIR:-/app/bootstrap/lightrag_template}"
 LIGHTRAG_WORKING_DIR="${LIGHTRAG_WORKING_DIR:-./data/lightrag}"
+RECIPE_BOOTSTRAP=$(python -c "from gustobot.config.domain import get_domain_definition; d = get_domain_definition(); print('true' if d.id == 'recipes' and d.document_index_namespace == '.' else 'false')")
+LEGACY_KB_BOOTSTRAP=$(python -c "from gustobot.config.domain import get_domain_definition; print('true' if get_domain_definition().document_backend == 'legacy_kb' else 'false')")
 
 resolve_path() {
   case "$1" in
@@ -42,7 +44,11 @@ bootstrap_lightrag_data() {
   echo "[backend] LightRAG 初始数据复制完成。"
 }
 
-bootstrap_lightrag_data
+if [ "$RECIPE_BOOTSTRAP" = "true" ]; then
+  bootstrap_lightrag_data
+else
+  echo "[backend] Current domain skips legacy recipe LightRAG bootstrap."
+fi
 
 wait_for_mysql() {
   python - <<'PY'
@@ -141,7 +147,11 @@ run_milvus_ingest() {
   fi
 }
 
-run_milvus_ingest
+if [ "$LEGACY_KB_BOOTSTRAP" = "true" ]; then
+  run_milvus_ingest
+else
+  echo "[backend] Current domain skips legacy Milvus bootstrap."
+fi
 
 wait_for_mysql
 

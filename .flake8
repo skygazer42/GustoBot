@@ -1,0 +1,5 @@
+[flake8]
+max-line-length = 100
+# Black deliberately places whitespace before complex slice colons.
+extend-ignore = E203
+exclude = .git,.omx,.venv,venv,node_modules,__pycache__,.mypy_cache,.pytest_cache,.ruff_cache,build,dist

@@ -4,7 +4,7 @@ Shared data parsing utilities for recipe knowledge graph bootstrapping.
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -33,6 +33,7 @@ class RecipeRecord:
     steps: List[StepRecord]
     main_ingredients: List[IngredientAmount]
     aux_ingredients: List[IngredientAmount]
+    cuisine_styles: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -98,8 +99,14 @@ def _normalise_recipes(
         dish_types = _split_multi(payload.get("类型"))
         instructions = _clean_text(payload.get("做法"))
 
-        main_ingredients = _normalise_ingredients(payload.get("主食材"), role="main", seen=ingredients_seen)
-        aux_ingredients = _normalise_ingredients(payload.get("辅料"), role="aux", seen=ingredients_seen)
+        main_ingredients = _normalise_ingredients(
+            payload.get("主食材", payload.get("主料")),
+            role="main",
+            seen=ingredients_seen,
+        )
+        aux_ingredients = _normalise_ingredients(
+            payload.get("辅料"), role="aux", seen=ingredients_seen
+        )
         steps = _normalise_steps(instructions)
 
         records.append(
@@ -113,6 +120,7 @@ def _normalise_recipes(
                 steps=steps,
                 main_ingredients=main_ingredients,
                 aux_ingredients=aux_ingredients,
+                cuisine_styles=_split_multi(payload.get("菜系")),
             ),
         )
 
@@ -120,7 +128,9 @@ def _normalise_recipes(
 
 
 def _clean_name(value: object) -> str:
-    text = str(value or "").strip()
+    if value is None:
+        return ""
+    text = str(value).strip()
     text = re.sub(r"\s+", " ", text)
     return text
 

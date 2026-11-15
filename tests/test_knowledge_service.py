@@ -1,6 +1,7 @@
 """
 知识库服务测试
 """
+
 import pytest
 from gustobot.infrastructure.knowledge import KnowledgeService
 
@@ -15,7 +16,7 @@ def sample_recipe():
         "difficulty": "简单",
         "ingredients": ["食材1", "食材2"],
         "steps": ["步骤1", "步骤2"],
-        "tips": "小贴士"
+        "tips": "小贴士",
     }
 
 

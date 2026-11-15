@@ -34,7 +34,7 @@ read -p "请输入选择 (1-4): " choice
 case $choice in
     1)
         echo ""
-        echo "🐳 使用 Docker Compose 启动所有服务..."
+        echo "🐳 使用 Docker Compose 启动默认后端服务..."
         echo ""
 
         # 检查 .env 文件
@@ -52,7 +52,6 @@ case $choice in
         echo "访问地址："
         echo "  • 后端: http://localhost:8000"
         echo "  • API文档: http://localhost:8000/docs"
-        echo "  • Neo4j: http://localhost:17474"
         echo ""
         echo "查看日志: $COMPOSE_BIN -f docker-compose.yml logs -f"
         echo "停止服务: $COMPOSE_BIN -f docker-compose.yml down"

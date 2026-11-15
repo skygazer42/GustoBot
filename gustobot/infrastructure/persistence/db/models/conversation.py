@@ -1,10 +1,15 @@
 import enum
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, func
-from sqlalchemy.orm import relationship
-from gustobot.infrastructure.core.database import Base
-from gustobot.infrastructure.core.logger import get_logger
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
 
-logger = get_logger(service="conversation")
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from gustobot.infrastructure.core.database import Base
+
+if TYPE_CHECKING:
+    from .message import Message
+    from .user import User
+
 
 class DialogueType(enum.Enum):
     """Conversation type enumeration."""
@@ -20,16 +25,22 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    title = Column(String(100), nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    status = Column(String(20), default="ongoing")
-    dialogue_type = Column(Enum(DialogueType), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, server_default=func.now(), onupdate=func.now()
+    )
+    status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="ongoing")
+    dialogue_type: Mapped[DialogueType] = mapped_column(Enum(DialogueType), nullable=False)
 
-    user = relationship("User", back_populates="conversations")
-    messages = relationship(
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="conversations")
+    messages: Mapped[List["Message"]] = relationship(
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",

@@ -1,9 +1,12 @@
 """
 CRUD operations for conversation-level history snapshots.
 """
+
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+
+from gustobot.infrastructure.core.database import commit_session
 
 from gustobot.infrastructure.persistence.db.models.chat_history import ConversationHistorySnapshot
 from gustobot.interfaces.http.models.chat_history import ConversationHistorySnapshotCreate
@@ -19,15 +22,15 @@ class ConversationHistoryCRUD:
         obj_in: ConversationHistorySnapshotCreate,
     ) -> ConversationHistorySnapshot:
         """Create a new chat history snapshot."""
-        db_obj = ConversationHistorySnapshot(
+        snapshot = ConversationHistorySnapshot(
             conversation_id=obj_in.conversation_id,
             query=obj_in.query,
             response_data=obj_in.response_data,
         )
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+        db.add(snapshot)
+        commit_session(db)
+        db.refresh(snapshot)
+        return snapshot
 
     def get(self, db: Session, *, id: int) -> Optional[ConversationHistorySnapshot]:
         """Get a chat history snapshot by ID."""
@@ -63,15 +66,12 @@ class ConversationHistoryCRUD:
 
     def delete(self, db: Session, *, id: int) -> Optional[ConversationHistorySnapshot]:
         """Delete a chat history snapshot."""
-        obj = (
-            db.query(ConversationHistorySnapshot)
-            .filter(ConversationHistorySnapshot.id == id)
-            .first()
-        )
-        if obj:
-            db.delete(obj)
-            db.commit()
-        return obj
+        snapshot = self.get(db, id=id)
+        if snapshot is None:
+            return None
+        db.delete(snapshot)
+        commit_session(db)
+        return snapshot
 
 
 # Singleton instance

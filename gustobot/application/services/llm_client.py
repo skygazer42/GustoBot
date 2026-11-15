@@ -6,7 +6,9 @@ import json
 from typing import Any, Dict, List, Optional, Sequence
 
 from loguru import logger
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
+from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
+from openai.types.shared_params.response_format_json_object import ResponseFormatJSONObject
 from gustobot.config import settings
 
 ChatMessage = Dict[str, str]
@@ -23,9 +25,13 @@ class LLMClient:
         model: Optional[str] = None,
         temperature: float = 0.7,
     ) -> None:
-        self.api_key = api_key or settings.OPENAI_API_KEY
-        self.base_url = (base_url or settings.OPENAI_API_BASE or "").rstrip("/") or None
-        self.model = model or settings.OPENAI_MODEL
+        self.api_key = settings.OPENAI_API_KEY if api_key is None else api_key
+        self.base_url = settings.OPENAI_API_BASE if base_url is None else base_url
+        self.model = settings.OPENAI_MODEL if model is None else model
+        if not self.model.strip():
+            raise ValueError("model must not be empty")
+        if self.base_url is not None and not self.base_url.strip():
+            raise ValueError("base_url must be a URL or None for the SDK default")
         self.default_temperature = temperature
 
         self._client: Optional[AsyncOpenAI] = None
@@ -33,13 +39,12 @@ class LLMClient:
             self._client = AsyncOpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
-
             )
         else:
             logger.warning("LLMClient initialised without OPENAI_API_KEY; LLM features disabled.")
 
     def _ensure_client(self) -> AsyncOpenAI:
-        if not self._client:
+        if self._client is None:
             raise RuntimeError("LLM client is not configured. Provide OPENAI_API_KEY to enable it.")
         return self._client
 
@@ -48,28 +53,41 @@ class LLMClient:
         system_prompt: Optional[str],
         user_message: str,
         context: Optional[Sequence[ChatMessage]] = None,
-    ) -> List[ChatMessage]:
-        messages: List[ChatMessage] = []
+    ) -> List[ChatCompletionMessageParam]:
+        messages: List[ChatCompletionMessageParam] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
         if context:
             for item in context:
-                role = item.get("role")
-                content = item.get("content")
-                if role in {"user", "assistant"} and content:
-                    messages.append({"role": role, "content": content})
+                role = item["role"]
+                content = item["content"]
+                if role == "user" and content:
+                    messages.append({"role": "user", "content": content})
+                elif role == "assistant" and content:
+                    messages.append({"role": "assistant", "content": content})
 
         messages.append({"role": "user", "content": user_message})
         return messages
 
-    async def complete(self, *, messages: Sequence[ChatMessage], **kwargs: Any):
+    async def complete(
+        self,
+        *,
+        messages: Sequence[ChatCompletionMessageParam],
+        temperature: float,
+        response_format: Optional[ResponseFormatJSONObject] = None,
+    ) -> ChatCompletion:
         """Call the chat completion endpoint."""
         client = self._ensure_client()
+        if response_format is None:
+            return await client.chat.completions.create(
+                model=self.model, messages=list(messages), temperature=temperature
+            )
         return await client.chat.completions.create(
             model=self.model,
             messages=list(messages),
-            **kwargs,
+            temperature=temperature,
+            response_format=response_format,
         )
 
     async def chat(
@@ -86,10 +104,10 @@ class LLMClient:
             messages=messages,
             temperature=temperature if temperature is not None else self.default_temperature,
         )
-        choice = response.choices[0]
-        message = getattr(choice, "message", None)
-        content = getattr(message, "content", "") if message else ""
-        return content or ""
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("LLM response contains no text content")
+        return content
 
     async def chat_json(
         self,
@@ -107,14 +125,24 @@ class LLMClient:
                 temperature=temperature,
                 response_format={"type": "json_object"},
             )
-            content = response.choices[0].message.content or ""
-        except Exception as exc:
-            logger.warning("Structured response failed ({}); falling back to plain text.", exc)
+        except BadRequestError as exc:
+            message = exc.message.lower()
+            if "response_format" not in message or not any(
+                reason in message
+                for reason in ("not support", "unsupported", "unknown parameter", "unrecognized")
+            ):
+                raise
+            logger.warning("Provider does not support response_format; requesting plain JSON.")
             response = await self.complete(messages=messages, temperature=temperature)
-            content = response.choices[0].message.content or ""
 
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse JSON response: {}", content)
-            return {}
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("LLM response contains no JSON content")
+        payload = json.loads(content)
+        if not isinstance(payload, dict):
+            raise ValueError("LLM JSON response must be an object")
+        return payload
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()

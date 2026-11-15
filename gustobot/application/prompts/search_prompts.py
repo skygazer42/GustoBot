@@ -1,18 +1,19 @@
 """搜索服务的提示词管理"""
-from datetime import datetime
 
 # 基础系统提示
-SEARCH_SYSTEM_PROMPT = """你是一个智能助手，可以通过调用外部的工具获取实时信息。
-你可以使用的工具及使用方法如下：
-
-{tools_description}  
-
-当你遇到以下情况时，请调用联网检索工具：
-1. 问题涉及实时数据（如天气、新闻、股票）。
-2. 问题涉及最新事件或动态信息（如'今天发生了什么？'）。
-3. 问题涉及特定领域的外部知识（如法律、医疗、科技）。
-4. 问题中包含'最新'、'当前'、'今天'等时间敏感关键词。
-其他情况下，请直接回答用户的问题。"""
+SEARCH_SYSTEM_PROMPT = (
+    "你是一个智能助手，可以通过调用外部的工具获取实时信息。\n"
+    "你可以使用的工具及使用方法如下：\n"
+    "\n"
+    "{tools_description}  \n"
+    "\n"
+    "当你遇到以下情况时，请调用联网检索工具：\n"
+    "1. 问题涉及实时数据（如天气、新闻、股票）。\n"
+    "2. 问题涉及最新事件或动态信息（如'今天发生了什么？'）。\n"
+    "3. 问题涉及特定领域的外部知识（如法律、医疗、科技）。\n"
+    "4. 问题中包含'最新'、'当前'、'今天'等时间敏感关键词。\n"
+    "其他情况下，请直接回答用户的问题。"
+)
 
 # 搜索结果总结提示
 SEARCH_SUMMARY_PROMPT = """# 以下内容是基于用户发送的消息的搜索结果:
@@ -38,6 +39,7 @@ SEARCH_SUMMARY_PROMPT = """# 以下内容是基于用户发送的消息的搜索
 
 用户问题：{query}"""
 
+
 def format_search_context(search_results: list, start_index: int = 1) -> str:
     """格式化搜索结果为上下文"""
     formatted_results = []
@@ -49,4 +51,4 @@ def format_search_context(search_results: list, start_index: int = 1) -> str:
             f"内容：{result['snippet']}\n"
             f"[webpage {i} end]"
         )
-    return "\n\n".join(formatted_results) 
+    return "\n\n".join(formatted_results)

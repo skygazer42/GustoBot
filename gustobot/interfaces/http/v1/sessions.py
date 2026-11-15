@@ -3,13 +3,19 @@ Chat session management API endpoints.
 
 Lightweight user ID system - group sessions by user_id without authentication.
 """
+
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from gustobot.infrastructure.core.database import get_db
-from gustobot.infrastructure.persistence.crud import chat_message, chat_session, chat_session_snapshot
+from gustobot.infrastructure.persistence.crud import (
+    chat_message,
+    chat_session,
+    chat_session_snapshot,
+)
 from gustobot.interfaces.http.models.chat_message import (
     ChatMessageCreate,
     ChatMessageResponse,
@@ -23,6 +29,11 @@ from gustobot.interfaces.http.models.chat_session import (
 )
 
 router = APIRouter()
+
+
+class UserSessionCountResponse(BaseModel):
+    user_id: str
+    session_count: int
 
 
 @router.get("/", response_model=List[ChatSessionResponse])
@@ -42,23 +53,14 @@ def get_sessions(
 
     No authentication required.
     """
-    if user_id:
+    if user_id is not None:
         # Get sessions for specific user
         sessions = chat_session.get_by_user(
-            db,
-            user_id=user_id,
-            skip=skip,
-            limit=limit,
-            active_only=active_only
+            db, user_id=user_id, skip=skip, limit=limit, active_only=active_only
         )
     else:
         # Get all sessions
-        sessions = chat_session.get_all(
-            db,
-            skip=skip,
-            limit=limit,
-            active_only=active_only
-        )
+        sessions = chat_session.get_all(db, skip=skip, limit=limit, active_only=active_only)
 
     return sessions
 
@@ -93,10 +95,7 @@ def get_session(
     session = chat_session.get(db, id=session_id)
 
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     return session
 
@@ -116,10 +115,7 @@ def update_session(
     session = chat_session.get(db, id=session_id)
 
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     session = chat_session.update(db, db_obj=session, obj_in=session_update)
     return session
@@ -137,10 +133,7 @@ def delete_session(
     session = chat_session.get(db, id=session_id)
 
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     chat_session.soft_delete(db, session_id=session_id)
 
@@ -162,10 +155,7 @@ def add_message_to_session(
     session = chat_session.get(db, id=session_id)
 
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Ensure session_id matches
     message_in.session_id = session_id
@@ -196,10 +186,7 @@ def create_session_snapshot(
     session = chat_session.get(db, id=session_id)
 
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Ensure session_id matches
     snapshot_in.session_id = session_id
@@ -210,7 +197,7 @@ def create_session_snapshot(
     return snapshot
 
 
-@router.get("/user/{user_id}/count", response_model=dict)
+@router.get("/user/{user_id}/count", response_model=UserSessionCountResponse)
 def get_user_session_count(
     *,
     db: Session = Depends(get_db),
@@ -223,7 +210,4 @@ def get_user_session_count(
     """
     count = chat_session.count_by_user(db, user_id=user_id)
 
-    return {
-        "user_id": user_id,
-        "session_count": count
-    }
+    return {"user_id": user_id, "session_count": count}

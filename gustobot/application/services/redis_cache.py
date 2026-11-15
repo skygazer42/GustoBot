@@ -1,12 +1,24 @@
 import hashlib
 import json
 import math
+from collections.abc import Awaitable
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
 import httpx
 from loguru import logger
 from redis.asyncio import Redis
 from gustobot.config import settings
+
+RedisResult = TypeVar("RedisResult")
+
+
+async def _resolve_redis_response(
+    response: Union[RedisResult, Awaitable[RedisResult]],
+) -> RedisResult:
+    """Resolve Redis command mixins which expose both sync and async return types."""
+    if isinstance(response, Awaitable):
+        return await response
+    return response
 
 
 def _now_timestamp() -> float:
@@ -19,11 +31,13 @@ def _iso_now() -> str:
     return datetime.now().isoformat()
 
 
-def _decode(value: Any) -> str:
+def _decode(value: object) -> str:
     """Decode Redis bytes payloads to string."""
     if isinstance(value, bytes):
         return value.decode("utf-8")
-    return value
+    if isinstance(value, str):
+        return value
+    raise TypeError("Redis payload must be bytes or text")
 
 
 def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
@@ -57,15 +71,25 @@ class RedisSemanticCache:
         max_cache_size: Optional[int] = None,
         ttl: Optional[int] = None,
     ) -> None:
-        self._redis = redis_client or Redis.from_url(
-            redis_url or settings.REDIS_URL,
-            decode_responses=False,
+        self._owns_redis = redis_client is None
+        self._redis = (
+            Redis.from_url(redis_url or settings.REDIS_URL, decode_responses=False)
+            if redis_client is None
+            else redis_client
         )
         self.model_name = model_name or settings.EMBEDDING_MODEL
-        self.score_threshold = score_threshold or settings.REDIS_CACHE_THRESHOLD
+        self.score_threshold = (
+            settings.REDIS_CACHE_THRESHOLD if score_threshold is None else score_threshold
+        )
         self.prefix = prefix
-        self.max_cache_size = max_cache_size or settings.REDIS_CACHE_MAX_SIZE
-        self.ttl = ttl or settings.REDIS_CACHE_EXPIRE
+        self.max_cache_size = (
+            settings.REDIS_CACHE_MAX_SIZE if max_cache_size is None else max_cache_size
+        )
+        self.ttl = settings.REDIS_CACHE_EXPIRE if ttl is None else ttl
+        if self.ttl < 1:
+            raise ValueError("ttl must be positive")
+        if self.max_cache_size < 0:
+            raise ValueError("max_cache_size must be non-negative")
 
     async def lookup(
         self,
@@ -88,6 +112,7 @@ class RedisSemanticCache:
             current_vector = await self._get_embedding(user_message)
         except Exception:
             # Embedding service failure should not break chat flow.
+            logger.exception("Embedding service failed during semantic cache lookup")
             return None
 
         namespace = self._namespace(scope)
@@ -106,6 +131,9 @@ class RedisSemanticCache:
                 logger.warning("Failed to decode cached vector for key {}", _decode(raw_key))
                 continue
 
+            if len(cached_vector) != len(current_vector):
+                logger.warning("Skipping cached vector with incompatible dimension: {}", raw_key)
+                continue
             similarity = _cosine_similarity(current_vector, cached_vector)
             if similarity > best_similarity:
                 best_similarity = similarity
@@ -144,6 +172,9 @@ class RedisSemanticCache:
             scope: Optional namespace to isolate caches (e.g. per user/session).
             expire: Custom expiry in seconds (defaults to settings.REL value).
         """
+        ttl = self.ttl if expire is None else expire
+        if ttl < 1:
+            raise ValueError("expire must be positive")
         user_message = self._last_user_message(messages)
         if not user_message:
             return
@@ -151,6 +182,7 @@ class RedisSemanticCache:
         try:
             vector = await self._get_embedding(user_message)
         except Exception:
+            logger.exception("Embedding service failed during semantic cache update")
             return
 
         namespace = self._namespace(scope)
@@ -158,7 +190,6 @@ class RedisSemanticCache:
         vector_key = f"{namespace}:vec:{message_hash}"
         response_key = f"{namespace}:resp:{message_hash}"
         metadata_key = f"{namespace}:meta:{message_hash}"
-        ttl = expire or self.ttl
 
         await self._redis.set(vector_key, json.dumps(vector), ex=ttl)
         await self._redis.set(response_key, response, ex=ttl)
@@ -237,7 +268,7 @@ class RedisSemanticCache:
         metadata_key = f"{namespace}:meta:{hash_id}"
         raw = await self._redis.get(metadata_key)
 
-        metadata = {"access_count": 0}
+        metadata: Dict[str, object] = {"access_count": 0}
         if raw:
             try:
                 metadata.update(json.loads(_decode(raw)))
@@ -245,7 +276,10 @@ class RedisSemanticCache:
                 logger.warning("Failed to decode existing metadata; resetting counters.")
 
         metadata["last_access"] = _now_timestamp()
-        metadata["access_count"] = metadata.get("access_count", 0) + 1
+        access_count = metadata["access_count"]
+        if not isinstance(access_count, int):
+            raise TypeError("Cache access_count must be an integer")
+        metadata["access_count"] = access_count + 1
         await self._redis.set(
             metadata_key,
             json.dumps(metadata),
@@ -282,10 +316,15 @@ class RedisSemanticCache:
         """Create namespace prefix for a scope."""
         return f"{self.prefix}:{scope}" if scope else self.prefix
 
+    async def close(self) -> None:
+        """Release a client created by this adapter; borrowed clients stay open."""
+        if self._owns_redis:
+            await self._redis.aclose()
+
     @staticmethod
     def _message_hash(message: str) -> str:
         """Generate deterministic hash for message text."""
-        return hashlib.md5(message.encode("utf-8")).hexdigest()
+        return hashlib.md5(message.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     @staticmethod
     def _last_user_message(messages: Sequence[Dict[str, Any]]) -> Optional[str]:
@@ -308,16 +347,16 @@ class RedisConversationHistory:
         ttl: Optional[int] = None,
         max_messages: Optional[int] = None,
     ) -> None:
-        self._redis = redis_client or Redis.from_url(
-            redis_url or settings.REDIS_URL,
-            decode_responses=False,
+        self._owns_redis = redis_client is None
+        self._redis = (
+            Redis.from_url(redis_url or settings.REDIS_URL, decode_responses=False)
+            if redis_client is None
+            else redis_client
         )
         self.prefix = prefix
         self.ttl = ttl if ttl is not None else settings.CONVERSATION_HISTORY_TTL
         self.max_messages = (
-            max_messages
-            if max_messages is not None
-            else settings.CONVERSATION_HISTORY_MAX_MESSAGES
+            max_messages if max_messages is not None else settings.CONVERSATION_HISTORY_MAX_MESSAGES
         )
 
     async def append(
@@ -336,14 +375,18 @@ class RedisConversationHistory:
             "metadata": metadata or {},
             "timestamp": _iso_now(),
         }
-        await self._redis.rpush(key, json.dumps(entry))
-        await self._redis.ltrim(key, -self.max_messages, -1)
+        await _resolve_redis_response(self._redis.rpush(key, json.dumps(entry)))
+        await _resolve_redis_response(self._redis.ltrim(key, -self.max_messages, -1))
         await self._redis.expire(key, self.ttl)
 
     async def get_recent(self, session_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Retrieve the latest `limit` messages for a session."""
+        if limit < 0:
+            raise ValueError("limit must be non-negative")
+        if limit == 0:
+            return []
         key = self._key(session_id)
-        raw_items = await self._redis.lrange(key, -limit, -1)
+        raw_items = await _resolve_redis_response(self._redis.lrange(key, -limit, -1))
         messages: List[Dict[str, Any]] = []
         for raw_item in raw_items:
             try:
@@ -358,7 +401,15 @@ class RedisConversationHistory:
 
     async def size(self, session_id: str) -> int:
         """Return the number of stored messages for a session."""
-        return await self._redis.llen(self._key(session_id))
+        size: object = await _resolve_redis_response(self._redis.llen(self._key(session_id)))
+        if not isinstance(size, int):
+            raise TypeError("Redis LLEN response must be an integer")
+        return size
 
     def _key(self, session_id: str) -> str:
         return f"{self.prefix}:{session_id}"
+
+    async def close(self) -> None:
+        """Release a client created by this adapter; borrowed clients stay open."""
+        if self._owns_redis:
+            await self._redis.aclose()

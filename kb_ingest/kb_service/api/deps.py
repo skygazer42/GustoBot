@@ -1,4 +1,3 @@
-
 from functools import lru_cache
 
 from kb_service.core.config import Config, load_config

@@ -4,6 +4,7 @@ set -euo pipefail
 LIGHTRAG_DIR="${LIGHTRAG_WORKING_DIR:-/app/data/lightrag}"
 INIT_ON_STARTUP="${INIT_LIGHTRAG_ON_STARTUP:-true}"
 LIGHTRAG_JSON_SOURCE="${LIGHTRAG_JSON_PATH:-/app/data/recipe.json}"
+RECIPE_BOOTSTRAP=$(python -c "from gustobot.config.domain import get_domain_definition; d = get_domain_definition(); print('true' if d.id == 'recipes' and d.document_index_namespace == '.' else 'false')")
 
 log() {
   printf '[entrypoint] %s\n' "$*"
@@ -32,7 +33,9 @@ bootstrap_lightrag() {
   fi
 }
 
-if [ "$INIT_ON_STARTUP" = "true" ]; then
+if [ "$RECIPE_BOOTSTRAP" != "true" ]; then
+  log "Current domain skips legacy recipe LightRAG bootstrap."
+elif [ "$INIT_ON_STARTUP" = "true" ]; then
   bootstrap_lightrag
 else
   log "INIT_LIGHTRAG_ON_STARTUP=false，跳过 LightRAG 初始化。"

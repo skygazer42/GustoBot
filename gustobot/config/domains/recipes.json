@@ -1,0 +1,70 @@
+{
+  "id": "recipes",
+  "name": "菜谱知识服务",
+  "description": "菜谱、食材、烹饪方法及历史文化知识。",
+  "entity_types": {
+    "Dish": {
+      "description": "菜品或菜谱。",
+      "properties": {
+        "cook_time": {"type": "string"},
+        "instructions": {"type": "string"}
+      }
+    },
+    "Ingredient": {"description": "菜品使用的食材。", "properties": {}},
+    "Flavor": {"description": "菜品口味。", "properties": {}},
+    "CookingMethod": {"description": "烹饪方法。", "properties": {}},
+    "DishType": {"description": "菜品类型。", "properties": {}},
+    "CuisineStyle": {"description": "菜系。", "properties": {}},
+    "CookingStep": {
+      "description": "菜品制作步骤。",
+      "properties": {
+        "order": {"type": "integer"},
+        "instruction": {"type": "string"}
+      }
+    },
+    "NutritionProfile": {
+      "description": "食材营养资料。",
+      "properties": {"description": {"type": "string"}}
+    },
+    "HealthBenefit": {"description": "原文记录的食用功效。", "properties": {}}
+  },
+  "relation_types": {
+    "HAS_FLAVOR": {
+      "source_types": ["Dish"], "target_types": ["Flavor"], "description": "菜品具有口味。"
+    },
+    "USES_METHOD": {
+      "source_types": ["Dish"], "target_types": ["CookingMethod"], "description": "菜品使用烹饪方法。"
+    },
+    "BELONGS_TO_TYPE": {
+      "source_types": ["Dish"], "target_types": ["DishType"], "description": "菜品属于类型。"
+    },
+    "BELONGS_TO_CUISINE": {
+      "source_types": ["Dish"], "target_types": ["CuisineStyle"], "description": "菜品属于菜系。"
+    },
+    "HAS_STEP": {
+      "source_types": ["Dish"], "target_types": ["CookingStep"], "description": "菜品包含制作步骤。",
+      "properties": {"order": {"type": "integer"}}
+    },
+    "HAS_MAIN_INGREDIENT": {
+      "source_types": ["Dish"], "target_types": ["Ingredient"], "description": "菜品使用主料。",
+      "properties": {"amount_text": {"type": "string"}, "role": {"type": "string"}}
+    },
+    "HAS_AUX_INGREDIENT": {
+      "source_types": ["Dish"], "target_types": ["Ingredient"], "description": "菜品使用辅料。",
+      "properties": {"amount_text": {"type": "string"}, "role": {"type": "string"}}
+    },
+    "HAS_NUTRITION_PROFILE": {
+      "source_types": ["Ingredient"], "target_types": ["NutritionProfile"], "description": "食材具有营养资料。"
+    },
+    "HAS_HEALTH_BENEFIT": {
+      "source_types": ["Ingredient"], "target_types": ["HealthBenefit"], "description": "食材具有资料中记载的食用功效。"
+    }
+  },
+  "document_scope": "菜谱历史、典故、地域饮食文化、菜品做法、食材与烹饪知识。",
+  "graph_keywords": ["怎么做", "如何做", "做法", "步骤", "火候", "食材", "原料", "需要什么", "配料", "用什么"],
+  "sql_keywords": ["统计", "多少", "总数", "数量", "排名"],
+  "document_keywords": ["历史", "典故", "由来", "文化", "背景"],
+  "document_backend": "lightrag",
+  "document_index_namespace": ".",
+  "assistant_instructions": "根据菜谱及来源资料回答。涉及营养和食用功效时说明资料范围，避免给出医疗诊断。"
+}

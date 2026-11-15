@@ -10,25 +10,55 @@ LightRAG 问答检索服务
 
 import json
 import os
-import asyncio
 import inspect
-from typing import AsyncGenerator, Dict, Any, List, Optional, Literal
+import asyncio
+import importlib
+import anyio
+from collections.abc import AsyncIterator
+from typing import (
+    TYPE_CHECKING,
+    AsyncGenerator,
+    Dict,
+    Any,
+    List,
+    Optional,
+    Literal,
+    Union,
+    overload,
+)
 from pathlib import Path
+from types import ModuleType
 
-from pydantic import BaseModel, Field
-from lightrag import LightRAG, QueryParam
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-from lightrag.utils import EmbeddingFunc
-from lightrag.kg.shared_storage import initialize_pipeline_status
+from pydantic import BaseModel, ConfigDict, Field
 import numpy as np
 
 from gustobot.config import settings
 from gustobot.infrastructure.core.logger import get_logger
+from gustobot.infrastructure.core.resources import close_on_exit
+
+if TYPE_CHECKING:
+    from lightrag import LightRAG
 
 logger = get_logger(service="lightrag-service")
 
 # 检索模式类型
 SearchMode = Literal["naive", "local", "global", "hybrid", "mix", "bypass"]
+
+
+class LightRAGUnavailableError(RuntimeError):
+    """The optional LightRAG package is not installed."""
+
+
+def _load_lightrag() -> ModuleType:
+    try:
+        return importlib.import_module("lightrag")
+    except ModuleNotFoundError as exc:
+        if exc.name != "lightrag":
+            raise
+        raise LightRAGUnavailableError(
+            "LightRAG is not installed; install lightrag-hku to use graph document queries"
+        ) from exc
+
 
 def _infer_embedding_dim_from_working_dir(working_dir: str) -> Optional[int]:
     """
@@ -48,22 +78,29 @@ def _infer_embedding_dim_from_working_dir(working_dir: str) -> Optional[int]:
             dim = payload.get("embedding_dim") if isinstance(payload, dict) else None
             if isinstance(dim, int) and dim > 0:
                 return dim
-        except Exception:
+        except (OSError, ValueError):
             # Never fail init because of inference errors.
+            logger.exception("Unable to infer embedding dimension from {}", path)
             continue
     return None
 
 
 class LightRAGQueryRequest(BaseModel):
     """LightRAG 查询请求"""
-    query: str = Field(..., description="查询问题")
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    query: str = Field(..., min_length=1, description="查询问题")
     mode: SearchMode = Field(default="hybrid", description="检索模式")
-    top_k: Optional[int] = Field(default=None, description="返回结果数量，None 则使用默认配置")
+    top_k: Optional[int] = Field(
+        default=None, ge=1, description="返回结果数量，None 则使用默认配置"
+    )
     stream: bool = Field(default=False, description="是否使用流式响应")
 
 
 class LightRAGQueryResponse(BaseModel):
     """LightRAG 查询响应"""
+
     query: str = Field(..., description="原始查询")
     response: str = Field(..., description="回答内容")
     mode: SearchMode = Field(..., description="使用的检索模式")
@@ -72,11 +109,13 @@ class LightRAGQueryResponse(BaseModel):
 
 class LightRAGInsertRequest(BaseModel):
     """LightRAG 文档插入请求"""
+
     documents: List[str] = Field(..., description="要插入的文档列表")
 
 
 class LightRAGInsertResponse(BaseModel):
     """LightRAG 文档插入响应"""
+
     total: int = Field(..., description="总文档数")
     success: int = Field(..., description="成功插入数")
     failed: int = Field(..., description="失败数")
@@ -99,7 +138,7 @@ class LightRAGService:
         working_dir: Optional[str] = None,
         default_mode: SearchMode = "hybrid",
         default_top_k: int = 10,
-    ):
+    ) -> None:
         """
         初始化 LightRAG 服务
 
@@ -112,12 +151,21 @@ class LightRAGService:
         default_top_k : int, optional
             默认返回结果数量
         """
-        self.working_dir = working_dir or settings.LIGHTRAG_WORKING_DIR
+        if working_dir is None:
+            from gustobot.config.domain import get_domain_definition
+
+            domain = get_domain_definition()
+            namespace = domain.document_index_namespace
+            if namespace is None:
+                namespace = domain.id
+            working_dir = str(Path(settings.LIGHTRAG_WORKING_DIR) / namespace)
+        self.working_dir = working_dir
         self.default_mode = default_mode
         self.default_top_k = default_top_k
 
-        self.rag: Optional[LightRAG] = None
+        self.rag: Optional["LightRAG"] = None
         self.initialized = False
+        self._lifecycle_lock = asyncio.Lock()
 
         logger.info(f"LightRAG 服务初始化，工作目录: {self.working_dir}")
 
@@ -125,9 +173,9 @@ class LightRAGService:
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        history_messages: List = [],
-        **kwargs
-    ) -> str:
+        history_messages: Optional[List] = None,
+        **kwargs,
+    ) -> str | AsyncIterator[str]:
         """
         LLM 模型函数
 
@@ -144,18 +192,25 @@ class LightRAGService:
 
         Returns
         -------
-        str
-            LLM 生成的文本
+        str | AsyncIterator[str]
+            LLM 生成的文本，或请求流式响应时的文本块迭代器
         """
-        return await openai_complete_if_cache(
+        from lightrag.llm.openai import openai_complete_if_cache
+
+        response: object = await openai_complete_if_cache(
             model=settings.OPENAI_MODEL,
             prompt=prompt,
             system_prompt=system_prompt,
-            history_messages=history_messages,
+            history_messages=[] if history_messages is None else history_messages,
             api_key=settings.OPENAI_API_KEY,
             base_url=settings.OPENAI_API_BASE,
             **kwargs,
         )
+        if isinstance(response, str):
+            return response
+        if kwargs.get("stream") is True and isinstance(response, AsyncIterator):
+            return response
+        raise ValueError("LightRAG completion must contain text or a requested text stream")
 
     async def _embedding_func(self, texts: List[str]) -> np.ndarray:
         """
@@ -171,6 +226,8 @@ class LightRAGService:
         np.ndarray
             嵌入向量数组
         """
+        from lightrag.llm.openai import openai_embed
+
         api_key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
         base_url = settings.EMBEDDING_BASE_URL or settings.OPENAI_API_BASE
         # NOTE: In LightRAG v1.4.x, `openai_embed` itself is already wrapped by an
@@ -179,107 +236,94 @@ class LightRAGService:
         # Use the unwrapped function via `.func` and let *our* EmbeddingFunc
         # (configured with the correct embedding_dim) validate the output.
         embed_func = getattr(openai_embed, "func", openai_embed)
-        return await embed_func(
+        embeddings: object = await embed_func(
             texts=texts,
             model=settings.EMBEDDING_MODEL,
             api_key=api_key,
             base_url=base_url,
         )
+        if not isinstance(embeddings, np.ndarray):
+            raise ValueError("LightRAG embeddings must be a NumPy array")
+        return embeddings
 
     async def initialize(self) -> None:
-        """
-        初始化 LightRAG 实例
+        """Load one runtime, leaving a failed initialization retryable."""
+        async with self._lifecycle_lock:
+            if self.initialized:
+                return
+            try:
+                _load_lightrag()
+                from lightrag import LightRAG
+                from lightrag.utils import EmbeddingFunc
+                from lightrag.kg.shared_storage import initialize_pipeline_status
+                from gustobot.config.domain import get_domain_definition
 
-        会检查工作目录是否存在预生成的索引文件：
-        - graph_chunk_entity_relation.graphml
-        - kv_store_*.json
-        - vdb_*.json
-        """
-        if self.initialized:
-            logger.info("LightRAG 已初始化，跳过")
-            return
-
-        try:
-            # 检查工作目录
-            if not os.path.exists(self.working_dir):
-                logger.warning(f"工作目录不存在，创建: {self.working_dir}")
                 os.makedirs(self.working_dir, exist_ok=True)
+                stats = self.get_index_stats()
+                missing = [name for name, info in stats["files"].items() if not info["exists"]]
+                if missing:
+                    logger.warning("LightRAG index files are missing: {}", ", ".join(missing))
 
-            # 检查预生成的索引文件
-            required_files = [
-                "graph_chunk_entity_relation.graphml",
-                "kv_store_doc_status.json",
-                "kv_store_full_docs.json",
-                "kv_store_text_chunks.json",
-                "vdb_chunks.json",
-                "vdb_entities.json",
-                "vdb_relationships.json",
-            ]
+                embedding_dim: Optional[int] = None
+                explicit_dim_env = os.getenv("EMBEDDING_DIMENSION")
+                if explicit_dim_env and explicit_dim_env.strip():
+                    try:
+                        embedding_dim = int(explicit_dim_env)
+                    except ValueError:
+                        logger.warning("Invalid EMBEDDING_DIMENSION: {!r}", explicit_dim_env)
+                if embedding_dim is None:
+                    embedding_dim = _infer_embedding_dim_from_working_dir(self.working_dir)
+                if embedding_dim is None:
+                    embedding_dim = settings.EMBEDDING_DIMENSION
 
-            missing_files = []
-            for file_name in required_files:
-                file_path = os.path.join(self.working_dir, file_name)
-                if not os.path.exists(file_path):
-                    missing_files.append(file_name)
-
-            if missing_files:
-                logger.warning(
-                    f"警告：以下索引文件不存在，查询可能返回空结果:\n"
-                    f"{', '.join(missing_files)}\n"
-                    f"请确保 Docker build 时已正确初始化 LightRAG"
+                domain = get_domain_definition()
+                self.rag = LightRAG(
+                    working_dir=self.working_dir,
+                    llm_model_func=self._llm_model_func,
+                    embedding_func=EmbeddingFunc(
+                        embedding_dim=embedding_dim,
+                        max_token_size=settings.LIGHTRAG_MAX_TOKEN_SIZE,
+                        func=self._embedding_func,
+                    ),
+                    addon_params={"entity_types": list(domain.entity_types), "language": "Chinese"},
                 )
-            else:
-                logger.info("✓ 所有预生成的索引文件已存在")
-                # 显示文件大小
-                for file_name in required_files:
-                    file_path = os.path.join(self.working_dir, file_name)
-                    file_size = os.path.getsize(file_path)
-                    logger.info(f"  - {file_name}: {file_size / 1024:.2f} KB")
+                await self.rag.initialize_storages()
+                await initialize_pipeline_status()
+                self.initialized = True
+                logger.info("LightRAG initialized for domain {}", domain.id)
+            except BaseException:
+                logger.exception("LightRAG initialization failed")
+                async with close_on_exit(self._cleanup_unlocked):
+                    raise
 
-            # 获取 embedding 维度
-            embedding_dim: Optional[int] = None
-            explicit_dim_env = os.getenv("EMBEDDING_DIMENSION")
-            if explicit_dim_env and explicit_dim_env.strip():
-                try:
-                    embedding_dim = int(explicit_dim_env)
-                    logger.info(f"Embedding 维度(环境变量): {embedding_dim}")
-                except ValueError:
-                    logger.warning(f"无效的 EMBEDDING_DIMENSION 值: {explicit_dim_env!r}，将尝试从索引推断")
+    @overload
+    async def query(
+        self,
+        query: str,
+        mode: Optional[SearchMode] = None,
+        top_k: Optional[int] = None,
+        stream: Literal[False] = False,
+    ) -> str: ...
 
-            if embedding_dim is None:
-                inferred = _infer_embedding_dim_from_working_dir(self.working_dir)
-                if inferred:
-                    embedding_dim = inferred
-                    logger.info(f"Embedding 维度(从索引推断): {embedding_dim}")
-                else:
-                    embedding_dim = int(getattr(settings, "EMBEDDING_DIMENSION", 1536) or 1536)
-                    logger.info(f"Embedding 维度(默认): {embedding_dim}")
+    @overload
+    async def query(
+        self,
+        query: str,
+        mode: Optional[SearchMode] = None,
+        top_k: Optional[int] = None,
+        *,
+        stream: Literal[True],
+    ) -> AsyncGenerator[str, None]: ...
 
-            logger.info(f"LLM 模型: {settings.OPENAI_MODEL}")
-            logger.info(f"Embedding 模型: {settings.EMBEDDING_MODEL}")
-
-            # 创建 LightRAG 实例
-            self.rag = LightRAG(
-                working_dir=self.working_dir,
-                llm_model_func=self._llm_model_func,
-                embedding_func=EmbeddingFunc(
-                    embedding_dim=embedding_dim,
-                    max_token_size=settings.LIGHTRAG_MAX_TOKEN_SIZE,
-                    func=self._embedding_func,
-                ),
-            )
-
-            # 初始化存储（会加载预生成的索引文件）
-            logger.info("加载预生成的索引文件...")
-            await self.rag.initialize_storages()
-            await initialize_pipeline_status()
-
-            self.initialized = True
-            logger.info("✓ LightRAG 服务初始化成功")
-
-        except Exception as e:
-            logger.error(f"初始化 LightRAG 服务失败: {str(e)}", exc_info=True)
-            raise RuntimeError(f"LightRAG 初始化失败: {str(e)}")
+    @overload
+    async def query(
+        self,
+        query: str,
+        mode: Optional[SearchMode] = None,
+        top_k: Optional[int] = None,
+        *,
+        stream: bool,
+    ) -> Union[str, AsyncGenerator[str, None]]: ...
 
     async def query(
         self,
@@ -287,7 +331,7 @@ class LightRAGService:
         mode: Optional[SearchMode] = None,
         top_k: Optional[int] = None,
         stream: bool = False,
-    ) -> str | AsyncGenerator[str, None]:
+    ) -> Union[str, AsyncGenerator[str, None]]:
         """
         执行问答检索
 
@@ -309,15 +353,22 @@ class LightRAGService:
             如果 stream=True，返回异步生成器
         """
         await self.initialize()
+        rag = self.rag
+        if rag is None:
+            raise RuntimeError("LightRAG initialization did not establish a runtime")
 
         retrieval_mode = mode or self.default_mode
-        k = top_k or self.default_top_k
+        k = self.default_top_k if top_k is None else top_k
+        if k < 1:
+            raise ValueError("top_k must be positive")
 
         try:
             logger.info(f"执行查询 | 模式: {retrieval_mode} | Top-K: {k}")
             logger.info(f"查询内容: {query}")
 
             # 创建查询参数
+            from lightrag import QueryParam
+
             param = QueryParam(
                 mode=retrieval_mode,
                 top_k=k,
@@ -325,74 +376,95 @@ class LightRAGService:
             )
 
             # 执行查询
-            response = await self.rag.aquery(query, param=param)
+            response: object = await rag.aquery(query, param=param)
 
             # 如果是流式响应，返回生成器
+            if stream and inspect.isasyncgen(response):
+                logger.info("返回流式响应")
+                return response
+
+            if not isinstance(response, str):
+                raise ValueError("LightRAG response must contain text")
+
+            response_text = response
             if stream:
-                # Some LightRAG versions/providers may return a plain string even when stream=True.
-                # To keep the HTTP SSE contract stable, wrap non-generator responses.
-                if inspect.isasyncgen(response):
-                    logger.info("返回流式响应")
-                    return response
+                # Some providers return complete text even when streaming was requested.
 
                 async def one_shot() -> AsyncGenerator[str, None]:
-                    if response:
-                        yield str(response)
+                    if response_text:
+                        yield response_text
 
-                logger.info("stream=true but got non-generator response; wrapped as one-shot stream")
+                logger.info(
+                    "stream=true but got non-generator response; wrapped as one-shot stream"
+                )
                 return one_shot()
 
-            # Non-streaming path -------------------------------------------------
-            if response is None:
-                logger.warning("Non-stream query returned None; treating as empty response")
-                return ""
-
-            response_text = str(response)
             logger.info(f"查询成功 | 响应长度: {len(response_text)} 字符")
             return response_text
 
         except Exception as e:
-            logger.error(f"查询失败: {str(e)}", exc_info=True)
-            raise RuntimeError(f"LightRAG 查询失败: {str(e)}")
+            logger.exception("查询失败")
+            raise RuntimeError(f"LightRAG 查询失败: {str(e)}") from e
 
-    async def query_structured(
-        self,
-        request: LightRAGQueryRequest
-    ) -> LightRAGQueryResponse:
-        """
-        执行结构化查询（非流式）
+    async def query_structured(self, request: LightRAGQueryRequest) -> LightRAGQueryResponse:
+        """Return one generated answer and its retrieval context, without a second query."""
+        if request.stream:
+            raise ValueError("Structured queries do not support streaming")
+        await self.initialize()
+        rag = self.rag
+        if rag is None:
+            raise RuntimeError("LightRAG initialization did not establish a runtime")
+        from lightrag import QueryParam
 
-        Parameters
-        ----------
-        request : LightRAGQueryRequest
-            查询请求
-
-        Returns
-        -------
-        LightRAGQueryResponse
-            结构化查询响应
-        """
-        response = await self.query(
-            query=request.query,
-            mode=request.mode,
-            top_k=request.top_k,
-            stream=False,
+        top_k = self.default_top_k if request.top_k is None else request.top_k
+        result = await rag.aquery_llm(
+            request.query,
+            param=QueryParam(mode=request.mode, top_k=top_k, stream=False),
         )
+        if set(result) == {"llm_response"}:
+            from lightrag.prompt import PROMPTS
+
+            # 1.4.9.8 omits raw_data when graph keyword extraction finds no context.
+            # Naive mode has this shape for a missing tokenizer, so it remains an error.
+            if (
+                request.mode in {"local", "global", "hybrid", "mix"}
+                and result["llm_response"]["content"] == PROMPTS["fail_response"]
+                and result["llm_response"]["is_streaming"] is False
+            ):
+                result = {
+                    "status": "failure",
+                    "message": "Query returned no results",
+                    "data": {},
+                    "metadata": {"failure_reason": "no_results", "mode": request.mode},
+                    "llm_response": result["llm_response"],
+                }
+        if not {"status", "message", "metadata", "data", "llm_response"}.issubset(result):
+            raise RuntimeError("LightRAG returned an incomplete query response")
+        metadata = result["metadata"]
+        if result["status"] != "success" and metadata.get("failure_reason") != "no_results":
+            raise RuntimeError(f"LightRAG 查询失败: {result['message']}")
+        response = result["llm_response"]["content"]
+        if result["llm_response"]["is_streaming"] or not isinstance(response, str):
+            raise RuntimeError("LightRAG non-streaming response must contain text")
 
         return LightRAGQueryResponse(
             query=request.query,
             response=response,
             mode=request.mode,
             metadata={
-                "top_k": request.top_k or self.default_top_k,
+                **metadata,
+                "data": result["data"],
+                "top_k": top_k,
                 "working_dir": self.working_dir,
-            }
+            },
         )
 
     async def insert_documents(
         self,
         documents: List[str],
         batch_size: int = 10,
+        *,
+        file_paths: list[str] | None = None,
     ) -> LightRAGInsertResponse:
         """
         增量插入文档到 LightRAG
@@ -409,53 +481,78 @@ class LightRAGService:
         LightRAGInsertResponse
             插入结果统计
         """
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if file_paths is not None and len(file_paths) != len(documents):
+            raise ValueError("file_paths must match the number of documents")
         await self.initialize()
+        rag = self.rag
+        if rag is None:
+            raise RuntimeError("LightRAG initialization did not establish a runtime")
+        from lightrag.utils import compute_mdhash_id, sanitize_text_for_encoding
 
-        try:
-            logger.info(f"开始插入 {len(documents)} 个文档")
+        logger.info(f"开始插入 {len(documents)} 个文档")
+        success_count = 0
+        failed_count = 0
+        errors = []
 
-            success_count = 0
-            failed_count = 0
-            errors = []
+        for document_number, document in enumerate(documents, start=1):
+            try:
+                if file_paths is None:
+                    track_id = await rag.ainsert(document)
+                else:
+                    track_id = await rag.ainsert(
+                        document, file_paths=file_paths[document_number - 1]
+                    )
+                statuses = await rag.aget_docs_by_track_id(track_id)
+                if not statuses:
+                    # Duplicate content is skipped before assigning the new tracking ID.
+                    document_id = compute_mdhash_id(
+                        sanitize_text_for_encoding(document), prefix="doc-"
+                    )
+                    statuses = await rag.aget_docs_by_ids(document_id)
+                if not statuses:
+                    raise RuntimeError("LightRAG did not report a document processing status")
+                for status in statuses.values():
+                    if status.status != "processed":
+                        detail = (
+                            f"document status: {status.status}"
+                            if status.error_msg is None
+                            else status.error_msg
+                        )
+                        raise RuntimeError(detail)
+                success_count += 1
+            except Exception as exc:
+                failed_count += 1
+                error_message = f"文档 {document_number} 插入失败: {exc}"
+                errors.append(error_message)
+                logger.exception(error_message)
+                continue
 
-            for i, doc in enumerate(documents):
-                try:
-                    await self.rag.ainsert(doc)
-                    success_count += 1
+            if document_number % batch_size == 0:
+                logger.info(f"已插入 {document_number}/{len(documents)} 个文档")
 
-                    # 记录进度
-                    if (i + 1) % batch_size == 0:
-                        logger.info(f"已插入 {i + 1}/{len(documents)} 个文档")
+        logger.info(f"文档插入完成 | 成功: {success_count} | 失败: {failed_count}")
+        return LightRAGInsertResponse(
+            total=len(documents),
+            success=success_count,
+            failed=failed_count,
+            errors=errors,
+        )
 
-                except Exception as e:
-                    failed_count += 1
-                    error_msg = f"文档 {i + 1} 插入失败: {str(e)}"
-                    errors.append(error_msg)
-                    logger.error(error_msg)
-
-            logger.info(
-                f"文档插入完成 | 成功: {success_count} | 失败: {failed_count}"
-            )
-
-            return LightRAGInsertResponse(
-                total=len(documents),
-                success=success_count,
-                failed=failed_count,
-                errors=errors,
-            )
-
-        except Exception as e:
-            logger.error(f"批量插入文档失败: {str(e)}", exc_info=True)
-            raise RuntimeError(f"文档插入失败: {str(e)}")
+    async def _cleanup_unlocked(self) -> None:
+        """Release a runtime while the lifecycle lock is already held."""
+        rag = self.rag
+        self.rag = None
+        self.initialized = False
+        if rag is not None:
+            await rag.finalize_storages()
 
     async def cleanup(self) -> None:
-        """清理资源"""
-        if self.rag:
-            try:
-                await self.rag.finalize_storages()
-                logger.info("LightRAG 资源已释放")
-            except Exception as e:
-                logger.error(f"释放资源失败: {str(e)}")
+        """Close the owned runtime once, including after caller cancellation."""
+        with anyio.fail_after(5, shield=True):
+            async with self._lifecycle_lock:
+                await self._cleanup_unlocked()
 
     def get_index_stats(self) -> Dict[str, Any]:
         """
@@ -520,8 +617,18 @@ def get_lightrag_service() -> LightRAGService:
     global _lightrag_service
     if _lightrag_service is None:
         _lightrag_service = LightRAGService(
-            working_dir=settings.LIGHTRAG_WORKING_DIR,
             default_mode=settings.LIGHTRAG_RETRIEVAL_MODE,
             default_top_k=settings.LIGHTRAG_TOP_K,
         )
     return _lightrag_service
+
+
+async def cleanup_lightrag_service() -> None:
+    """Release an existing singleton without initializing an unused service."""
+    global _lightrag_service
+    service = _lightrag_service
+    try:
+        if service is not None:
+            await service.cleanup()
+    finally:
+        _lightrag_service = None

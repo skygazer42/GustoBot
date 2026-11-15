@@ -7,12 +7,19 @@ import hashlib
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import TYPE_CHECKING, Dict, List
 
 
 def _load_parser_module():
     project_root = Path(__file__).resolve().parent.parent
-    parser_path = project_root / "gustobot" / "infrastructure" / "knowledge" / "recipe_kg" / "recipe_json_parser.py"
+    parser_path = (
+        project_root
+        / "gustobot"
+        / "infrastructure"
+        / "knowledge"
+        / "recipe_kg"
+        / "recipe_json_parser.py"
+    )
     spec = importlib.util.spec_from_file_location("recipe_parser", parser_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Failed to load recipe parser module from {parser_path}")
@@ -23,8 +30,14 @@ def _load_parser_module():
 
 
 parser_module = _load_parser_module()
-IngredientProfile = parser_module.IngredientProfile
-RecipeRecord = parser_module.RecipeRecord
+if TYPE_CHECKING:
+    from gustobot.infrastructure.knowledge.recipe_kg.recipe_json_parser import (
+        IngredientProfile,
+        RecipeRecord,
+    )
+else:
+    IngredientProfile = parser_module.IngredientProfile
+    RecipeRecord = parser_module.RecipeRecord
 load_ingredient_profiles = parser_module.load_ingredient_profiles
 load_recipe_records = parser_module.load_recipe_records
 
@@ -46,7 +59,9 @@ def main() -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate Neo4j CSV import files from recipe JSON data.")
+    parser = argparse.ArgumentParser(
+        description="Generate Neo4j CSV import files from recipe JSON data."
+    )
     parser.add_argument(
         "--recipe-json",
         type=Path,
@@ -69,14 +84,15 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _build_graph_assets(
-    recipes: List[RecipeRecord],
-    profiles: List[IngredientProfile],
+    recipes: List["RecipeRecord"],
+    profiles: List["IngredientProfile"],
 ) -> Dict[str, List[Dict[str, object]]]:
     dish_registry: Dict[str, Dict[str, object]] = {}
     ingredient_registry: Dict[str, Dict[str, object]] = {}
     flavor_registry: Dict[str, Dict[str, object]] = {}
     method_registry: Dict[str, Dict[str, object]] = {}
     type_registry: Dict[str, Dict[str, object]] = {}
+    cuisine_registry: Dict[str, Dict[str, object]] = {}
     step_registry: Dict[str, Dict[str, object]] = {}
     nutrition_registry: Dict[str, Dict[str, object]] = {}
     benefit_registry: Dict[str, Dict[str, object]] = {}
@@ -86,6 +102,7 @@ def _build_graph_assets(
     flavors: List[Dict[str, object]] = []
     methods: List[Dict[str, object]] = []
     dish_types: List[Dict[str, object]] = []
+    cuisines: List[Dict[str, object]] = []
     steps: List[Dict[str, object]] = []
     nutrition_nodes: List[Dict[str, object]] = []
     benefit_nodes: List[Dict[str, object]] = []
@@ -95,6 +112,7 @@ def _build_graph_assets(
     rel_flavor: List[Dict[str, object]] = []
     rel_method: List[Dict[str, object]] = []
     rel_type: List[Dict[str, object]] = []
+    rel_cuisine: List[Dict[str, object]] = []
     rel_step: List[Dict[str, object]] = []
     rel_nutrition: List[Dict[str, object]] = []
     rel_benefit: List[Dict[str, object]] = []
@@ -123,7 +141,9 @@ def _build_graph_assets(
         dish_id = dish_node["id"]
 
         for ingredient in recipe.main_ingredients:
-            ingredient_node = _ensure_node(ingredient_registry, ingredient.name, "ingredient", ingredients)
+            ingredient_node = _ensure_node(
+                ingredient_registry, ingredient.name, "ingredient", ingredients
+            )
             rel_main.append(
                 {
                     "start": dish_id,
@@ -133,7 +153,9 @@ def _build_graph_assets(
             )
 
         for ingredient in recipe.aux_ingredients:
-            ingredient_node = _ensure_node(ingredient_registry, ingredient.name, "ingredient", ingredients)
+            ingredient_node = _ensure_node(
+                ingredient_registry, ingredient.name, "ingredient", ingredients
+            )
             rel_aux.append(
                 {
                     "start": dish_id,
@@ -153,6 +175,10 @@ def _build_graph_assets(
         for dtype in recipe.dish_types:
             type_node = _ensure_node(type_registry, dtype, "dtype", dish_types)
             rel_type.append({"start": dish_id, "end": type_node["id"]})
+
+        for cuisine in recipe.cuisine_styles:
+            cuisine_node = _ensure_node(cuisine_registry, cuisine, "cuisine", cuisines)
+            rel_cuisine.append({"start": dish_id, "end": cuisine_node["id"]})
 
         for step in recipe.steps:
             step_key = f"{dish_id}_{step.order}"
@@ -174,10 +200,10 @@ def _build_graph_assets(
             )
 
     for profile in profiles:
-        ingredient_node = ingredient_registry.get(profile.name)
-        if not ingredient_node:
+        profile_node = ingredient_registry.get(profile.name)
+        if profile_node is None:
             continue
-        ingredient_id = ingredient_node["id"]
+        ingredient_id = profile_node["id"]
 
         if profile.nutrition:
             if profile.name not in nutrition_registry:
@@ -197,7 +223,9 @@ def _build_graph_assets(
         for benefit in profile.benefits:
             benefit_node = benefit_registry.get(benefit)
             if benefit_node is None:
-                checksum = hashlib.sha1(benefit.encode("utf-8")).hexdigest()[:12]
+                checksum = hashlib.sha1(benefit.encode("utf-8"), usedforsecurity=False).hexdigest()[
+                    :12
+                ]
                 benefit_node = {
                     "id": f"benefit_{len(benefit_registry) + 1}_{checksum}",
                     "name": benefit,
@@ -217,6 +245,7 @@ def _build_graph_assets(
         "nodes_flavor": flavors,
         "nodes_method": methods,
         "nodes_type": dish_types,
+        "nodes_cuisine": cuisines,
         "nodes_step": steps,
         "nodes_nutrition": nutrition_nodes,
         "nodes_benefit": benefit_nodes,
@@ -225,6 +254,7 @@ def _build_graph_assets(
         "rel_flavor": rel_flavor,
         "rel_method": rel_method,
         "rel_type": rel_type,
+        "rel_cuisine": rel_cuisine,
         "rel_step": rel_step,
         "rel_nutrition": rel_nutrition,
         "rel_benefit": rel_benefit,
@@ -253,6 +283,7 @@ def _write_csv(output_dir: Path, assets: Dict[str, List[Dict[str, object]]]) -> 
             "type_nodes.csv",
             ["id:ID(DishType)", "name"],
         ),
+        "nodes_cuisine": ("cuisine_nodes.csv", ["id:ID(CuisineStyle)", "name"]),
         "nodes_step": (
             "step_nodes.csv",
             ["id:ID(CookingStep)", "name", "dish_name", "order:int", "instruction"],
@@ -285,6 +316,10 @@ def _write_csv(output_dir: Path, assets: Dict[str, List[Dict[str, object]]]) -> 
             "rel_belongs_type.csv",
             [":START_ID(Dish)", ":END_ID(DishType)"],
         ),
+        "rel_cuisine": (
+            "rel_belongs_cuisine.csv",
+            [":START_ID(Dish)", ":END_ID(CuisineStyle)"],
+        ),
         "rel_step": (
             "rel_has_step.csv",
             [":START_ID(Dish)", ":END_ID(CookingStep)", "order:int"],
@@ -300,7 +335,7 @@ def _write_csv(output_dir: Path, assets: Dict[str, List[Dict[str, object]]]) -> 
     }
 
     for key, (filename, headers) in writers.items():
-        rows = assets.get(key, [])
+        rows = assets[key]
         path = output_dir / filename
         with path.open("w", encoding="utf-8", newline="") as fp:
             writer = csv.DictWriter(
@@ -326,7 +361,7 @@ def _encode_row(headers: List[str], row: Dict[str, object]) -> Dict[str, object]
             key = header.split(":")[0]
         elif ":ID" in header:
             key = header.split(":")[0]
-        value = row.get(key, "")
+        value = row[key]
         encoded[header] = value if value is not None else ""
     return encoded
 

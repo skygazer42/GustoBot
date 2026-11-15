@@ -3,10 +3,11 @@ Pydantic schemas for ChatSession model.
 
 Lightweight user ID system - no authentication required.
 """
+
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatSessionBase(BaseModel):
@@ -38,5 +39,4 @@ class ChatSessionResponse(ChatSessionBase):
     updated_at: Optional[datetime]
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

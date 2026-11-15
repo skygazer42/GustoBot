@@ -2,7 +2,7 @@
 Centralised application settings for GustoBot.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
@@ -15,16 +15,19 @@ class Settings(BaseSettings):
     APP_NAME: str = "GustoBot"
     APP_VERSION: str = "0.1.2"
     DEBUG: bool = True
+    KNOWLEDGE_DOMAIN_FILE: str = "gustobot/config/domains/recipes.json"
 
     # API configuration
     API_V1_PREFIX: str = "/api/v1"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+    SECRET_KEY: Optional[str] = None
+    ALGORITHM: str = "HS256"
 
     # LLM configuration
     LLM_PROVIDER: str = Field(default="openai", description="LLM provider: openai, anthropic, etc.")
     LLM_MODEL: str = Field(
-        default="gpt-4-turbo-preview",
+        default="gpt-5.4",
         description="LLM model name",
         validation_alias=AliasChoices("LLM_MODEL", "OPENAI_MODEL"),
     )
@@ -53,26 +56,23 @@ class Settings(BaseSettings):
 
     # Anthropic models
     ANTHROPIC_API_KEY: Optional[str] = None
-    ANTHROPIC_MODEL: str = "claude-3-opus-20240229"
+    ANTHROPIC_MODEL: str = "claude-opus-5-5"
 
     # Vision models (for image analysis)
     VISION_API_KEY: Optional[str] = None
     VISION_BASE_URL: Optional[str] = None
-    VISION_MODEL: str = "gpt-4-vision-preview"
+    VISION_MODEL: str = "gpt-5.5"
 
     # Image generation models (for creating images)
     IMAGE_GENERATION_API_KEY: Optional[str] = None
     IMAGE_GENERATION_BASE_URL: Optional[str] = Field(
-        default="https://open.bigmodel.cn/api/paas/v4",
-        description="Image generation API base URL"
+        default="https://open.bigmodel.cn/api/paas/v4", description="Image generation API base URL"
     )
     IMAGE_GENERATION_MODEL: str = Field(
-        default="cogView-4-250304",
-        description="Image generation model name"
+        default="glm-image", description="Image generation model name"
     )
     IMAGE_GENERATION_SIZE: str = Field(
-        default="1024x1024",
-        description="Default image generation size"
+        default="1024x1024", description="Default image generation size"
     )
 
     # Milvus vector database
@@ -91,7 +91,9 @@ class Settings(BaseSettings):
 
     # Reranker configuration
     RERANK_ENABLED: bool = Field(default=True, description="Enable reranking")
-    RERANK_PROVIDER: str = Field(default="custom", description="Rerank provider: cohere, jina, voyage, custom")
+    RERANK_PROVIDER: str = Field(
+        default="custom", description="Rerank provider: cohere, jina, voyage, custom"
+    )
     RERANK_BASE_URL: Optional[str] = Field(default=None, description="Rerank API base URL")
     RERANK_ENDPOINT: str = Field(default="/rerank", description="Rerank endpoint path")
     RERANK_MODEL: str = Field(default="bge-reranker-large", description="Rerank model name")
@@ -99,7 +101,9 @@ class Settings(BaseSettings):
     RERANK_MAX_CANDIDATES: int = Field(default=20, description="Max candidates for reranking")
     RERANK_TOP_N: int = Field(default=6, description="Top N results after reranking")
     RERANK_TIMEOUT: int = Field(default=30, description="Rerank API timeout in seconds")
-    RERANK_SCORE_FUSION_ALPHA: Optional[float] = Field(default=None, description="Score fusion alpha parameter")
+    RERANK_SCORE_FUSION_ALPHA: Optional[float] = Field(
+        default=None, description="Score fusion alpha parameter"
+    )
 
     # Legacy reranker compatibility
     @property
@@ -163,53 +167,23 @@ class Settings(BaseSettings):
 
     # Relational database
     DATABASE_URL: str = "sqlite:///./data/gustobot.db"
+    SQL_DATABASE_URL: Optional[str] = None
 
     # LightRAG configuration
     LIGHTRAG_WORKING_DIR: str = Field(
-        default="./data/lightrag",
-        description="LightRAG 工作目录，用于存储索引和缓存"
+        default="./data/lightrag", description="LightRAG 工作目录，用于存储索引和缓存"
     )
-    LIGHTRAG_RETRIEVAL_MODE: str = Field(
-        default="hybrid",
-        description="LightRAG 检索模式: local, global, hybrid, naive, mix, bypass"
+    LIGHTRAG_RETRIEVAL_MODE: Literal["naive", "local", "global", "hybrid", "mix", "bypass"] = Field(
+        default="hybrid", description="LightRAG 检索模式: local, global, hybrid, naive, mix, bypass"
     )
-    LIGHTRAG_TOP_K: int = Field(
-        default=10,
-        description="LightRAG 检索返回的top-k结果数量"
-    )
+    LIGHTRAG_TOP_K: int = Field(default=10, description="LightRAG 检索返回的top-k结果数量")
     LIGHTRAG_MAX_TOKEN_SIZE: int = Field(
-        default=4096,
-        description="LightRAG 文本单元的最大token数量"
+        default=4096, description="LightRAG 文本单元的最大token数量"
     )
-    LIGHTRAG_ENABLE_NEO4J: bool = Field(
-        default=True,
-        description="是否使用Neo4j作为LightRAG的图存储后端"
-    )
-    LIGHTRAG_ENABLE_MILVUS: bool = Field(
-        default=False,
-        description="是否使用Milvus作为LightRAG的向量存储后端（默认使用内置向量存储）"
-    )
-    INIT_LIGHTRAG_ON_BUILD: bool = Field(
-        default=True,
-        description="Docker构建时是否初始化LightRAG"
-    )
+    INIT_LIGHTRAG_ON_BUILD: bool = Field(default=True, description="Docker构建时是否初始化LightRAG")
     LIGHTRAG_INIT_LIMIT: Optional[int] = Field(
-        default=None,
-        description="LightRAG初始化时的菜谱数量限制，None为全部"
+        default=None, description="LightRAG初始化时的菜谱数量限制，None为全部"
     )
-
-    # Neo4j configuration
-    NEO4J_URI: str = "bolt://neo4j:7687"
-    NEO4J_USER: Optional[str] = None
-    NEO4J_PASSWORD: Optional[str] = None
-    NEO4J_DATABASE: str = "neo4j"
-    NEO4J_DEFAULT_GRAPH_QUERY: str = "MATCH (a)-[r]-(b) RETURN a, r, b LIMIT 100"
-    NEO4J_GRAPH_CACHE_PATH: str = "data/neo4j/graph.json"
-    NEO4J_MAX_CONNECTION_LIFETIME: Optional[int] = None
-    NEO4J_BOOTSTRAP_JSON: bool = True
-    NEO4J_BOOTSTRAP_FORCE: bool = False
-    NEO4J_RECIPE_JSON_PATH: str = "data/recipe.json"
-    NEO4J_INGREDIENT_JSON_PATH: Optional[str] = "data/excipients.json"
 
     # Agent behaviour
     MAX_ITERATIONS: int = 10
@@ -232,24 +206,46 @@ class Settings(BaseSettings):
     KB_LLM_BASE_URL: Optional[str] = Field(default=None, description="LLM base URL for kb_ingest")
     KB_LLM_TEMPERATURE: float = Field(default=0.3, description="LLM temperature for kb_ingest")
     KB_USE_LLM: bool = Field(default=True, description="Whether kb_ingest uses an LLM pipeline")
-    KB_EMBEDDING_PROVIDER: str = Field(default="openai", description="Embedding provider for kb_ingest")
-    KB_EMBEDDING_MODEL: Optional[str] = Field(default=None, description="Embedding model for kb_ingest")
-    KB_EMBEDDING_API_KEY: Optional[str] = Field(default=None, description="Embedding API key for kb_ingest")
+    KB_EMBEDDING_PROVIDER: str = Field(
+        default="openai", description="Embedding provider for kb_ingest"
+    )
+    KB_EMBEDDING_MODEL: Optional[str] = Field(
+        default=None, description="Embedding model for kb_ingest"
+    )
+    KB_EMBEDDING_API_KEY: Optional[str] = Field(
+        default=None, description="Embedding API key for kb_ingest"
+    )
     KB_EMBEDDING_BASE_URL: Optional[str] = Field(
         default=None, description="Embedding base URL for kb_ingest"
     )
-    KB_EMBEDDING_DIMENSION: int = Field(default=1024, description="Embedding dimension for kb_ingest")
-    KB_RERANK_ENABLED: bool = Field(default=False, description="Whether kb_ingest uses a reranker service")
-    KB_RERANK_PROVIDER: Optional[str] = Field(default=None, description="Reranker provider for kb_ingest")
-    KB_RERANK_BASE_URL: Optional[str] = Field(default=None, description="Reranker base URL for kb_ingest")
-    KB_RERANK_ENDPOINT: Optional[str] = Field(default=None, description="Reranker endpoint for kb_ingest")
-    KB_RERANK_API_KEY: Optional[str] = Field(default=None, description="Reranker API key for kb_ingest")
+    KB_EMBEDDING_DIMENSION: int = Field(
+        default=1024, description="Embedding dimension for kb_ingest"
+    )
+    KB_RERANK_ENABLED: bool = Field(
+        default=False, description="Whether kb_ingest uses a reranker service"
+    )
+    KB_RERANK_PROVIDER: Optional[str] = Field(
+        default=None, description="Reranker provider for kb_ingest"
+    )
+    KB_RERANK_BASE_URL: Optional[str] = Field(
+        default=None, description="Reranker base URL for kb_ingest"
+    )
+    KB_RERANK_ENDPOINT: Optional[str] = Field(
+        default=None, description="Reranker endpoint for kb_ingest"
+    )
+    KB_RERANK_API_KEY: Optional[str] = Field(
+        default=None, description="Reranker API key for kb_ingest"
+    )
     KB_RERANK_MODEL: Optional[str] = Field(default=None, description="Reranker model for kb_ingest")
     KB_RERANK_MAX_CANDIDATES: int = Field(
         default=20, description="Max candidates for kb_ingest reranker when enabled"
     )
-    KB_RERANK_TOP_N: int = Field(default=6, description="Top N results returned by kb_ingest reranker")
-    KB_RERANK_TIMEOUT: int = Field(default=30, description="Timeout for kb_ingest reranker requests")
+    KB_RERANK_TOP_N: int = Field(
+        default=6, description="Top N results returned by kb_ingest reranker"
+    )
+    KB_RERANK_TIMEOUT: int = Field(
+        default=30, description="Timeout for kb_ingest reranker requests"
+    )
     KB_RERANK_SCORE_FUSION_ALPHA: float = Field(
         default=0.5, description="Score fusion alpha for kb_ingest reranker"
     )
@@ -290,7 +286,10 @@ class Settings(BaseSettings):
     )
     KB_EXTERNAL_SEARCH_URL: Optional[str] = Field(
         default=None,
-        description="External HTTP endpoint for KB fallback search (e.g., http://localhost:8000/api/search)",
+        description=(
+            "External HTTP endpoint for KB fallback search "
+            "(e.g., http://localhost:8000/api/search)"
+        ),
     )
     KB_EXTERNAL_SEARCH_TIMEOUT: float = Field(
         default=20.0,
@@ -310,35 +309,23 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = Field(
         default="http://localhost:3000,http://localhost:5173",
-        description="Comma-separated list of CORS origins"
+        description="Comma-separated list of CORS origins",
     )
 
     # Ollama configuration
     OLLAMA_BASE_URL: str = Field(
-        default="http://localhost:11434",
-        description="Ollama service base URL"
+        default="http://localhost:11434", description="Ollama service base URL"
     )
     OLLAMA_EMBEDDING_MODEL: str = Field(
-        default="nomic-embed-text",
-        description="Ollama embedding model for semantic caching"
+        default="nomic-embed-text", description="Ollama embedding model for semantic caching"
     )
 
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS_ORIGINS string to list"""
-        if isinstance(self.CORS_ORIGINS, str):
-            return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
-        return list(self.CORS_ORIGINS)
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True,
-        "extra": "ignore"
-    }
-
-    @property
-    def NEO4J_USERNAME(self) -> Optional[str]:  # pragma: no cover - convenience alias
-        return self.NEO4J_USER
+    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
 
 settings = Settings()

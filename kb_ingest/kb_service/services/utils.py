@@ -1,13 +1,17 @@
-
 import hashlib
 import json
 import re
 from datetime import date, datetime
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Union
 
 import pandas as pd
 
 from kb_service.core.config import Config
+
+
+def is_missing_value(value: object) -> bool:
+    """Recognize scalar database nulls without coercing arrays or containers."""
+    return value is None or (pd.api.types.is_scalar(value) and bool(pd.isna(value)))
 
 
 def flatten_row(row: Mapping[str, object], config: Config) -> str:
@@ -34,13 +38,8 @@ def flatten_row(row: Mapping[str, object], config: Config) -> str:
             seen[normalized_key] = value
 
     for normalized_key, value in seen.items():
-        if value is None:
+        if is_missing_value(value):
             continue
-        try:
-            if not pd.notna(value):
-                continue
-        except Exception:  # pragma: no cover
-            pass
         value_str = str(value).strip()
         if value_str in {"", "-", "nan", "NaN"}:
             continue
@@ -52,18 +51,13 @@ def flatten_row(row: Mapping[str, object], config: Config) -> str:
     return flat_text
 
 
-def _nonempty(value) -> bool:
-    if value is None:
+def _nonempty(value: object) -> bool:
+    if is_missing_value(value):
         return False
-    try:
-        if not pd.notna(value):
-            return False
-    except Exception:  # pragma: no cover
-        pass
     return str(value).strip() not in {"", "-", "nan", "NaN", "None", "null"}
 
 
-def compute_content_hash(data: Dict | str, algorithm: str = "md5") -> str:
+def compute_content_hash(data: Union[Dict, str], algorithm: str = "md5") -> str:
     """
     计算数据的哈希值，用于检测内容变化
 
@@ -84,7 +78,7 @@ def compute_content_hash(data: Dict | str, algorithm: str = "md5") -> str:
     if algorithm == "sha256":
         hasher = hashlib.sha256()
     else:
-        hasher = hashlib.md5()
+        hasher = hashlib.md5(usedforsecurity=False)
 
     hasher.update(content.encode("utf-8"))
     return hasher.hexdigest()

@@ -1,27 +1,28 @@
-
 import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from string import Template
-from typing import Dict, Iterable, Mapping, Optional, Tuple
+from typing import Dict, Iterable, Mapping, Optional, Tuple, Union
 
 
-@dataclass(slots=True)
+@dataclass
 class SchemaColumn:
     name: str
     data_type: Optional[str] = None
     comment: Optional[str] = None
 
 
-@dataclass(slots=True)
+@dataclass
 class PromptTemplate:
     system: str
     user: str
 
 
-DEFAULT_SYSTEM_PROMPT = "你是一名专业的数据描述专家，负责将结构化数据转换为通顺的自然语言摘要，以便进行语义搜索。"
+DEFAULT_SYSTEM_PROMPT = (
+    "你是一名专业的数据描述专家，负责将结构化数据转换为通顺的自然语言摘要，以便进行语义搜索。"
+)
 
 DEFAULT_USER_TEMPLATE = Template(
     """请基于以下信息生成一段完整、通顺、便于检索的描述，并直接输出最终文本：
@@ -45,7 +46,7 @@ class PromptManager:
 
     def __init__(
         self,
-        templates: Optional[Mapping[str, Mapping[str, str] | str]] = None,
+        templates: Optional[Mapping[str, Union[Mapping[str, str], str]]] = None,
         config_path: Optional[str] = None,
     ) -> None:
         loaded_templates = self._load_from_path(config_path) if config_path else {}
@@ -58,19 +59,18 @@ class PromptManager:
         )
         self.table_templates: Dict[str, PromptTemplate] = {}
 
-        for name, tpl in loaded_templates.items():
-            self.register_template(name, tpl)
+        for name, template in loaded_templates.items():
+            self.register_template(name, template)
 
-    def register_template(self, key: str, template: Mapping[str, str] | str) -> None:
-        prompt_tpl = self._coerce_template(template)
-        self.table_templates[key] = prompt_tpl
+    def register_template(self, key: str, template: Union[Mapping[str, str], str]) -> None:
+        self.table_templates[key] = self._coerce_template(template)
 
     def get_prompt(
         self,
         table_name: str,
         row_data: Mapping[str, object],
         schema: Optional[Iterable[SchemaColumn]] = None,
-        override_template: Optional[Mapping[str, str] | str] = None,
+        override_template: Optional[Union[Mapping[str, str], str]] = None,
         context_table_name: Optional[str] = None,
     ) -> Tuple[str, str]:
         template = self._resolve_template(table_name, override_template)
@@ -86,7 +86,7 @@ class PromptManager:
     def _resolve_template(
         self,
         table_name: str,
-        override: Optional[Mapping[str, str] | str],
+        override: Optional[Union[Mapping[str, str], str]],
     ) -> PromptTemplate:
         if override is not None:
             return self._coerce_template(override)
@@ -94,13 +94,11 @@ class PromptManager:
             return self.table_templates[table_name]
         return self.default_template
 
-    def _coerce_template(self, tpl: Mapping[str, str] | str) -> PromptTemplate:
-        if isinstance(tpl, PromptTemplate):  # pragma: no cover
-            return tpl
-        if isinstance(tpl, str):
-            return PromptTemplate(system=DEFAULT_SYSTEM_PROMPT, user=tpl)
-        system = tpl.get("system") or DEFAULT_SYSTEM_PROMPT
-        user = tpl.get("user") or DEFAULT_USER_TEMPLATE.template
+    def _coerce_template(self, template: Union[Mapping[str, str], str]) -> PromptTemplate:
+        if isinstance(template, str):
+            return PromptTemplate(system=DEFAULT_SYSTEM_PROMPT, user=template)
+        system = template.get("system", DEFAULT_SYSTEM_PROMPT)
+        user = template.get("user", DEFAULT_USER_TEMPLATE.template)
         return PromptTemplate(system=system, user=user)
 
     def _format_row_data(self, row_data: Mapping[str, object]) -> str:
@@ -116,7 +114,7 @@ class PromptManager:
 
     def _serialize_row_data(self, row_data: Mapping[str, object]) -> Mapping[str, object]:
         """序列化row_data，处理datetime等不可序列化的对象"""
-        serialized = {}
+        serialized: Dict[str, object] = {}
         for key, value in row_data.items():
             if isinstance(value, datetime):
                 serialized[key] = value.strftime("%Y-%m-%d %H:%M:%S")
@@ -135,7 +133,7 @@ class PromptManager:
             parts.append(f"{col.name}{'（' + meta + '）' if meta else ''}")
         return "；".join(parts)
 
-    def _load_from_path(self, path: str) -> Dict[str, Mapping[str, str] | str]:
+    def _load_from_path(self, path: str) -> Dict[str, Union[Mapping[str, str], str]]:
         file_path = Path(path)
         if not file_path.exists():
             return {}
@@ -144,7 +142,7 @@ class PromptManager:
             if not isinstance(data, dict):
                 raise ValueError("Prompt config file must be a JSON object")
             return data
-        except Exception as exc:  # pragma: no cover
+        except (OSError, ValueError) as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to load prompt config: {path}") from exc
 
 

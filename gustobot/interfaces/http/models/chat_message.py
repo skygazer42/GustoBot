@@ -1,10 +1,11 @@
 """
 Pydantic schemas for chat session messages and snapshots.
 """
+
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatMessageBase(BaseModel):
@@ -12,14 +13,10 @@ class ChatMessageBase(BaseModel):
 
     session_id: str = Field(..., description="Parent session UUID")
     message_type: str = Field(
-        ...,
-        description="Message type: user_query, agent_response, knowledge, error, etc."
+        ..., description="Message type: user_query, agent_response, knowledge, error, etc."
     )
     content: str = Field(..., description="Message content")
-    message_metadata: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Additional metadata"
-    )
+    message_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     order_index: int = Field(..., description="Message order within session")
 
 
@@ -42,8 +39,7 @@ class ChatMessageResponse(ChatMessageBase):
     id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatSessionSnapshotBase(BaseModel):
@@ -51,10 +47,7 @@ class ChatSessionSnapshotBase(BaseModel):
 
     session_id: str = Field(..., description="Parent session UUID")
     query: str = Field(..., description="Original user query")
-    response_data: Dict[str, Any] = Field(
-        ...,
-        description="Complete response data"
-    )
+    response_data: Dict[str, Any] = Field(..., description="Complete response data")
 
 
 class ChatSessionSnapshotCreate(ChatSessionSnapshotBase):
@@ -69,5 +62,4 @@ class ChatSessionSnapshotResponse(ChatSessionSnapshotBase):
     id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

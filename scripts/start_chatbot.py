@@ -1,113 +1,107 @@
-"""
-启动 GustoBot 聊天系统
+"""同时启动本地后端 API 和前端 Vite 开发服务器。"""
 
-同时启动后端 API 服务器和前端 Vite 开发服务器
-"""
 import os
-import sys
+import shutil
+import signal
 import subprocess
+import sys
 import time
-import webbrowser
+from contextlib import ExitStack, suppress
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = PROJECT_ROOT / "web"
-sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def _ensure_env_hint() -> None:
-    if os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"):
-        return
-    print("⚠️  警告: 未设置 LLM_API_KEY (或 OPENAI_API_KEY) 环境变量")
-    print("   请先复制并编辑 .env：cp .env.example .env")
-
-
-def start_backend() -> subprocess.Popen:
-    """启动后端 FastAPI 服务器"""
-    print("🚀 启动后端服务器...")
-    _ensure_env_hint()
-
-    # 启动 uvicorn
-    cmd = [
-        sys.executable, "-m", "uvicorn",
+def start_backend() -> subprocess.Popen[bytes]:
+    print("启动后端服务器...")
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
         "gustobot.main:application",
         "--reload",
-        "--host", "0.0.0.0",
-        "--port", "8000"
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
     ]
-    return subprocess.Popen(cmd, cwd=PROJECT_ROOT)
+    return subprocess.Popen(
+        command,
+        cwd=PROJECT_ROOT,
+        start_new_session=sys.platform != "win32",
+        creationflags=creationflags,
+    )
 
 
-def start_frontend() -> subprocess.Popen:
-    """启动前端 Vite 开发服务器"""
-    print("🌐 启动前端 Vite 服务器...")
+def start_frontend() -> subprocess.Popen[bytes]:
+    if not WEB_ROOT.is_dir():
+        raise FileNotFoundError(f"web 目录不存在: {WEB_ROOT}")
+    npm = shutil.which("npm")
+    if npm is None:
+        raise FileNotFoundError("找不到 npm，请先安装 Node.js 并将 npm 加入 PATH")
 
-    if not WEB_ROOT.exists():
-        raise RuntimeError(f"web 目录不存在: {WEB_ROOT}")
+    if not (WEB_ROOT / "node_modules").is_dir():
+        print("安装前端依赖...")
+        subprocess.run([npm, "install"], cwd=WEB_ROOT, check=True)
 
-    vite_port = os.getenv("VITE_PORT", "5173")
+    print("启动前端服务器，Vite 将打开实际监听地址...")
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+    command = [npm, "run", "dev", "--", "--host", "0.0.0.0", "--open"]
+    return subprocess.Popen(
+        command,
+        cwd=WEB_ROOT,
+        start_new_session=sys.platform != "win32",
+        creationflags=creationflags,
+    )
 
-    # Install deps if needed
-    if not (WEB_ROOT / "node_modules").exists():
-        print("📦 安装前端依赖 (npm install)...")
-        subprocess.run(["npm", "install"], cwd=WEB_ROOT, check=True)
 
-    cmd = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(vite_port)]
-    return subprocess.Popen(cmd, cwd=WEB_ROOT)
+def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    if sys.platform == "win32":
+        if process.poll() is None:
+            # npm 和 uvicorn reload 都会创建子进程，只终止父进程会留下服务。
+            result = subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False, timeout=10
+            )
+            if result.returncode != 0 and process.poll() is None:
+                result.check_returncode()
+        process.wait(timeout=10)
+        return
 
-
-def open_browser() -> None:
-    """打开浏览器"""
-    time.sleep(3)  # 等待服务器启动
-    vite_port = os.getenv("VITE_PORT", "5173")
-    webbrowser.open(f"http://localhost:{vite_port}/")
-
-def main():
-    """主函数"""
-    print("="*60)
-    print("🤖 GustoBot 智能菜谱助手")
-    print("="*60)
-    print("\n正在启动服务...\n")
-
-    backend_proc = start_backend()
-    time.sleep(1)
-    frontend_proc = start_frontend()
-
-    open_browser()
-
-    print("\n" + "="*60)
-    print("✅ 服务已启动!")
-    print("\n访问地址:")
-    vite_port = os.getenv("VITE_PORT", "5173")
-    print(f"  • 前端界面: http://localhost:{vite_port}/")
-    print("  • API 文档: http://localhost:8000/docs")
-    print("\n使用说明:")
-    print("  1. 在浏览器中打开前端界面")
-    print("  2. 可以选择全屏模式或右下角小部件")
-    print("  3. 输入问题，系统会自动路由并回复")
-    print("\n按 Ctrl+C 停止服务")
-    print("="*60)
-
+    with suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
     try:
-        while True:
-            if backend_proc.poll() is not None:
-                raise RuntimeError("后端进程已退出")
-            if frontend_proc.poll() is not None:
-                raise RuntimeError("前端进程已退出")
-            time.sleep(1)
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=10)
+
+
+def main() -> None:
+    print("正在启动 GustoBot 开发服务...")
+    try:
+        with ExitStack() as cleanup:
+            backend = start_backend()
+            cleanup.callback(_stop_process, backend)
+            frontend = start_frontend()
+            cleanup.callback(_stop_process, frontend)
+
+            print("服务进程已启动，地址见服务输出。按 Ctrl+C 停止。")
+            while True:
+                for name, process in (("后端", backend), ("前端", frontend)):
+                    returncode = process.poll()
+                    if returncode is not None:
+                        raise RuntimeError(f"{name}进程已退出，退出码: {returncode}")
+                time.sleep(1)
     except KeyboardInterrupt:
-        print("\n\n👋 正在停止服务...")
-        for proc in (frontend_proc, backend_proc):
-            try:
-                proc.terminate()
-            except Exception:
-                pass
-        for proc in (frontend_proc, backend_proc):
-            try:
-                proc.wait(timeout=10)
-            except Exception:
-                pass
-        sys.exit(0)
+        print("服务已停止。")
+
 
 if __name__ == "__main__":
     main()

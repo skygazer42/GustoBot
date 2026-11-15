@@ -6,26 +6,25 @@ They only verify that we keep stable public-facing interfaces (routes/env vars)
 even as internals evolve.
 """
 
-
 import sys
 from pathlib import Path
 from typing import Set, Tuple
 
+from fastapi import FastAPI
+from starlette.routing import Route
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def _collect_route_methods(app) -> Set[Tuple[str, str]]:
+def _collect_route_methods(app: FastAPI) -> Set[Tuple[str, str]]:
     methods: Set[Tuple[str, str]] = set()
-    for route in getattr(app, "routes", []):
-        route_path = getattr(route, "path", None)
-        route_methods = getattr(route, "methods", None)
-        if not route_path or not route_methods:
+    for route in app.routes:
+        if not isinstance(route, Route) or route.methods is None:
             continue
-        for method in route_methods:
-            methods.add((route_path, method))
+        for method in route.methods:
+            methods.add((route.path, method))
     return methods
 
 

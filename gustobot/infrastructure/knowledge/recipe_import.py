@@ -4,7 +4,6 @@ Deterministic helpers for importing recipe-like data into the KB API.
 This module must stay pure (no Milvus/LLM calls) so it can be tested offline.
 """
 
-
 import re
 from typing import Any, Dict, List, Optional
 
@@ -103,11 +102,10 @@ def recipe_json_entry_to_recipe(name: str, entry: Dict[str, Any]) -> Dict[str, A
 
     payload: Dict[str, Any] = {
         "name": name,
-        "category": entry.get("类型") or None,
-        "time": entry.get("耗时") or None,
+        "category": entry.get("类型"),
+        "time": entry.get("耗时"),
         "ingredients": ingredients or None,
         "steps": steps or None,
         "tips": tips,
     }
     return payload
-

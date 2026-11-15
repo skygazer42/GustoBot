@@ -3,11 +3,14 @@ CRUD operations for ChatSession model.
 
 Lightweight user ID system - group sessions by user_id without authentication.
 """
+
 from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import and_, desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
+
+from gustobot.infrastructure.core.database import commit_session
 
 from gustobot.infrastructure.persistence.crud.base import CRUDBase
 from gustobot.infrastructure.persistence.db.models.chat_session import ChatSession
@@ -18,12 +21,7 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
     """CRUD operations for ChatSession model."""
 
     def get_all(
-        self,
-        db: Session,
-        *,
-        skip: int = 0,
-        limit: int = 100,
-        active_only: bool = True
+        self, db: Session, *, skip: int = 0, limit: int = 100, active_only: bool = True
     ) -> List[ChatSession]:
         """
         Get all chat sessions (across all users).
@@ -40,7 +38,7 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
         query = db.query(self.model)
 
         if active_only:
-            query = query.filter(self.model.is_active == True)  # noqa: E712
+            query = query.filter(self.model.is_active.is_(True))
 
         return query.order_by(desc(self.model.updated_at)).offset(skip).limit(limit).all()
 
@@ -51,7 +49,7 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
         user_id: str,
         skip: int = 0,
         limit: int = 100,
-        active_only: bool = True
+        active_only: bool = True,
     ) -> List[ChatSession]:
         """
         Get chat sessions for a specific user.
@@ -69,13 +67,11 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
         query = db.query(self.model).filter(self.model.user_id == user_id)
 
         if active_only:
-            query = query.filter(self.model.is_active == True)  # noqa: E712
+            query = query.filter(self.model.is_active.is_(True))
 
         return query.order_by(desc(self.model.updated_at)).offset(skip).limit(limit).all()
 
-    def get_with_messages(
-        self, db: Session, *, session_id: str
-    ) -> Optional[ChatSession]:
+    def get_with_messages(self, db: Session, *, session_id: str) -> Optional[ChatSession]:
         """
         Get a chat session with its messages loaded.
 
@@ -88,18 +84,12 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
         """
         return (
             db.query(self.model)
-            .filter(
-                and_(
-                    self.model.id == session_id,
-                    self.model.is_active == True  # noqa: E712
-                )
-            )
+            .options(selectinload(self.model.messages))
+            .filter(and_(self.model.id == session_id, self.model.is_active.is_(True)))
             .first()
         )
 
-    def update_activity(
-        self, db: Session, *, session_id: str
-    ) -> Optional[ChatSession]:
+    def update_activity(self, db: Session, *, session_id: str) -> Optional[ChatSession]:
         """
         Update the session's last activity timestamp.
 
@@ -111,10 +101,11 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
             Updated session or None if not found
         """
         session = db.query(self.model).filter(self.model.id == session_id).first()
-        if session:
-            session.updated_at = datetime.utcnow()
-            db.commit()
-            db.refresh(session)
+        if session is None:
+            return None
+        session.updated_at = datetime.utcnow()
+        commit_session(db)
+        db.refresh(session)
         return session
 
     def soft_delete(self, db: Session, *, session_id: str) -> Optional[ChatSession]:
@@ -129,10 +120,11 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
             Deleted session or None if not found
         """
         session = db.query(self.model).filter(self.model.id == session_id).first()
-        if session:
-            session.is_active = False
-            db.commit()
-            db.refresh(session)
+        if session is None:
+            return None
+        session.is_active = False
+        commit_session(db)
+        db.refresh(session)
         return session
 
     def restore(self, db: Session, *, session_id: str) -> Optional[ChatSession]:
@@ -147,10 +139,11 @@ class CRUDChatSession(CRUDBase[ChatSession, ChatSessionCreate, ChatSessionUpdate
             Restored session or None if not found
         """
         session = db.query(self.model).filter(self.model.id == session_id).first()
-        if session:
-            session.is_active = True
-            db.commit()
-            db.refresh(session)
+        if session is None:
+            return None
+        session.is_active = True
+        commit_session(db)
+        db.refresh(session)
         return session
 
     def count_by_user(self, db: Session, *, user_id: str) -> int:

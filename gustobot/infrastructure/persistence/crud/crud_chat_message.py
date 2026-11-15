@@ -1,13 +1,19 @@
 """
 CRUD operations for chat session messages and snapshots.
 """
-from typing import List, Optional
+
+from typing import List, NoReturn, Optional
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from gustobot.infrastructure.core.database import commit_session
+
 from gustobot.infrastructure.persistence.crud.base import CRUDBase
-from gustobot.infrastructure.persistence.db.models.chat_message import ChatMessage, ChatSessionSnapshot
+from gustobot.infrastructure.persistence.db.models.chat_message import (
+    ChatMessage,
+    ChatSessionSnapshot,
+)
 from gustobot.interfaces.http.models.chat_message import (
     ChatMessageCreate,
     ChatMessageUpdate,
@@ -19,12 +25,7 @@ class CRUDChatMessage(CRUDBase[ChatMessage, ChatMessageCreate, ChatMessageUpdate
     """CRUD operations for ChatMessage model."""
 
     def get_by_session(
-        self,
-        db: Session,
-        *,
-        session_id: str,
-        skip: int = 0,
-        limit: int = 100
+        self, db: Session, *, session_id: str, skip: int = 0, limit: int = 100
     ) -> List[ChatMessage]:
         """
         Get messages for a specific session, ordered by index.
@@ -47,9 +48,7 @@ class CRUDChatMessage(CRUDBase[ChatMessage, ChatMessageCreate, ChatMessageUpdate
             .all()
         )
 
-    def get_latest_by_session(
-        self, db: Session, *, session_id: str
-    ) -> Optional[ChatMessage]:
+    def get_latest_by_session(self, db: Session, *, session_id: str) -> Optional[ChatMessage]:
         """
         Get the most recent message in a session.
 
@@ -67,12 +66,7 @@ class CRUDChatMessage(CRUDBase[ChatMessage, ChatMessageCreate, ChatMessageUpdate
             .first()
         )
 
-    def create_batch(
-        self,
-        db: Session,
-        *,
-        messages: List[ChatMessageCreate]
-    ) -> List[ChatMessage]:
+    def create_batch(self, db: Session, *, messages: List[ChatMessageCreate]) -> List[ChatMessage]:
         """
         Create multiple messages in a single transaction.
 
@@ -85,11 +79,11 @@ class CRUDChatMessage(CRUDBase[ChatMessage, ChatMessageCreate, ChatMessageUpdate
         """
         db_messages = []
         for message_data in messages:
-            db_message = self.model(**message_data.dict())
+            db_message = self.model(**message_data.model_dump())
             db.add(db_message)
             db_messages.append(db_message)
 
-        db.commit()
+        commit_session(db)
         for db_message in db_messages:
             db.refresh(db_message)
         return db_messages
@@ -106,18 +100,14 @@ class CRUDChatMessage(CRUDBase[ChatMessage, ChatMessageCreate, ChatMessageUpdate
             .filter(self.model.session_id == session_id)
             .delete(synchronize_session=False)
         )
-        db.commit()
-        return int(deleted or 0)
+        commit_session(db)
+        return deleted
 
 
-class CRUDChatSessionSnapshot(
-    CRUDBase[ChatSessionSnapshot, ChatSessionSnapshotCreate, None]
-):
-    """CRUD operations for chat session snapshot model."""
+class CRUDChatSessionSnapshot(CRUDBase[ChatSessionSnapshot, ChatSessionSnapshotCreate, NoReturn]):
+    """Snapshot operations; updates accept field mappings, with no update schema."""
 
-    def get_by_session(
-        self, db: Session, *, session_id: str
-    ) -> List[ChatSessionSnapshot]:
+    def get_by_session(self, db: Session, *, session_id: str) -> List[ChatSessionSnapshot]:
         """
         Get all snapshots for a session, ordered by creation time (newest first).
 

@@ -17,7 +17,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Iterable, List, Optional, Set, Tuple
 
 import httpx
 
@@ -44,7 +44,7 @@ def _openapi_operations(client: httpx.Client, base_url: str) -> Set[Tuple[str, s
     spec = resp.json()
 
     operations: Set[Tuple[str, str]] = set()
-    for path, methods in (spec.get("paths") or {}).items():
+    for path, methods in spec["paths"].items():
         if not isinstance(methods, dict):
             continue
         for method in methods.keys():
@@ -55,7 +55,7 @@ def _openapi_operations(client: httpx.Client, base_url: str) -> Set[Tuple[str, s
 
 def _iter_sse_data_lines(response: httpx.Response) -> Iterable[str]:
     for raw in response.iter_lines():
-        line = (raw or "").strip()
+        line = raw.strip()
         if not line:
             continue
         if line.startswith("data:"):
@@ -129,7 +129,9 @@ def test_backend(*, base_url: str, include_destructive: bool) -> List[CheckResul
             elif resp.status_code == 200:
                 ok("GET /")
             else:
-                fail("GET /", f"status={resp.status_code} location={resp.headers.get('location')!r}")
+                fail(
+                    "GET /", f"status={resp.status_code} location={resp.headers.get('location')!r}"
+                )
         except Exception as exc:
             fail("GET /", str(exc))
 
@@ -196,7 +198,7 @@ def test_backend(*, base_url: str, include_destructive: bool) -> List[CheckResul
                     seen += 1
                     try:
                         chunk = json.loads(data_line)
-                    except Exception:
+                    except json.JSONDecodeError:
                         continue
                     if isinstance(chunk, dict) and chunk.get("type") == "done":
                         done = True
@@ -309,7 +311,10 @@ def test_backend(*, base_url: str, include_destructive: bool) -> List[CheckResul
             if resp.status_code == 204:
                 ok("DELETE /api/v1/sessions/{session_id}")
             else:
-                fail("DELETE /api/v1/sessions/{session_id}", f"status={resp.status_code} body={resp.text[:120]!r}")
+                fail(
+                    "DELETE /api/v1/sessions/{session_id}",
+                    f"status={resp.status_code} body={resp.text[:120]!r}",
+                )
         except Exception as exc:
             fail("DELETE /api/v1/sessions/{session_id}", str(exc))
 
@@ -373,102 +378,139 @@ def test_backend(*, base_url: str, include_destructive: bool) -> List[CheckResul
             except Exception as exc:
                 fail("DELETE /api/v1/upload/{file_id}", str(exc))
 
-        # Knowledge endpoints -------------------------------------------------
-        try:
-            resp = client.get(f"{base_url}/api/v1/knowledge/stats")
-            record("GET", "/api/v1/knowledge/stats")
-            _expect_json(resp)
-            ok("GET /api/v1/knowledge/stats")
-        except Exception as exc:
-            fail("GET /api/v1/knowledge/stats", str(exc))
-
-        try:
-            resp = client.post(f"{base_url}/api/v1/knowledge/search", json={"query": "红烧肉", "top_k": 2})
-            record("POST", "/api/v1/knowledge/search")
-            data = _expect_json(resp)
-            ok("POST /api/v1/knowledge/search", f"count={data.get('count')}" if isinstance(data, dict) else "")
-        except Exception as exc:
-            fail("POST /api/v1/knowledge/search", str(exc))
-
-        added_recipe_base_id: Optional[str] = None
-        try:
-            recipe_id = f"recipe_{uuid.uuid4().hex[:8]}"
-            resp = client.post(
-                f"{base_url}/api/v1/knowledge/recipes",
-                json={
-                    "id": recipe_id,
-                    "name": "探针测试菜",
-                    "category": "probe",
-                    "time": "1分钟",
-                    "ingredients": ["水"],
-                    "steps": ["加热"],
-                    "tips": "probe",
-                },
-            )
-            record("POST", "/api/v1/knowledge/recipes")
-            data = _expect_json(resp)
-            added_recipe_base_id = data.get("recipe_id") if isinstance(data, dict) else recipe_id
-            ok("POST /api/v1/knowledge/recipes", f"recipe_id={added_recipe_base_id}")
-        except Exception as exc:
-            fail("POST /api/v1/knowledge/recipes", str(exc))
-
-        try:
-            resp = client.post(
-                f"{base_url}/api/v1/knowledge/recipes/batch",
-                json=[
-                    {"name": "批量菜A", "category": "probe", "ingredients": ["水"], "steps": ["加热"]},
-                    {"name": "批量菜B", "category": "probe", "ingredients": ["水"], "steps": ["加热"]},
-                ],
-            )
-            record("POST", "/api/v1/knowledge/recipes/batch")
-            data = _expect_json(resp)
-            ok("POST /api/v1/knowledge/recipes/batch", f"{data.get('statistics')}" if isinstance(data, dict) else "")
-        except Exception as exc:
-            fail("POST /api/v1/knowledge/recipes/batch", str(exc))
-
-        if added_recipe_base_id:
+        if ("GET", "/api/v1/knowledge/stats") in openapi_ops:
+            # Knowledge endpoints -------------------------------------------------
             try:
-                chunk_id = f"{added_recipe_base_id}_0"
-                resp = client.delete(f"{base_url}/api/v1/knowledge/recipes/{chunk_id}")
-                record("DELETE", "/api/v1/knowledge/recipes/{recipe_id}")
+                resp = client.get(f"{base_url}/api/v1/knowledge/stats")
+                record("GET", "/api/v1/knowledge/stats")
                 _expect_json(resp)
-                ok("DELETE /api/v1/knowledge/recipes/{recipe_id}", f"deleted={chunk_id}")
+                ok("GET /api/v1/knowledge/stats")
             except Exception as exc:
-                fail("DELETE /api/v1/knowledge/recipes/{recipe_id}", str(exc))
+                fail("GET /api/v1/knowledge/stats", str(exc))
 
-        try:
-            resp = client.get(f"{base_url}/api/v1/knowledge/graph")
-            record("GET", "/api/v1/knowledge/graph")
-            _expect_json(resp)
-            ok("GET /api/v1/knowledge/graph")
-        except Exception as exc:
-            fail("GET /api/v1/knowledge/graph", str(exc))
+            try:
+                resp = client.post(
+                    f"{base_url}/api/v1/knowledge/search", json={"query": "红烧肉", "top_k": 2}
+                )
+                record("POST", "/api/v1/knowledge/search")
+                data = _expect_json(resp)
+                ok(
+                    "POST /api/v1/knowledge/search",
+                    f"count={data.get('count')}" if isinstance(data, dict) else "",
+                )
+            except Exception as exc:
+                fail("POST /api/v1/knowledge/search", str(exc))
 
-        try:
-            resp = client.post(
-                f"{base_url}/api/v1/knowledge/graph/qa",
-                json={"query": "宫保鸡丁的历史典故是什么", "include_graph": False, "refresh_graph": False},
-            )
-            record("POST", "/api/v1/knowledge/graph/qa")
-            _expect_json(resp)
-            ok("POST /api/v1/knowledge/graph/qa")
-        except Exception as exc:
-            fail("POST /api/v1/knowledge/graph/qa", str(exc))
+            added_recipe_base_id: Optional[str] = None
+            try:
+                recipe_id = f"recipe_{uuid.uuid4().hex[:8]}"
+                resp = client.post(
+                    f"{base_url}/api/v1/knowledge/recipes",
+                    json={
+                        "id": recipe_id,
+                        "name": "探针测试菜",
+                        "category": "probe",
+                        "time": "1分钟",
+                        "ingredients": ["水"],
+                        "steps": ["加热"],
+                        "tips": "probe",
+                    },
+                )
+                record("POST", "/api/v1/knowledge/recipes")
+                data = _expect_json(resp)
+                added_recipe_base_id = (
+                    data.get("recipe_id") if isinstance(data, dict) else recipe_id
+                )
+                ok("POST /api/v1/knowledge/recipes", f"recipe_id={added_recipe_base_id}")
+            except Exception as exc:
+                fail("POST /api/v1/knowledge/recipes", str(exc))
 
-        try:
-            resp = client.delete(f"{base_url}/api/v1/knowledge/clear")
-            record("DELETE", "/api/v1/knowledge/clear")
-            if include_destructive:
-                resp2 = client.delete(f"{base_url}/api/v1/knowledge/clear?confirm=true")
-                resp2.raise_for_status()
-                ok("DELETE /api/v1/knowledge/clear", "cleared")
-            else:
-                if resp.status_code == 400:
+            try:
+                resp = client.post(
+                    f"{base_url}/api/v1/knowledge/recipes/batch",
+                    json=[
+                        {
+                            "name": "批量菜A",
+                            "category": "probe",
+                            "ingredients": ["水"],
+                            "steps": ["加热"],
+                        },
+                        {
+                            "name": "批量菜B",
+                            "category": "probe",
+                            "ingredients": ["水"],
+                            "steps": ["加热"],
+                        },
+                    ],
+                )
+                record("POST", "/api/v1/knowledge/recipes/batch")
+                data = _expect_json(resp)
+                ok(
+                    "POST /api/v1/knowledge/recipes/batch",
+                    f"{data.get('statistics')}" if isinstance(data, dict) else "",
+                )
+            except Exception as exc:
+                fail("POST /api/v1/knowledge/recipes/batch", str(exc))
+
+            if added_recipe_base_id:
+                try:
+                    chunk_id = f"{added_recipe_base_id}_0"
+                    resp = client.delete(f"{base_url}/api/v1/knowledge/recipes/{chunk_id}")
+                    record("DELETE", "/api/v1/knowledge/recipes/{recipe_id}")
+                    _expect_json(resp)
+                    ok("DELETE /api/v1/knowledge/recipes/{recipe_id}", f"deleted={chunk_id}")
+                except Exception as exc:
+                    fail("DELETE /api/v1/knowledge/recipes/{recipe_id}", str(exc))
+
+            try:
+                resp = client.delete(f"{base_url}/api/v1/knowledge/clear")
+                record("DELETE", "/api/v1/knowledge/clear")
+                if include_destructive:
+                    resp2 = client.delete(f"{base_url}/api/v1/knowledge/clear?confirm=true")
+                    resp2.raise_for_status()
+                    ok("DELETE /api/v1/knowledge/clear", "cleared")
+                elif resp.status_code == 400:
                     ok("DELETE /api/v1/knowledge/clear", "confirm required")
                 else:
                     fail("DELETE /api/v1/knowledge/clear", f"expected 400, got {resp.status_code}")
+            except Exception as exc:
+                fail("DELETE /api/v1/knowledge/clear", str(exc))
+
+        # Domain knowledge: validate the shared query and input boundaries.
+        try:
+            resp = client.get(f"{base_url}/api/v1/ontology/domain")
+            record("GET", "/api/v1/ontology/domain")
+            data = _expect_json(resp)
+            ok("GET /api/v1/ontology/domain", f"domain={data['id']}")
         except Exception as exc:
-            fail("DELETE /api/v1/knowledge/clear", str(exc))
+            fail("GET /api/v1/ontology/domain", str(exc))
+
+        empty_graph: dict[str, Any] = {"entities": [], "relations": [], "sources": []}
+        for path, ontology_payload, expected_status in (
+            ("/api/v1/ontology/validate", empty_graph, 200),
+            ("/api/v1/ontology/facts", empty_graph, 422),
+            ("/api/v1/ontology/extract", {"sources": []}, 422),
+        ):
+            try:
+                resp = client.post(f"{base_url}{path}", json=ontology_payload)
+                record("POST", path)
+                if resp.status_code == expected_status:
+                    ok(f"POST {path}", f"status={expected_status}; no index writes")
+                else:
+                    fail(f"POST {path}", f"expected {expected_status}, got {resp.status_code}")
+            except Exception as exc:
+                fail(f"POST {path}", str(exc))
+
+        try:
+            resp = client.post(
+                f"{base_url}/api/v1/ontology/query",
+                json={"question": "当前资料有哪些相关实体和关系？", "mode": "hybrid", "top_k": 3},
+            )
+            record("POST", "/api/v1/ontology/query")
+            _expect_json(resp)
+            ok("POST /api/v1/ontology/query")
+        except Exception as exc:
+            fail("POST /api/v1/ontology/query", str(exc))
 
         # LightRAG endpoints --------------------------------------------------
         try:
@@ -527,7 +569,9 @@ def test_backend(*, base_url: str, include_destructive: bool) -> List[CheckResul
             fail("POST /api/v1/lightrag/insert", str(exc))
 
         try:
-            resp = client.post(f"{base_url}/api/v1/lightrag/test-modes", params={"query": "红烧肉怎么做？"})
+            resp = client.post(
+                f"{base_url}/api/v1/lightrag/test-modes", params={"query": "红烧肉怎么做？"}
+            )
             record("POST", "/api/v1/lightrag/test-modes")
             _expect_json(resp)
             ok("POST /api/v1/lightrag/test-modes")
@@ -594,7 +638,9 @@ def test_ingest_service(*, base_url: str) -> List[CheckResult]:
         # Search endpoints exist in both /api and /api/v1/knowledge prefixes
         for prefix in ["/api", "/api/v1/knowledge"]:
             try:
-                resp = client.post(f"{base_url}{prefix}/search", json={"query": "宫保鸡丁", "top_k": 3})
+                resp = client.post(
+                    f"{base_url}{prefix}/search", json={"query": "宫保鸡丁", "top_k": 3}
+                )
                 record("POST", f"{prefix}/search")
                 if resp.status_code == 200:
                     data = _expect_json(resp)
@@ -608,9 +654,12 @@ def test_ingest_service(*, base_url: str) -> List[CheckResult]:
                         payload = resp.json()
                         if isinstance(payload, dict) and payload.get("detail"):
                             detail = str(payload.get("detail"))
-                    except Exception:
+                    except json.JSONDecodeError:
                         pass
-                    ok(f"ingest POST {prefix}/search", f"unavailable ({resp.status_code}) {detail}"[:120])
+                    ok(
+                        f"ingest POST {prefix}/search",
+                        f"unavailable ({resp.status_code}) {detail}"[:120],
+                    )
                 else:
                     fail(
                         f"ingest POST {prefix}/search",
@@ -634,9 +683,12 @@ def test_ingest_service(*, base_url: str) -> List[CheckResult]:
                         payload = resp.json()
                         if isinstance(payload, dict) and payload.get("detail"):
                             detail = str(payload.get("detail"))
-                    except Exception:
+                    except json.JSONDecodeError:
                         pass
-                    ok(f"ingest POST {prefix}/search/hybrid", f"unavailable ({resp.status_code}) {detail}"[:120])
+                    ok(
+                        f"ingest POST {prefix}/search/hybrid",
+                        f"unavailable ({resp.status_code}) {detail}"[:120],
+                    )
                 else:
                     fail(
                         f"ingest POST {prefix}/search/hybrid",
@@ -649,13 +701,20 @@ def test_ingest_service(*, base_url: str) -> List[CheckResult]:
             try:
                 resp = client.post(
                     f"{base_url}{prefix}/ingest/excel",
-                    json={"excel_path": "/no/such/file.xlsx", "incremental": True, "regenerate": False},
+                    json={
+                        "excel_path": "/no/such/file.xlsx",
+                        "incremental": True,
+                        "regenerate": False,
+                    },
                 )
                 record("POST", f"{prefix}/ingest/excel")
                 if resp.status_code == 404:
                     ok(f"ingest POST {prefix}/ingest/excel", "404 expected")
                 else:
-                    fail(f"ingest POST {prefix}/ingest/excel", f"expected 404, got {resp.status_code}")
+                    fail(
+                        f"ingest POST {prefix}/ingest/excel",
+                        f"expected 404, got {resp.status_code}",
+                    )
             except Exception as exc:
                 fail(f"ingest POST {prefix}/ingest/excel", str(exc))
 
@@ -682,7 +741,9 @@ def test_ingest_service(*, base_url: str) -> List[CheckResult]:
                 resp = client.post(
                     f"{base_url}{prefix}/ingest/mysql",
                     json={
-                        "connection_url": "mysql+pymysql://recipe_user:recipepass@mysql:3306/recipe_db",
+                        "connection_url": (
+                            "mysql+pymysql://recipe_user:recipepass@mysql:3306/recipe_db"
+                        ),
                         "table": "recipes",
                         "extra_metadata": {"source": "probe"},
                         "mode": "flatten",

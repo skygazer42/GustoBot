@@ -22,13 +22,17 @@ def build_source(document: Mapping[str, Any], backend: str) -> Dict[str, str]:
     metadata = metadata_value if isinstance(metadata_value, Mapping) else {}
     backend_name = backend.lower().strip()
 
-    document_id = _text(
-        document.get("document_id")
-        or document.get("source_id")
-        or document.get("id")
-        or metadata.get("chunk_id")
-        or metadata.get("id")
-    )
+    document_id = ""
+    for candidate in (
+        document.get("document_id"),
+        document.get("source_id"),
+        document.get("id"),
+        metadata.get("chunk_id"),
+        metadata.get("id"),
+    ):
+        if candidate is not None and _text(candidate):
+            document_id = _text(candidate)
+            break
     title = _text(
         document.get("name")
         or document.get("title")
@@ -95,7 +99,7 @@ def collect_sources(
     collected: List[Dict[str, str]] = []
     seen = set()
     for backend, documents in result_sets:
-        for document in documents or []:
+        for document in documents:
             if not isinstance(document, Mapping):
                 continue
             source = build_source(document, backend)

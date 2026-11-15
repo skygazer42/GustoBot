@@ -3,4 +3,3 @@ Infrastructure layer providing adapters for persistence, vector stores, and exte
 """
 
 __all__ = ["core", "knowledge", "persistence", "tools"]
-

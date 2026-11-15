@@ -1,0 +1,46 @@
+{
+  "sources": [
+    {
+      "id": "manual-pump-a-v1",
+      "text": "泵 A 的序列号为 PUMP-A。泵 A 包含轴承 B。轴承 B 记录有过热故障。",
+      "uri": "manuals/pump-a.txt"
+    }
+  ],
+  "entities": [
+    {
+      "id": "pump-a",
+      "type": "Equipment",
+      "name": "泵 A",
+      "properties": {"serial": "PUMP-A"},
+      "evidence": [{"source_id": "manual-pump-a-v1", "quote": "泵 A 的序列号为 PUMP-A"}]
+    },
+    {
+      "id": "bearing-b",
+      "type": "Component",
+      "name": "轴承 B",
+      "evidence": [{"source_id": "manual-pump-a-v1", "quote": "泵 A 包含轴承 B"}]
+    },
+    {
+      "id": "overheat-b",
+      "type": "Fault",
+      "name": "过热故障",
+      "evidence": [{"source_id": "manual-pump-a-v1", "quote": "轴承 B 记录有过热故障"}]
+    }
+  ],
+  "relations": [
+    {
+      "id": "pump-a-bearing-b",
+      "source_id": "pump-a",
+      "target_id": "bearing-b",
+      "type": "HAS_COMPONENT",
+      "evidence": [{"source_id": "manual-pump-a-v1", "quote": "泵 A 包含轴承 B"}]
+    },
+    {
+      "id": "bearing-b-overheat",
+      "source_id": "bearing-b",
+      "target_id": "overheat-b",
+      "type": "HAS_FAULT",
+      "evidence": [{"source_id": "manual-pump-a-v1", "quote": "轴承 B 记录有过热故障"}]
+    }
+  ]
+}

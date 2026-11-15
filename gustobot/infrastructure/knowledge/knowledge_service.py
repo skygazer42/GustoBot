@@ -1,7 +1,7 @@
 """Knowledge base service implemented with LangChain primitives."""
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import TypedDict, Any, Dict, List, Optional
 from uuid import uuid4
 
 from langchain_core.documents import Document
@@ -9,9 +9,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 
 from gustobot.config import settings
+from gustobot.infrastructure.core.resources import close_on_exit
 from .embeddings import OpenAICompatibleEmbeddings
 from .vector_store import VectorStore
 from .reranker import Reranker
+
+
+class IngestionResult(TypedDict):
+    add_count: int
+    ids: List[str]
+    stored: bool
 
 
 class KnowledgeService:
@@ -24,8 +31,8 @@ class KnowledgeService:
         chunk_size: Optional[int] = None,
         chunk_overlap: Optional[int] = None,
     ) -> None:
-        self.chunk_size = chunk_size or settings.KB_CHUNK_SIZE
-        self.chunk_overlap = chunk_overlap or settings.KB_CHUNK_OVERLAP
+        self.chunk_size = settings.KB_CHUNK_SIZE if chunk_size is None else chunk_size
+        self.chunk_overlap = settings.KB_CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
 
         self.splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
@@ -34,6 +41,7 @@ class KnowledgeService:
             length_function=len,  # 使用字符长度而不是 tiktoken
         )
 
+        self.reranker = Reranker()
         embedding_api_key = settings.EMBEDDING_API_KEY or settings.LLM_API_KEY
         self.embedder = OpenAICompatibleEmbeddings(
             model=settings.EMBEDDING_MODEL,
@@ -42,19 +50,29 @@ class KnowledgeService:
             dimension=settings.EMBEDDING_DIMENSION,
         )
 
-        self.vector_store = vector_store or VectorStore(
-            collection_name=settings.MILVUS_COLLECTION,
-            host=settings.MILVUS_HOST,
-            port=settings.MILVUS_PORT,
-            dimension=settings.EMBEDDING_DIMENSION,
-            index_type=settings.MILVUS_INDEX_TYPE,
-            metric_type=settings.MILVUS_METRIC_TYPE,
-        )
-
-        self.reranker = Reranker()
+        self._owns_vector_store = vector_store is None
+        try:
+            self.vector_store = (
+                vector_store
+                if vector_store is not None
+                else VectorStore(
+                    collection_name=settings.MILVUS_COLLECTION,
+                    host=settings.MILVUS_HOST,
+                    port=settings.MILVUS_PORT,
+                    dimension=settings.EMBEDDING_DIMENSION,
+                    index_type=settings.MILVUS_INDEX_TYPE,
+                    metric_type=settings.MILVUS_METRIC_TYPE,
+                )
+            )
+        except BaseException:
+            try:
+                self.embedder.close()
+            except Exception:
+                logger.exception("Failed to close embedding client after initialization failed")
+            raise
 
         logger.info(
-            "KnowledgeService initialised (chunk_size=%s, chunk_overlap=%s)",
+            "KnowledgeService initialised (chunk_size={}, chunk_overlap={})",
             self.chunk_size,
             self.chunk_overlap,
         )
@@ -64,13 +82,13 @@ class KnowledgeService:
         text: str,
         *,
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> IngestionResult:
         if not text or not text.strip():
-            return {"add_count": 0, "ids": []}
+            return {"add_count": 0, "ids": [], "stored": False}
 
         documents = await asyncio.to_thread(self._split_into_documents, text, metadata or {})
         if not documents:
-            return {"add_count": 0, "ids": []}
+            return {"add_count": 0, "ids": [], "stored": False}
 
         embeddings = await asyncio.to_thread(
             self.embedder.embed_documents,
@@ -94,25 +112,29 @@ class KnowledgeService:
         if doc_id:
             meta.setdefault("recipe_id", doc_id)
         result = await self.ingest_text(content, metadata=meta)
-        return result.get("add_count", 0) > 0
+        return result["add_count"] > 0
 
     async def add_recipe(self, recipe_id: str, recipe_data: Dict[str, Any]) -> bool:
         document = self._format_recipe_document(recipe_data)
         metadata = {
             "recipe_id": recipe_id,
-            "name": recipe_data.get("name", ""),
+            "name": recipe_data["name"],
             "category": recipe_data.get("category", ""),
             "difficulty": recipe_data.get("difficulty", ""),
         }
         result = await self.ingest_text(document, metadata=metadata)
-        return result.get("add_count", 0) > 0
+        return result["add_count"] > 0
 
     async def add_recipes_batch(self, recipes: List[Dict[str, Any]]) -> Dict[str, int]:
         success_count = 0
         error_count = 0
         for recipe in recipes:
-            recipe_id = recipe.get("id") or recipe.get("recipe_id") or str(uuid4())
-            if await self.add_recipe(recipe_id, recipe):
+            recipe_id = recipe.get("id")
+            if recipe_id is None or recipe_id == "":
+                recipe_id = recipe.get("recipe_id")
+            if recipe_id is None or recipe_id == "":
+                recipe_id = str(uuid4())
+            if await self.add_recipe(str(recipe_id), recipe):
                 success_count += 1
             else:
                 error_count += 1
@@ -130,9 +152,15 @@ class KnowledgeService:
         if not query or not query.strip():
             return []
 
-        top_k = top_k or settings.KB_TOP_K
+        top_k = settings.KB_TOP_K if top_k is None else top_k
+        if top_k < 0:
+            raise ValueError("top_k cannot be negative")
+        if top_k == 0:
+            return []
         similarity_threshold = (
-            similarity_threshold if similarity_threshold is not None else settings.KB_SIMILARITY_THRESHOLD
+            similarity_threshold
+            if similarity_threshold is not None
+            else settings.KB_SIMILARITY_THRESHOLD
         )
 
         # 如果启用 reranker，先召回更多候选文档
@@ -150,20 +178,25 @@ class KnowledgeService:
 
         candidates = results
         if filter_by_similarity and similarity_threshold is not None:
-            candidates = [r for r in candidates if r.get("score", 0.0) >= similarity_threshold]
+            candidates = [r for r in candidates if r["score"] >= similarity_threshold]
 
         # 使用 reranker 精排
         if candidates and self.reranker.enabled:
             candidates = await self.reranker.rerank(query, candidates, top_k)
 
         if self.reranker.enabled:
-            candidates = [
-                r
-                for r in candidates
-                if r.get("rerank_score", 0.0) >= settings.KB_RERANK_SCORE_THRESHOLD
-            ]
+            filtered = []
+            for candidate in candidates:
+                rerank_score = candidate.get("rerank_score")
+                if rerank_score is not None:
+                    if rerank_score < settings.KB_RERANK_SCORE_THRESHOLD:
+                        continue
+                elif similarity_threshold is not None and candidate["score"] < similarity_threshold:
+                    continue
+                filtered.append(candidate)
+            candidates = filtered
         elif not filter_by_similarity and similarity_threshold is not None:
-            candidates = [r for r in candidates if r.get("score", 0.0) >= similarity_threshold]
+            candidates = [r for r in candidates if r["score"] >= similarity_threshold]
 
         return candidates[:top_k]
 
@@ -188,7 +221,12 @@ class KnowledgeService:
         return await asyncio.to_thread(self.vector_store.clear_collection)
 
     async def close(self) -> None:
-        await asyncio.to_thread(self.vector_store.close)
+        async def close_embedder() -> None:
+            await asyncio.to_thread(self.embedder.close)
+
+        async with close_on_exit(close_embedder):
+            if self._owns_vector_store:
+                await asyncio.to_thread(self.vector_store.close)
 
     def _split_into_documents(self, text: str, metadata: Dict[str, Any]) -> List[Document]:
         base_document = Document(page_content=text, metadata=metadata)
@@ -199,8 +237,10 @@ class KnowledgeService:
         self,
         documents: List[Document],
         embeddings: List[List[float]],
-    ) -> Dict[str, Any]:
-        if not documents or not embeddings:
+    ) -> IngestionResult:
+        if len(documents) != len(embeddings):
+            raise ValueError("Document and embedding counts must match")
+        if not documents:
             return {"add_count": 0, "ids": [], "stored": False}
 
         ids: List[str] = []
@@ -208,12 +248,18 @@ class KnowledgeService:
         metadatas: List[Dict[str, Any]] = []
 
         for index, doc in enumerate(documents):
-            metadata = dict(doc.metadata or {})
-            base_id = metadata.get("recipe_id") or metadata.get("id") or metadata.get("source") or uuid4().hex
+            metadata = dict(doc.metadata)
+            for identity_field in ("recipe_id", "id", "source"):
+                base_id = metadata.get(identity_field)
+                if base_id is not None and base_id != "":
+                    break
+            else:
+                base_id = uuid4().hex
             chunk_id = f"{base_id}_{index}"
             metadata.setdefault("recipe_id", base_id)
             metadata.setdefault("chunk_id", chunk_id)
-            metadata.setdefault("name", metadata.get("name") or metadata.get("title") or "")
+            if "name" not in metadata and "title" in metadata:
+                metadata["name"] = metadata["title"]
 
             ids.append(chunk_id)
             contents.append(doc.page_content)

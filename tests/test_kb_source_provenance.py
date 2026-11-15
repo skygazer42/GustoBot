@@ -1,6 +1,7 @@
 """Regression tests for deterministic KB source attribution."""
 
 import asyncio
+from typing import Optional
 
 from gustobot.application.agents.kb_tools.node import create_knowledge_query_node
 from gustobot.application.agents.kb_tools.sources import (
@@ -78,10 +79,7 @@ def test_collect_sources_preserves_backend_and_deduplicates_exact_hits() -> None
 
 
 def test_generated_source_footer_is_removed_from_answer() -> None:
-    answer = (
-        "火锅在不同朝代形成了多种吃法。\n\n"
-        "**参考资料：** [PostgreSQL#1]、[PostgreSQL#2]"
-    )
+    answer = "火锅在不同朝代形成了多种吃法。\n\n" "**参考资料：** [PostgreSQL#1]、[PostgreSQL#2]"
 
     assert strip_generated_source_section(answer) == "火锅在不同朝代形成了多种吃法。"
 
@@ -100,7 +98,14 @@ def test_inline_source_word_is_not_removed() -> None:
 
 def test_direct_kb_node_returns_structured_source_and_cleans_answer() -> None:
     class KnowledgeServiceStub:
-        async def search(self, **_kwargs):
+        async def search(
+            self,
+            query: str,
+            *,
+            top_k: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            filter_expr: Optional[str] = None,
+        ):
             return [
                 {
                     "id": "data.txt_3",

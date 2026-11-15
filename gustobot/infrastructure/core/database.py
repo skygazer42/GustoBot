@@ -3,10 +3,12 @@ Database configuration helpers and session utilities.
 """
 
 from contextlib import contextmanager
+from importlib import import_module
 from typing import Dict, Generator, Iterator
 
+from loguru import logger
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from gustobot.config import settings
 
@@ -32,7 +34,9 @@ SessionLocal = sessionmaker(
     class_=Session,
 )
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """Shared mapped metadata; entities declare their own typed fields."""
 
 
 def init_db(*, create_all: bool = False) -> None:
@@ -43,7 +47,7 @@ def init_db(*, create_all: bool = False) -> None:
     """
     if create_all:
         # Lazy import to avoid circular dependencies during startup.
-        import gustobot.infrastructure.persistence.db.models  # noqa: F401
+        import_module("gustobot.infrastructure.persistence.db.models")
 
         Base.metadata.create_all(bind=engine)
 
@@ -52,11 +56,8 @@ def get_db() -> Generator[Session, None, None]:
     """
     Provide a database session dependency for FastAPI routes.
     """
-    db = SessionLocal()
-    try:
+    with session_scope(commit=False) as db:
         yield db
-    finally:
-        db.close()
 
 
 @contextmanager
@@ -69,8 +70,29 @@ def session_scope(*, commit: bool = True) -> Iterator[Session]:
         yield session
         if commit:
             session.commit()
-    except Exception:
-        session.rollback()
+    except BaseException:
+        _rollback_after_failure(session)
+        try:
+            session.close()
+        except Exception:
+            logger.exception("Close failed while handling a database operation error")
         raise
-    finally:
+    else:
         session.close()
+
+
+def _rollback_after_failure(session: Session) -> None:
+    """Rollback at the transaction owner without replacing its active error."""
+    try:
+        session.rollback()
+    except Exception:
+        logger.exception("Rollback failed while handling a database operation error")
+
+
+def commit_session(session: Session) -> None:
+    """Commit a CRUD-owned transaction and leave a failed session reusable."""
+    try:
+        session.commit()
+    except BaseException:
+        _rollback_after_failure(session)
+        raise

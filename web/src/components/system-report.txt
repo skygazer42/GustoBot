@@ -1,2 +1,3 @@
-# System Report
-This is test referencing /api/v1/chat and /api/v1/upload endpoints.
+# Upload sample
+This sample document mentions the chat endpoint /api/v1/chat and the file-upload endpoint /api/v1/upload/file.
+Upload it through the chat widget, then ask the assistant to summarize its contents.

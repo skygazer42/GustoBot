@@ -2,7 +2,7 @@
 
 import asyncio
 import httpx
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from loguru import logger
 
@@ -14,7 +14,7 @@ class Reranker:
 
     def __init__(self) -> None:
         self.enabled = settings.RERANK_ENABLED
-        self.provider = settings.RERANK_PROVIDER.lower() if settings.RERANK_PROVIDER else None
+        self.provider = settings.RERANK_PROVIDER.lower()
         self.base_url = settings.RERANK_BASE_URL
         self.endpoint = settings.RERANK_ENDPOINT
         self.model = settings.RERANK_MODEL
@@ -26,13 +26,18 @@ class Reranker:
             logger.info("Reranker disabled via config")
             return
 
+        if self.top_n <= 0:
+            raise ValueError("RERANK_TOP_N must be positive")
+        if not self.model.strip():
+            raise ValueError("RERANK_MODEL must not be empty")
+
         if not self.provider or not self.api_key:
             logger.warning("Reranker enabled but missing provider or API key, disabling")
             self.enabled = False
             return
 
         logger.info(
-            "Reranker initialized: provider=%s, model=%s, base_url=%s",
+            "Reranker initialized: provider={}, model={}, base_url={}",
             self.provider,
             self.model,
             self.base_url,
@@ -64,7 +69,7 @@ class Reranker:
             if ranked:
                 return ranked
         except Exception as exc:
-            logger.error("Reranker failed: %s", exc, exc_info=True)
+            logger.exception("Reranker failed: {}", exc)
 
         return documents[:top_k]
 
@@ -80,7 +85,7 @@ class Reranker:
             return documents[:top_k]
 
         # 准备文档内容
-        texts = [doc.get("content") or doc.get("document") or "" for doc in documents]
+        texts = [doc["content"] for doc in documents]
 
         # 构建请求
         url = f"{self.base_url.rstrip('/')}{self.endpoint}"
@@ -98,8 +103,8 @@ class Reranker:
             },
             "parameters": {
                 "return_documents": True,
-                "top_n": min(self.top_n or top_k, len(documents)),
-            }
+                "top_n": min(self.top_n, len(documents)),
+            },
         }
 
         async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
@@ -115,26 +120,7 @@ class Reranker:
             logger.warning("Custom reranker returned no results")
             return documents[:top_k]
 
-        # 重新排序文档
-        reranked = []
-        for item in results:
-            idx = item.get("index")
-            score = item.get("relevance_score") or item.get("score")
-
-            if idx is not None and 0 <= idx < len(documents):
-                doc = dict(documents[idx])
-                if score is not None:
-                    doc["rerank_score"] = float(score)
-                reranked.append(doc)
-
-        # 添加未被重排的文档
-        seen_ids = {doc.get("chunk_id") or doc.get("id") for doc in reranked}
-        for doc in documents:
-            doc_id = doc.get("chunk_id") or doc.get("id")
-            if doc_id not in seen_ids:
-                reranked.append(doc)
-
-        return reranked[:top_k]
+        return self._process_rerank_results(results, documents, top_k)
 
     async def _jina_rerank(
         self,
@@ -143,7 +129,7 @@ class Reranker:
         top_k: int,
     ) -> List[Dict[str, Any]]:
         """Jina AI reranker."""
-        texts = [doc.get("content") or doc.get("document") or "" for doc in documents]
+        texts = [doc["content"] for doc in documents]
 
         url = "https://api.jina.ai/v1/rerank"
         headers = {
@@ -152,10 +138,10 @@ class Reranker:
         }
 
         payload = {
-            "model": self.model or "jina-reranker-v1-base-en",
+            "model": self.model,
             "query": query,
             "documents": texts,
-            "top_n": min(self.top_n or top_k, len(documents)),
+            "top_n": min(self.top_n, len(documents)),
         }
 
         async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
@@ -173,7 +159,7 @@ class Reranker:
         top_k: int,
     ) -> List[Dict[str, Any]]:
         """Voyage AI reranker."""
-        texts = [doc.get("content") or doc.get("document") or "" for doc in documents]
+        texts = [doc["content"] for doc in documents]
 
         url = "https://api.voyageai.com/v1/rerank"
         headers = {
@@ -182,10 +168,10 @@ class Reranker:
         }
 
         payload = {
-            "model": self.model or "rerank-lite-1",
+            "model": self.model,
             "query": query,
             "documents": texts,
-            "top_k": min(self.top_n or top_k, len(documents)),
+            "top_k": min(self.top_n, len(documents)),
         }
 
         async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
@@ -209,18 +195,17 @@ class Reranker:
             raise RuntimeError("cohere package not installed") from exc
 
         client = CohereClient(self.api_key)
-        texts = [doc.get("content") or doc.get("document") or "" for doc in documents]
+        texts = [doc["content"] for doc in documents]
 
         response = client.rerank(
             query=query,
             documents=texts,
-            top_n=min(self.top_n or top_k, len(documents)),
-            model=self.model or "rerank-english-v3.0",
+            top_n=min(self.top_n, len(documents)),
+            model=self.model,
         )
 
         results = [
-            {"index": r.index, "relevance_score": r.relevance_score}
-            for r in response.results
+            {"index": r.index, "relevance_score": r.relevance_score} for r in response.results
         ]
 
         return self._process_rerank_results(results, documents, top_k)
@@ -233,22 +218,24 @@ class Reranker:
     ) -> List[Dict[str, Any]]:
         """Process reranker results into reordered document list."""
         reranked = []
+        ranked_indices = set()
 
         for item in results:
             idx = item.get("index")
-            score = item.get("relevance_score") or item.get("score")
+            score = item.get("relevance_score")
+            if score is None:
+                score = item.get("score")
 
             if idx is not None and 0 <= idx < len(documents):
                 doc = dict(documents[idx])
                 if score is not None:
                     doc["rerank_score"] = float(score)
                 reranked.append(doc)
+                ranked_indices.add(idx)
 
         # 添加未被重排的文档
-        seen_ids = {doc.get("chunk_id") or doc.get("id") for doc in reranked}
-        for doc in documents:
-            doc_id = doc.get("chunk_id") or doc.get("id")
-            if doc_id not in seen_ids:
+        for index, doc in enumerate(documents):
+            if index not in ranked_indices:
                 reranked.append(doc)
 
         return reranked[:top_k]

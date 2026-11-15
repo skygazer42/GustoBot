@@ -1,4 +1,3 @@
-
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -20,8 +19,12 @@ class SearchRequest(BaseModel):
 
 class HybridSearchRequest(BaseModel):
     query: str = Field(..., description="User query string.")
-    vector_top_k: int = Field(default=20, ge=1, le=100, description="Number of candidates from vector search.")
-    rerank_top_k: int = Field(default=10, ge=1, le=100, description="Number of results after reranking.")
+    vector_top_k: int = Field(
+        default=20, ge=1, le=100, description="Number of candidates from vector search."
+    )
+    rerank_top_k: int = Field(
+        default=10, ge=1, le=100, description="Number of results after reranking."
+    )
     threshold: Optional[float] = Field(
         default=None,
         ge=0.0,

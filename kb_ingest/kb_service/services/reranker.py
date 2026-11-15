@@ -1,4 +1,3 @@
-
 import logging
 import math
 import time
@@ -13,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 class RerankAPIError(Exception):
     """Reranker API 调用异常"""
+
     pass
 
 
@@ -27,6 +27,8 @@ class RerankerClient:
         self.config = config
         self.timeout = config.rerank_timeout
         self.provider = config.rerank_provider.lower()
+        self.api_key: Optional[str]
+        self.model: Optional[str]
 
         # 根据 provider 初始化
         if self.provider == "cohere":
@@ -52,18 +54,24 @@ class RerankerClient:
                 # endpoint 本身就是完整 URL
                 self.endpoint = config.rerank_endpoint
             else:
-                raise ValueError("自建服务模式需要配置 RERANK_BASE_URL 或完整的 RERANK_ENDPOINT URL")
+                raise ValueError(
+                    "自建服务模式需要配置 RERANK_BASE_URL 或完整的 RERANK_ENDPOINT URL"
+                )
 
             self.mode = "custom"
             self.api_key = config.rerank_api_key
             self.model = config.rerank_model  # 可选的模型名称
             if self.model:
-                logger.info("Reranker 使用自建服务模式 (endpoint=%s, model=%s)", self.endpoint, self.model)
+                logger.info(
+                    "Reranker 使用自建服务模式 (endpoint=%s, model=%s)", self.endpoint, self.model
+                )
             else:
                 logger.info("Reranker 使用自建服务模式 (endpoint=%s)", self.endpoint)
 
         else:
-            raise ValueError(f"不支持的 RERANK_PROVIDER: {config.rerank_provider}，仅支持 'cohere' 或 'custom'")
+            raise ValueError(
+                f"不支持的 RERANK_PROVIDER: {config.rerank_provider}，仅支持 'cohere' 或 'custom'"
+            )
 
     def rerank(
         self,
@@ -84,13 +92,12 @@ class RerankerClient:
         """
         documents = []
         for item in candidates:
-            doc_id = str(item.get("id"))
-            text = item.get("text") or item.get("content") or ""
+            doc_id = str(item["id"])
+            text = item["text"] if "text" in item else item["content"]
             documents.append(
                 {
                     "id": doc_id,
                     "text": text,
-                    "metadata": item.get("metadata") or {},
                 }
             )
 
@@ -100,11 +107,15 @@ class RerankerClient:
         if top_n is None:
             top_n = self.config.rerank_top_n
 
+        if top_n < 0:
+            raise ValueError("top_n cannot be negative")
+        if top_n == 0:
+            return []
         # 根据模式调用不同的 API
         if self.mode == "cohere":
             return self._rerank_cohere(query, documents, top_n)
         else:
-            return self._rerank_custom(query, documents)
+            return self._rerank_custom(query, documents, top_n)
 
     def _rerank_cohere(
         self,
@@ -139,7 +150,7 @@ class RerankerClient:
             logger.info("Cohere Rerank 完成 (%.1f ms, %d 文档)", elapsed, len(doc_texts))
         except Exception as exc:
             elapsed = (time.time() - start) * 1000
-            logger.warning("Cohere Rerank 请求失败(%.1f ms): %s", elapsed, exc)
+            logger.warning("Cohere Rerank 请求失败(%.1f ms): %s", elapsed, exc, exc_info=True)
             return None
 
         # Cohere API 返回格式: {"results": [{"index": int, "relevance_score": float}, ...]}
@@ -156,10 +167,12 @@ class RerankerClient:
             if index is None or score is None:
                 continue
             if 0 <= index < len(documents):
-                reranked.append({
-                    "id": documents[index]["id"],
-                    "score": float(score),
-                })
+                reranked.append(
+                    {
+                        "id": documents[index]["id"],
+                        "score": float(score),
+                    }
+                )
 
         # Cohere 已按分数排序，但我们再确保一次
         reranked.sort(key=lambda x: x["score"], reverse=True)
@@ -169,6 +182,7 @@ class RerankerClient:
         self,
         query: str,
         documents: List[dict],
+        top_n: int,
     ) -> Optional[List[dict]]:
         """调用自建 Reranker 服务"""
         # 提取文本列表（服务期望字符串数组，不是dict数组）
@@ -188,19 +202,19 @@ class RerankerClient:
 
         start = time.time()
         try:
-            response = requests.post(
+            with requests.post(
                 self.endpoint,
                 json=payload,
                 headers=headers,
                 timeout=self.timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
+            ) as response:
+                response.raise_for_status()
+                data = response.json()
             elapsed = (time.time() - start) * 1000
             logger.info("自建 Rerank 完成 (%.1f ms)", elapsed)
         except Exception as exc:
             elapsed = (time.time() - start) * 1000
-            logger.warning("自建 Reranker 请求失败(%.1f ms): %s", elapsed, exc)
+            logger.warning("自建 Reranker 请求失败(%.1f ms): %s", elapsed, exc, exc_info=True)
             return None
 
         results = data.get("results") if isinstance(data, dict) else None
@@ -212,7 +226,7 @@ class RerankerClient:
         for item in results:
             # 服务返回的是index和relevance_score，需要映射回原始文档
             index = item.get("index")
-            score = item.get("relevance_score") or item.get("score")
+            score = item.get("relevance_score", item.get("score"))
             if index is None or score is None:
                 continue
             if 0 <= index < len(documents):
@@ -222,7 +236,7 @@ class RerankerClient:
                     continue
 
         reranked.sort(key=lambda x: x["score"], reverse=True)
-        return reranked or None
+        return reranked[:top_n] or None
 
     def _post_with_retry(
         self,
@@ -233,24 +247,37 @@ class RerankerClient:
         backoff: float = 0.8,
     ) -> dict:
         """带重试的 POST 请求，用于处理 API 限流"""
+        if retries <= 0:
+            raise ValueError("retries must be positive")
         last_error = None
-        for i in range(retries):
+        for attempt in range(retries):
+            retry_after = None
             try:
-                response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
-                if response.status_code == 429:  # rate limit
-                    wait_time = backoff * (2 ** i)
-                    logger.warning("遇到限流 (429)，等待 %.1f 秒后重试...", wait_time)
-                    time.sleep(wait_time)
-                    continue
-                response.raise_for_status()
-                return response.json()
-            except Exception as e:
-                last_error = e
-                if i < retries - 1:
-                    wait_time = backoff * (2 ** i)
-                    logger.warning("请求失败，等待 %.1f 秒后重试: %s", wait_time, e)
-                    time.sleep(wait_time)
-        raise RerankAPIError(f"Rerank 请求失败（重试 {retries} 次）: {last_error}")
+                with requests.post(
+                    url, headers=headers, json=payload, timeout=self.timeout
+                ) as response:
+                    retry_after = response.headers.get("Retry-After")
+                    response.raise_for_status()
+                    response_payload: object = response.json()
+                    if not isinstance(response_payload, dict):
+                        raise RerankAPIError("Rerank response must be a JSON object")
+                    return response_payload
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                last_error = exc
+            except requests.HTTPError as exc:
+                if exc.response.status_code not in {429, 500, 502, 503, 504}:
+                    raise
+                last_error = exc
+            if attempt == retries - 1:
+                break
+            delay = backoff * (2**attempt)
+            if retry_after is not None:
+                try:
+                    delay = max(delay, float(retry_after))
+                except ValueError:
+                    pass  # HTTP-date Retry-After falls back to bounded backoff.
+            time.sleep(min(30.0, max(0.0, delay)))
+        raise RerankAPIError(f"Rerank request failed after {retries} attempts") from last_error
 
     @staticmethod
     def zscore_normalize(scores: List[float]) -> List[float]:

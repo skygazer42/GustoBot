@@ -36,11 +36,8 @@ def configure_logging(
     )
 
 
-def get_logger(*, service: str, level: Optional[str] = None):
+def get_logger(*, service: str):
     """
     Return a logger bound to a specific service name.
     """
-    bound_logger = logger.bind(service=service)
-    if level:
-        bound_logger = bound_logger.opt()
-    return bound_logger
+    return logger.bind(service=service)

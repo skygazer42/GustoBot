@@ -1,4 +1,3 @@
-
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -19,7 +18,11 @@ class ExcelIngestRequest(BaseModel):
 class MySQLIngestRequest(BaseModel):
     connection_url: str = Field(..., description="SQLAlchemy style MySQL connection URL.")
     table: str = Field(..., description="Table name to read from.")
-    where: Optional[str] = Field(None, description="Optional SQL WHERE clause.")
+    where: Optional[str] = Field(
+        None,
+        description="Optional scalar WHERE filter; literals are bound parameters. "
+        "Statements, subqueries and functions with side effects are rejected.",
+    )
     limit: Optional[int] = Field(None, ge=1, description="Maximum number of rows to ingest.")
     prompt_key: Optional[str] = Field(
         None, description="Optional prompt template key if not inferred from the table name."
@@ -36,10 +39,16 @@ class MySQLIngestRequest(BaseModel):
         default=None,
         description="Column to use as unique identifier; defaults to row index if omitted.",
     )
-    company_field: Optional[str] = Field(default=None, description="Field containing company name (optional).")
-    report_year_field: Optional[str] = Field(default=None, description="Field containing report year (optional).")
+    company_field: Optional[str] = Field(
+        default=None, description="Field containing company name (optional)."
+    )
+    report_year_field: Optional[str] = Field(
+        default=None, description="Field containing report year (optional)."
+    )
     chunk_size: Optional[int] = Field(
         default=None,
         ge=1,
-        description="Number of records to process per batch; defaults to processing all rows at once.",
+        description=(
+            "Number of records to process per batch; " "defaults to processing all rows at once."
+        ),
     )

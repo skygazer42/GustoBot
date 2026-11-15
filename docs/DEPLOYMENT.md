@@ -1,3 +1,5 @@
+> 历史文档：下文保留旧部署与接口说明。2026-11-15 已将图查询统一至 LightRAG，移除 Cypher/Neo4j 运行链路；当前配置、接口和部署请以 [领域知识服务](DOMAIN_KNOWLEDGE.md) 与 [快速启动](QUICK_START.md) 为准。
+
 # GustoBot 部署文档
 
 本指南详细说明如何部署 GustoBot 智能菜谱助手系统。

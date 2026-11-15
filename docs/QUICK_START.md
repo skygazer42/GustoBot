@@ -1,465 +1,83 @@
-# GustoBot 快速启动指南
+# GustoBot 快速启动
 
-## 🚀 快速开始
+## 配置与运行
 
-### 1. 启动所有服务
+需要 Python 3.10–3.13。先复制示例配置，填写真实的 LLM 与 Embedding 服务参数：
 
-```bash
-# 使用 Docker Compose（推荐）
-docker-compose up -d
-
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f backend
+```powershell
+Copy-Item .env.example .env
+python -m pip install -r requirements.txt
+python -m uvicorn gustobot.main:application --reload
 ```
 
-服务端口：
-- **FastAPI Server**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **Neo4j Browser**: http://localhost:17474
-- **MySQL**: localhost:13306
-- **Redis**: localhost:6379
-- **Milvus**: localhost:19530
+默认会话数据库是 SQLite。LightRAG 首次使用时初始化，读取当前领域索引；导入资料需要模型和向量服务。完整 API 以 [OpenAPI](http://localhost:8000/docs) 为准。
 
----
+前端独立启动：
 
-## 🧪 测试检索流程
-
-### 测试 1: 配置验证
-
-```bash
-python3 -c "
-from gustobot.config.settings import settings
-print('Embedding:', settings.EMBEDDING_MODEL, '@', settings.EMBEDDING_BASE_URL)
-print('Reranker:', settings.RERANK_MODEL, '@', settings.RERANK_BASE_URL)
-print('Recall:', settings.RERANK_MAX_CANDIDATES, '→ Return:', settings.RERANK_TOP_N)
-"
+```powershell
+Set-Location web
+npm install
+npm run dev
 ```
 
-**预期输出**:
-```
-Embedding: <your-embedding-model> @ <your-embedding-base-url>
-Reranker: <your-rerank-model> @ <your-rerank-base-url>
-Recall: 20 → Return: 6
-```
+前端 URL 以 Vite 输出为准；API 默认使用 `http://localhost:8000`。
 
----
+## 容器部署
 
-### 测试 2: 知识库检索
-
-```bash
-# 使用 curl 测试知识检索接口
-curl -X POST "http://localhost:8000/api/v1/knowledge/search" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "红烧肉怎么做？需要什么食材？",
-    "top_k": 6
-  }' | jq
+```powershell
+docker compose up --build
+docker compose logs -f backend
 ```
 
-**预期响应**:
+默认仅启动 backend，使用 SQLite 会话和本地 LightRAG 索引，不要求 Neo4j、Redis、Milvus 或 PostgreSQL。若已有 `.env` 显式配置 MySQL，须启动相应服务或自行改为 SQLite。
+
+| Profile | 用途 |
+| --- | --- |
+| `sql` | 示例 MySQL，需要时另配 SQL_DATABASE_URL 与领域 sql_enabled |
+| `legacy-kb` | 旧 Milvus、etcd、MinIO、PostgreSQL、KB ingest |
+| `legacy-cache` | 保留的 Redis 服务 |
+
+例如 `docker compose --profile legacy-kb up --build`。启用 profile 不会自动改领域的 document_backend 或注册旧 HTTP 路由。
+
+## 选择领域
+
+```powershell
+$env:KNOWLEDGE_DOMAIN_FILE = "gustobot/config/domains/equipment.json"
+python -m uvicorn gustobot.main:application --reload
+```
+
+内置 `recipes.json`、`equipment.json` 和 `generic.json` 均默认使用共享 LightRAG。新增领域需准备自己的配置和语料，无须添加行业专属 Cypher。不同领域使用独立索引目录；修改配置后重启进程。
+
+## 导入与查询
+
+以下示例以设备领域为例。普通文档从 `/api/v1/lightrag/insert` 导入：
+
 ```json
-{
-  "results": [
-    {
-      "content": "菜名：红烧肉\n食材：五花肉500g、冰糖30g...",
-      "score": 0.95,
-      "rerank_score": 0.98,
-      "metadata": {
-        "recipe_id": "...",
-        "name": "红烧肉",
-        "category": "家常菜"
-      }
-    }
-  ],
-  "total": 6
-}
+{"documents": ["设备手册：泵 A 包含轴承 B。轴承 B 的检查记录提示振动异常。"]}
 ```
 
-**日志输出** (server logs):
-```
-[INFO] Embedding query using bge-m3
-[INFO] Milvus search: recall_k=20
-[INFO] Reranker enabled: custom @ http://your-rerank-host:9997/v1
-[INFO] Reranked 20 docs → Top 6
-```
+向 `/api/v1/lightrag/query` 提交自然语言问题：
 
----
-
-### 测试 3: 对话接口
-
-```bash
-# 测试对话接口
-curl -X POST "http://localhost:8000/api/v1/chat/" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "test_user_001",
-    "session_id": "session_001",
-    "message": "红烧肉怎么做？",
-    "stream": false
-  }' | jq
-```
-
-**预期响应**:
 ```json
-{
-  "message": "红烧肉的做法如下：...",
-  "session_id": "session_001",
-  "message_id": "...",
-  "route": "graphrag-query",
-  "route_logic": "...",
-  "sources": []
-}
+{"query": "泵 A 的部件有什么异常？", "mode": "hybrid", "top_k": 10}
 ```
 
----
+`naive` 用于文档向量问答，`hybrid` 结合实体和关系上下文；二者复用同一索引。关系问题无需手写 Cypher。
 
-## 📊 检索工作流详解
+需要先约束事实类型时，用 `docs/examples/equipment-facts.json` 调用 `/api/v1/ontology/validate`；确认后显式提交 `/facts` 才会导入。也可以用 `/extract` 从带 URI 的来源原文抽取候选事实，返回后再提交。事实入库保留完整原文、来源及引文，再交 LightRAG 抽取合并。
 
-### 完整流程
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/v1/ontology/domain` | 当前领域定义 |
+| `POST /api/v1/ontology/extract` | 抽取并校验候选事实，不自动入库 |
+| `POST /api/v1/ontology/validate` | 校验事实，不调用索引 |
+| `POST /api/v1/ontology/facts` | 校验并导入共享索引，返回文档导入统计 |
+| `POST /api/v1/ontology/query` | 以 question/mode/top_k 查询同一 LightRAG |
+| `POST /api/v1/lightrag/query-stream` | 流式问答 |
+| `POST /api/v1/chat/` | 完整聊天与路由 |
 
-```
-用户查询: "红烧肉怎么做？"
-    │
-    ▼
-┌─────────────────────────────────────────────┐
-│ Step 1: Embedding 向量化                     │
-│ ─────────────────────────────────────────── │
-│ API: http://your-embedding-host:9997/v1/embeddings │
-│ Model: bge-m3                               │
-│ Input: "红烧肉怎么做？"                       │
-│ Output: [0.023, -0.145, ..., 0.089] (1024维)│
-└────────────────┬────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────┐
-│ Step 2: Milvus 向量召回                      │
-│ ─────────────────────────────────────────── │
-│ Collection: recipes                         │
-│ Query Vector: 1024-dim                      │
-│ Top K: 20 (RERANK_MAX_CANDIDATES)           │
-│ Results: 20个相关菜谱文档                    │
-└────────────────┬────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────┐
-│ Step 3: Reranker 精排                        │
-│ ─────────────────────────────────────────── │
-│ API: http://your-rerank-host:9997/v1/rerank     │
-│ Model: bge-reranker-large                   │
-│ Input: Query + 20 documents                 │
-│ Process: Cross-encoder 交叉编码相关性打分    │
-│ Output: Top 6 (RERANK_TOP_N)                │
-└────────────────┬────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────┐
-│ Step 4: LLM 生成答案                         │
-│ ─────────────────────────────────────────── │
-│ API: http://your-llm-host:8000/v1/chat/...   │
-│ Model: Qwen3-30B-A3B                        │
-│ Context: Top 6 菜谱文档                      │
-│ Output: 自然语言答案                         │
-└────────────────┬────────────────────────────┘
-                 │
-                 ▼
-    返回用户: "红烧肉的做法：..."
-```
+旧图路径参数 `anchor_ids/relation_types/max_hops/limit` 已移除。LightRAG 检索图不保证精确有向路径或逐边事实约束；旧 Neo4j 数据须显式导出并重新导入，本次代码调整不自动迁移数据。
 
----
+SQL 统计默认关闭。需要时，在领域 JSON 设置 `sql_enabled=true`、`sql_db_type`，并在环境中设置 `SQL_DATABASE_URL`。连接串不放在会公开返回的领域 JSON 中，账号应限制为只读。
 
-## 🔧 常见操作
-
-### 添加菜谱到知识库
-
-```bash
-# 单个菜谱
-curl -X POST "http://localhost:8000/api/v1/knowledge/recipes" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "鱼香肉丝",
-    "category": "川菜",
-    "difficulty": "中等",
-    "ingredients": ["猪里脊300g", "木耳50g", "胡萝卜1根"],
-    "steps": ["切丝", "腌制", "调汁", "快炒"],
-    "tips": "火候要大，快速翻炒"
-  }'
-```
-
-### 批量导入菜谱
-
-```bash
-# 使用爬虫导入（推荐）
-python -m gustobot.crawler.cli wikipedia --query "川菜" --import-kb --limit 10
-
-# 从 JSON 文件导入
-python scripts/import_recipes.py --file data/recipe.json --batch-size 100
-```
-
-### 清空知识库
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/knowledge/clear"
-```
-
-### 查看知识库状态
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/knowledge/stats" | jq
-```
-
-**预期响应**:
-```json
-{
-  "total_entities": 15234,
-  "chunk_size": 512,
-  "chunk_overlap": 80,
-  "embedding_model": "bge-m3",
-  "reranker_enabled": true
-}
-```
-
----
-
-## 🐛 调试和监控
-
-### 查看实时日志
-
-```bash
-# 查看服务器日志
-docker-compose logs -f server
-
-# 查看 Neo4j 日志
-docker-compose logs -f neo4j
-
-# 查看 Milvus 日志
-docker-compose logs -f milvus-standalone
-```
-
-### 关键日志位置
-
-在日志中查找以下信息：
-
-**Embedding 调用**:
-```
-[INFO] Embedding query using bge-m3
-[DEBUG] OpenAI API base: http://your-embedding-host:9997/v1
-```
-
-**Milvus 检索**:
-```
-[INFO] Milvus search: recall_k=20
-[DEBUG] Found 20 candidates with similarity > 0.7
-```
-
-**Reranker 调用**:
-```
-[INFO] Reranker enabled: custom @ http://your-rerank-host:9997/v1
-[DEBUG] Sending 20 documents for reranking
-[INFO] Reranked 20 docs → Top 6
-```
-
-### 测试外部服务连通性
-
-```bash
-# 测试 Embedding 服务
-curl -X POST "http://your-embedding-host:9997/v1/embeddings" \
-  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "bge-m3", "input": "测试文本"}' | jq
-
-# 测试 Reranker 服务
-curl -X POST "http://your-rerank-host:9997/v1/rerank" \
-  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "bge-reranker-large",
-    "query": "红烧肉",
-    "documents": ["红烧肉做法", "糖醋排骨做法"],
-    "top_n": 2
-  }' | jq
-
-# 测试 LLM 服务
-curl -X POST "http://your-llm-host:8000/v1/chat/completions" \
-  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "Qwen3-30B-A3B",
-    "messages": [{"role": "user", "content": "你好"}]
-  }' | jq
-```
-
----
-
-## ⚙️ 性能调优
-
-### 检索参数调整
-
-编辑 `.env` 文件：
-
-```bash
-# 高准确率配置（牺牲速度）
-RERANK_MAX_CANDIDATES=50  # 召回更多候选
-RERANK_TOP_N=5            # 返回 Top 5
-KB_SIMILARITY_THRESHOLD=0.8  # 提高相似度阈值
-
-# 低延迟配置（牺牲准确率）
-RERANK_MAX_CANDIDATES=10  # 召回更少候选
-RERANK_TOP_N=3            # 返回 Top 3
-KB_SIMILARITY_THRESHOLD=0.6  # 降低相似度阈值
-
-# 平衡配置（当前默认）⭐
-RERANK_MAX_CANDIDATES=20
-RERANK_TOP_N=6
-KB_SIMILARITY_THRESHOLD=0.7
-```
-
-修改后重启服务：
-```bash
-docker-compose restart server
-```
-
-### 缓存配置优化
-
-```bash
-# Redis 语义缓存设置
-REDIS_CACHE_EXPIRE=43200      # 缓存过期时间（12小时）
-REDIS_CACHE_THRESHOLD=0.92    # 语义相似度阈值
-REDIS_CACHE_MAX_SIZE=1000     # 最大缓存条目数
-
-# 对话历史保留
-CONVERSATION_HISTORY_TTL=259200        # 3天
-CONVERSATION_HISTORY_MAX_MESSAGES=200  # 每个会话最多200条消息
-```
-
----
-
-## 🎯 API 端点速查
-
-### 知识库管理
-- `POST /api/v1/knowledge/recipes` - 添加单个菜谱
-- `POST /api/v1/knowledge/recipes/batch` - 批量添加菜谱
-- `POST /api/v1/knowledge/search` - 检索知识库
-- `DELETE /api/v1/knowledge/recipes/{recipe_id}` - 删除菜谱
-- `POST /api/v1/knowledge/clear` - 清空知识库
-- `GET /api/v1/knowledge/stats` - 获取统计信息
-
-### 对话接口
-- `POST /api/v1/chat/` - 发送对话消息
-- `GET /api/v1/chat/history/{session_id}` - 获取对话历史
-- `DELETE /api/v1/chat/history/{session_id}` - 清除对话历史
-
-### Neo4j 知识图谱
-- `POST /api/v1/neo4j/query` - 执行 Cypher 查询
-- `GET /api/v1/neo4j/graph` - 获取图谱可视化数据
-- `POST /api/v1/neo4j/qa` - 知识图谱问答
-
-### GraphRAG
-- `POST /api/v1/graphrag/query` - GraphRAG 查询
-- `POST /api/v1/graphrag/index` - 构建 GraphRAG 索引
-
-完整 API 文档: http://localhost:8000/docs
-
----
-
-## 📦 依赖服务检查
-
-```bash
-# 检查 Docker 服务状态
-docker-compose ps
-
-# 预期输出：
-# NAME                STATUS
-# gustobot-server     Up 5 minutes
-# gustobot-neo4j      Up 5 minutes
-# gustobot-mysql      Up 5 minutes
-# gustobot-redis      Up 5 minutes
-# gustobot-milvus     Up 5 minutes
-# gustobot-etcd       Up 5 minutes
-# gustobot-minio      Up 5 minutes
-
-# 检查端口占用
-netstat -tuln | grep -E '8000|17474|13306|6379|19530'
-
-# 测试数据库连接
-docker-compose exec neo4j cypher-shell -u neo4j -p recipepass "MATCH (n) RETURN count(n) as total"
-docker-compose exec redis redis-cli ping
-```
-
----
-
-## 🚨 常见问题
-
-### 问题 1: Embedding 服务连接失败
-
-**症状**: 日志显示 `Connection refused` 或 `Timeout`
-
-**解决方案**:
-```bash
-# 1. 检查服务是否可达
-curl -I http://your-embedding-host:9997/v1/embeddings
-
-# 2. 检查 API Key 是否正确
-grep EMBEDDING_API_KEY .env
-
-# 3. 查看详细错误日志
-docker-compose logs -f backend | grep -i embedding
-```
-
-### 问题 2: Reranker 返回空结果
-
-**症状**: 日志显示 `Reranker returned no results`
-
-**解决方案**:
-```bash
-# 1. 测试 Reranker 端点
-curl -X POST "http://your-rerank-host:9997/v1/rerank" \
-  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "bge-reranker-large", "query": "test", "documents": ["doc1"], "top_n": 1}'
-
-# 2. 检查配置
-python3 -c "from gustobot.config.settings import settings; print(settings.RERANK_BASE_URL, settings.RERANK_ENDPOINT)"
-
-# 3. 临时禁用 Reranker 测试
-# 编辑 .env: RERANK_ENABLED=false
-# docker-compose restart backend
-```
-
-### 问题 3: Milvus 连接失败
-
-**症状**: `Connection to Milvus failed`
-
-**解决方案**:
-```bash
-# 1. 检查 Milvus 容器状态
-docker-compose ps milvus
-
-# 2. 重启 Milvus
-docker-compose restart milvus-standalone etcd minio
-
-# 3. 查看 Milvus 日志
-docker-compose logs -f milvus-standalone
-
-# 4. 验证端口
-telnet localhost 19530
-```
-
----
-
-## 📚 更多文档
-
-- **集成总结**: [INTEGRATION_SUMMARY.md](INTEGRATION_SUMMARY.md)
-- **集成验证**: [INTEGRATION_VERIFICATION.md](INTEGRATION_VERIFICATION.md)
-- **项目架构**: [CLAUDE.md](../CLAUDE.md)
-- **爬虫指南**: [docs/crawler_guide.md](crawler_guide.md)
-- **知识图谱**: [docs/recipe_kg_schema.md](recipe_kg_schema.md)
-- **API 文档**: http://localhost:8000/docs
-
----
-
-**祝使用愉快！** 🎉
-
-如有问题，请查看日志文件或参考上述文档。
+完整流程与 API 边界见 [领域知识服务](DOMAIN_KNOWLEDGE.md)，内置数据来源见 [数据血缘](DATA_SOURCES.md)。

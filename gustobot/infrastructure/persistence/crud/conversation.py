@@ -1,9 +1,13 @@
 """
 CRUD operations for conversations.
 """
+
 from typing import List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from gustobot.infrastructure.core.database import commit_session
 
 from gustobot.infrastructure.persistence.db.models.conversation import Conversation, DialogueType
 
@@ -20,16 +24,16 @@ class ConversationCRUD:
         dialogue_type: DialogueType = DialogueType.RAG,
     ) -> Conversation:
         """Create a new conversation."""
-        db_obj = Conversation(
+        conversation = Conversation(
             user_id=user_id,
             title=title,
             dialogue_type=dialogue_type,
             status="ongoing",
         )
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+        db.add(conversation)
+        commit_session(db)
+        db.refresh(conversation)
+        return conversation
 
     def get(self, db: Session, *, id: int) -> Optional[Conversation]:
         """Get a conversation by ID."""
@@ -53,29 +57,30 @@ class ConversationCRUD:
         for field, value in obj_in.items():
             setattr(db_obj, field, value)
         db.add(db_obj)
-        db.commit()
+        commit_session(db)
         db.refresh(db_obj)
         return db_obj
 
     def update_activity(self, db: Session, *, conversation_id: int) -> Optional[Conversation]:
         """Update conversation activity timestamp."""
-        conv = self.get(db, id=conversation_id)
-        if conv:
-            # SQLAlchemy will automatically update updated_at due to onupdate=func.now()
-            db.add(conv)
-            db.commit()
-            db.refresh(conv)
-        return conv
+        conversation = self.get(db, id=conversation_id)
+        if conversation is None:
+            return None
+        conversation.updated_at = func.now()
+        commit_session(db)
+        db.refresh(conversation)
+        return conversation
 
     def delete(self, db: Session, *, id: int) -> Optional[Conversation]:
         """Delete a conversation (soft delete by changing status)."""
-        obj = db.query(Conversation).filter(Conversation.id == id).first()
-        if obj:
-            obj.status = "deleted"
-            db.add(obj)
-            db.commit()
-            db.refresh(obj)
-        return obj
+        conversation = self.get(db, id=id)
+        if conversation is None:
+            return None
+        conversation.status = "deleted"
+        db.add(conversation)
+        commit_session(db)
+        db.refresh(conversation)
+        return conversation
 
 
 # Singleton instance

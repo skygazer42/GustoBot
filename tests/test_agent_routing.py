@@ -5,14 +5,15 @@ Agent 路由测试脚本
 执行方式：python -m tests.test_agent_routing
 """
 
-
 import os
+import logging
 
 if __name__ != "__main__" and not os.getenv("GUSTOBOT_RUN_INTEGRATION_TESTS"):
     import pytest
 
     pytest.skip(
-        "Integration-style routing script (set GUSTOBOT_RUN_INTEGRATION_TESTS=1 to enable in pytest).",
+        "Integration-style routing script "
+        "(set GUSTOBOT_RUN_INTEGRATION_TESTS=1 to enable in pytest).",
         allow_module_level=True,
     )
 
@@ -20,16 +21,13 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
-from langchain_core.messages import HumanMessage
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from gustobot.application.agents.lg_builder import graph
-from gustobot.infrastructure.core.logger import get_logger
 
-logger = get_logger(service="test_agent_routing")
+logger = logging.getLogger("test_agent_routing")
 
 
 class RoutingTestCase:
@@ -55,12 +53,17 @@ class RoutingTestCase:
 
 
 async def test_routing(
-    test_case: RoutingTestCase,
-    session_id: str = "test_session"
+    test_case: RoutingTestCase, session_id: str = "test_session"
 ) -> Dict[str, Any]:
     """测试单个路由问题"""
 
-    config = {
+    from langchain_core.messages import HumanMessage
+    from langchain_core.runnables import RunnableConfig
+    from gustobot.application.agents.lg_builder import graph
+    from gustobot.application.agents.lg_states import InputState, Router
+    from gustobot.application.agents.utils import message_text
+
+    config: RunnableConfig = {
         "configurable": {
             "thread_id": session_id,
             "image_path": test_case.image_path,
@@ -68,20 +71,21 @@ async def test_routing(
         }
     }
 
-    input_state = {
-        "messages": [HumanMessage(content=test_case.question)]
-    }
+    input_state = InputState(messages=[HumanMessage(content=test_case.question)])
 
     try:
         result = await graph.ainvoke(input_state, config=config)
 
-        actual_route = result.get('router', {}).get('type', 'unknown')
-        actual_logic = result.get('router', {}).get('logic', '')
-        response_text = result['messages'][-1].content if result.get('messages') else ''
+        router_info = result.get("router", {})
+        if isinstance(router_info, Router):
+            router_info = router_info.model_dump()
+        actual_route = router_info.get("type", "unknown")
+        actual_logic = router_info.get("logic", "")
+        response_text = message_text(result["messages"][-1]) if result.get("messages") else ""
 
         # 验证结果
         route_match = actual_route == test_case.expected_route
-        status = "✅ PASS" if route_match else "❌ FAIL"
+        status = "PASS" if route_match else "FAIL"
 
         logger.info(f"\n{'='*80}")
         logger.info(f"测试: {test_case.description}")
@@ -109,7 +113,7 @@ async def test_routing(
 
     except Exception as e:
         logger.error(f"测试失败: {test_case.description}")
-        logger.error(f"错误: {str(e)}", exc_info=True)
+        logger.exception(f"错误: {str(e)}")
         return {
             "test_case": test_case.description,
             "question": test_case.question,
@@ -117,7 +121,7 @@ async def test_routing(
             "actual_route": "ERROR",
             "route_match": False,
             "error": str(e),
-            "status": "❌ ERROR",
+            "status": "ERROR",
         }
 
 
@@ -151,7 +155,6 @@ TEST_CASES = [
         expected_node="respond_to_general_query",
         description="情绪表达",
     ),
-
     # 2. Additional-Query 测试
     RoutingTestCase(
         question="我想做菜",
@@ -177,7 +180,6 @@ TEST_CASES = [
         expected_node="get_additional_info",
         description="烹饪失败描述不清",
     ),
-
     # 3. KB-Query 测试（向量知识库）
     RoutingTestCase(
         question="宫保鸡丁的历史典故是什么",
@@ -213,52 +215,50 @@ TEST_CASES = [
         description="食材营养科普",
         sub_decision="KB Multi-tool: Reranker 重排序",
     ),
-
     # 4. GraphRAG-Query 测试（图谱推理）
     RoutingTestCase(
         question="红烧肉怎么做",
         expected_route="graphrag-query",
         expected_node="create_research_plan",
-        description="菜谱做法步骤 → Cypher",
-        sub_decision="cypher_query 或 predefined_cypher → Neo4j",
+        description="菜谱做法步骤 → LightRAG",
+        sub_decision="共享 LightRAG 索引检索做法与实体关系",
     ),
     RoutingTestCase(
         question="宫保鸡丁需要哪些食材",
         expected_route="graphrag-query",
         expected_node="create_research_plan",
-        description="食材用量查询 → Cypher",
-        sub_decision="predefined_cypher: HAS_INGREDIENT 关系",
+        description="食材用量查询 → LightRAG",
+        sub_decision="共享 LightRAG 索引检索菜品与食材关系",
     ),
     RoutingTestCase(
         question="炒青菜怎么保持翠绿",
         expected_route="graphrag-query",
         expected_node="create_research_plan",
-        description="烹饪技巧细节 → Cypher + GraphRAG",
-        sub_decision="可能同时调用 Cypher 和 microsoft_graphrag_query",
+        description="烹饪技巧细节 → LightRAG",
+        sub_decision="共享 LightRAG 检索资料与相关实体",
     ),
     RoutingTestCase(
         question="怎么判断鱼熟了",
         expected_route="graphrag-query",
         expected_node="create_research_plan",
         description="火候判断 → GraphRAG",
-        sub_decision="microsoft_graphrag_query: LightRAG 图推理",
+        sub_decision="共享 LightRAG 索引检索火候资料",
     ),
     RoutingTestCase(
         question="为什么我做的红烧肉发柴",
         expected_route="graphrag-query",
         expected_node="create_research_plan",
-        description="失败排查 → GraphRAG + Cypher",
+        description="失败排查 → LightRAG",
         sub_decision="对比正确做法推理原因",
     ),
     RoutingTestCase(
         question="什么菜适合感冒的人吃",
         expected_route="graphrag-query",
         expected_node="create_research_plan",
-        description="综合图谱推理 → Multiple Tools",
-        sub_decision="Cypher 查询 HAS_HEALTH_BENEFIT + GraphRAG 推理",
+        description="综合知识检索 → LightRAG",
+        sub_decision="共享 LightRAG 检索食材相关来源资料",
     ),
-
-    # 5. Text2SQL-Query 测试（启发式路由）
+    # 5. Text2SQL-Query 测试（领域启用 SQL 且配置 SQL_DATABASE_URL 时适用）
     RoutingTestCase(
         question="数据库里有多少道菜",
         expected_route="text2sql-query",  # 启发式关键词 "多少"
@@ -280,7 +280,6 @@ TEST_CASES = [
         description="数据趋势分析 → Text2SQL",
         sub_decision="text2sql_query: GROUP BY 查询",
     ),
-
     # 6. Image-Query 测试
     RoutingTestCase(
         question="生成一张红烧肉的图片",
@@ -289,7 +288,6 @@ TEST_CASES = [
         description="图片生成",
         sub_decision="LLM 优化提示词 → CogView-4 API",
     ),
-
     # 7. Guardrails 边界测试
     RoutingTestCase(
         question="今天天气怎么样",
@@ -333,8 +331,8 @@ async def run_test_suite():
     logger.info("测试汇总")
     logger.info("=" * 80)
     logger.info(f"总计: {total}")
-    logger.info(f"通过: {passed} ✅")
-    logger.info(f"失败: {failed} ❌")
+    logger.info(f"通过: {passed}")
+    logger.info(f"失败: {failed}")
     logger.info(f"成功率: {passed/total*100:.1f}%")
     logger.info("=" * 80)
 
@@ -343,7 +341,7 @@ async def run_test_suite():
         logger.info("\n失败的测试用例:")
         for r in results:
             if not r.get("route_match", False):
-                logger.info(f"  ❌ {r['test_case']}")
+                logger.info(f"  {r['test_case']}")
                 logger.info(f"     问题: {r['question']}")
                 logger.info(f"     预期: {r['expected_route']}")
                 logger.info(f"     实际: {r['actual_route']}")
@@ -386,4 +384,5 @@ if __name__ == "__main__":
         asyncio.run(run_single_test(args.single))
     elif args.suite or not (args.single or args.suite):
         # 默认运行完整测试套件
-        asyncio.run(run_test_suite())
+        results = asyncio.run(run_test_suite())
+        raise SystemExit(0 if all(result["route_match"] for result in results) else 1)

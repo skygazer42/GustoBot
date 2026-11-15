@@ -1,3 +1,1 @@
-from .neo4j_qa_service import Neo4jQAService
-
-__all__ = ["Neo4jQAService"]
+"""Offline recipe JSON parsing for the legacy CSV export utility."""

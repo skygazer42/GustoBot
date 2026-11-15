@@ -1,6 +1,7 @@
 """
 Prompt helpers for the KG knowledge agent.
 """
+
 from textwrap import dedent
 
 

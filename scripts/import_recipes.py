@@ -20,8 +20,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from gustobot.infrastructure.knowledge.recipe_import import recipe_json_entry_to_recipe
-
 
 def _iter_payloads_from_json(
     raw: Any,
@@ -33,6 +31,8 @@ def _iter_payloads_from_json(
     - dict keyed by recipe name (bundled data/recipe.json format)
     - list of recipe dicts (already-normalized)
     """
+
+    from gustobot.infrastructure.knowledge.recipe_import import recipe_json_entry_to_recipe
 
     emitted = 0
 
@@ -62,8 +62,8 @@ def _iter_payloads_from_json(
             else:
                 payload = {
                     "name": str(name),
-                    "category": item.get("category") or item.get("类型"),
-                    "time": item.get("time") or item.get("耗时"),
+                    "category": item.get("category", item.get("类型")),
+                    "time": item.get("time", item.get("耗时")),
                     "ingredients": item.get("ingredients"),
                     "steps": item.get("steps"),
                     "tips": item.get("tips"),
@@ -75,6 +75,8 @@ def _iter_payloads_from_json(
 
 
 def _chunked(iterable: Iterable[Dict[str, Any]], size: int) -> Iterator[List[Dict[str, Any]]]:
+    if size <= 0:
+        raise ValueError("batch size must be positive")
     batch: List[Dict[str, Any]] = []
     for item in iterable:
         batch.append(item)
@@ -94,8 +96,8 @@ def _post_batch(
     url = api_base_url.rstrip("/") + "/api/v1/knowledge/recipes/batch"
     response = client.post(url, json=recipes)
     response.raise_for_status()
-    payload = response.json() if response.content else {}
-    inserted = int(payload.get("statistics", {}).get("success", len(recipes)))
+    payload = response.json()
+    inserted = int(payload["statistics"]["success"])
     return inserted, payload
 
 
@@ -112,6 +114,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Convert only, do not POST")
     parser.add_argument("--timeout", type=float, default=60.0, help="HTTP timeout seconds")
     args = parser.parse_args(argv)
+    if args.batch_size <= 0:
+        parser.error("--batch-size must be positive")
+    if args.limit is not None and args.limit < 0:
+        parser.error("--limit cannot be negative")
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
 
     json_path = Path(args.file)
     if not json_path.exists():
@@ -142,7 +150,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             elapsed = time.time() - started
             rate = total / elapsed if elapsed > 0 else 0.0
             print(
-                f"[batch {batch_idx}] sent={len(batch)} inserted={inserted} total={total} rate={rate:.1f}/s"
+                f"[batch {batch_idx}] sent={len(batch)} inserted={inserted} "
+                f"total={total} rate={rate:.1f}/s"
             )
 
     print(f"Done. Imported {total} recipes.")

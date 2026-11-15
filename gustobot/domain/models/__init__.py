@@ -5,6 +5,7 @@ This module now proxies to the new `gustobot.infrastructure.persistence.db.model
 `gustobot.interfaces.http.models` (Pydantic) packages. Prefer importing from those packages
 directly to make intent explicit.
 """
+
 from warnings import warn
 
 from gustobot.interfaces.http.models.chat import ChatRequest, ChatResponse
@@ -17,7 +18,11 @@ from gustobot.interfaces.http.models.chat_message import (
     ChatSessionSnapshotCreate,
     ChatSessionSnapshotResponse,
 )
-from gustobot.interfaces.http.models.chat_session import ChatSessionCreate, ChatSessionResponse, ChatSessionUpdate
+from gustobot.interfaces.http.models.chat_session import (
+    ChatSessionCreate,
+    ChatSessionResponse,
+    ChatSessionUpdate,
+)
 from gustobot.infrastructure.persistence.db.models import (
     ChatMessage,
     ChatSession,
@@ -30,7 +35,7 @@ from gustobot.infrastructure.persistence.db.models import (
 )
 
 warn(
-    "Importing from `gustobot.models` is deprecated. "
+    "Importing from `gustobot.domain.models` is deprecated. "
     "Use `gustobot.infrastructure.persistence.db.models` for database entities and "
     "`gustobot.interfaces.http.models` for Pydantic schemas instead.",
     DeprecationWarning,

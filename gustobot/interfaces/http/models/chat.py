@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class ChatRequest(BaseModel):
     """聊天请求"""
@@ -8,14 +9,15 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="会话ID")
     user_id: Optional[str] = Field(None, description="用户ID")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "message": "怎么做红烧肉？",
                 "session_id": "session_123",
                 "user_id": "user_456",
             }
         }
+    )
 
 
 class ChatResponse(BaseModel):
@@ -26,8 +28,8 @@ class ChatResponse(BaseModel):
     type: str = Field(..., description="响应类型：knowledge/chat/reject/error")
     metadata: Optional[Dict[str, Any]] = Field(None, description="元数据")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "answer": "红烧肉的做法是...",
                 "session_id": "session_123",
@@ -38,3 +40,4 @@ class ChatResponse(BaseModel):
                 },
             }
         }
+    )

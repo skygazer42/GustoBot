@@ -1,0 +1,29 @@
+{
+  "id": "generic",
+  "name": "通用知识服务",
+  "description": "基于原始文档与证据的概念知识。",
+  "entity_types": {
+    "Concept": {"description": "原文中明确出现的概念。", "properties": {}},
+    "Document": {
+      "description": "资料中描述的文档。",
+      "properties": {"uri": {"type": "string"}}
+    }
+  },
+  "relation_types": {
+    "RELATED_TO": {
+      "source_types": ["Concept"],
+      "target_types": ["Concept"],
+      "description": "原文明确支持的概念关联。"
+    },
+    "DESCRIBES": {
+      "source_types": ["Document"],
+      "target_types": ["Concept"],
+      "description": "文档描述一个概念。"
+    }
+  },
+  "document_scope": "已提供的领域资料和文档。",
+  "graph_keywords": ["关联", "关系", "影响", "依赖"],
+  "sql_keywords": ["统计", "多少", "总数", "数量", "排名"],
+  "document_keywords": ["文档", "资料", "说明", "来源"],
+  "assistant_instructions": "根据检索到的资料作答，区分原文支持的事实与尚未确认的推断。"
+}

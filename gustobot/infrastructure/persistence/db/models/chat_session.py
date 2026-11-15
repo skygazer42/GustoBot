@@ -4,10 +4,16 @@ Chat session models for persistent conversation storage.
 Lightweight user ID system - no authentication, just user identification.
 """
 
-from sqlalchemy import Boolean, Column, DateTime, String, func
-from sqlalchemy.orm import relationship
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from gustobot.infrastructure.core.database import Base
+
+if TYPE_CHECKING:
+    from .chat_message import ChatMessage, ChatSessionSnapshot
 
 
 class ChatSession(Base):
@@ -23,58 +29,58 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     # Primary key - using UUID string for session ID
-    id = Column(String(255), primary_key=True, index=True, comment="Session UUID")
+    id: Mapped[str] = mapped_column(
+        String(255), primary_key=True, index=True, comment="Session UUID"
+    )
 
     # Lightweight user identification (no FK, just a string)
-    user_id = Column(
+    user_id: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True,
         index=True,
-        comment="User identifier (device ID, anonymous UUID, etc.) - no authentication"
+        comment="User identifier (device ID, anonymous UUID, etc.) - no authentication",
     )
 
     # Session metadata
-    title = Column(
-        String(500),
-        nullable=False,
-        comment="Session title (usually derived from first query)"
+    title: Mapped[str] = mapped_column(
+        String(500), nullable=False, comment="Session title (usually derived from first query)"
     )
 
     # Timestamps
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
-        comment="Session creation timestamp"
+        comment="Session creation timestamp",
     )
-    updated_at = Column(
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
         nullable=True,
-        comment="Last update timestamp"
+        comment="Last update timestamp",
     )
 
     # Status flag for soft delete
-    is_active = Column(
+    is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         nullable=False,
-        comment="Whether the session is active (soft delete flag)"
+        comment="Whether the session is active (soft delete flag)",
     )
 
     # Relationships
-    messages = relationship(
+    messages: Mapped[List["ChatMessage"]] = relationship(
         "ChatMessage",
         back_populates="session",
         cascade="all, delete-orphan",
-        order_by="ChatMessage.order_index"
+        order_by="ChatMessage.order_index",
     )
-    snapshots = relationship(
+    snapshots: Mapped[List["ChatSessionSnapshot"]] = relationship(
         "ChatSessionSnapshot",
         back_populates="session",
         cascade="all, delete-orphan",
-        order_by="ChatSessionSnapshot.created_at.desc()"
+        order_by="ChatSessionSnapshot.created_at.desc()",
     )
 
     def __repr__(self) -> str:

@@ -3,43 +3,41 @@
 """
 LightRAG 初始化脚本
 
-从 Neo4j 菜谱图谱导出数据并导入到 LightRAG，用于图谱检索增强
-支持两种模式:
-1. 从 Neo4j 导入完整菜谱数据
-2. 从 JSON 文件导入菜谱数据
+从菜谱 JSON 文件导入同一 LightRAG 文档与关系索引。
+其他领域使用通用文档或事实导入 API。
 """
 import asyncio
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Iterable, Tuple
 import json
+import logging
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from gustobot.config import settings
-from gustobot.infrastructure.core.logger import get_logger
-from gustobot.application.agents.kg_sub_graph.agentic_rag_agents.components.customer_tools.node import LightRAGAPI
+if TYPE_CHECKING:
+    from gustobot.application.services.lightrag_service import LightRAGService
 
-logger = get_logger(service="init-lightrag")
+logger = logging.getLogger("init-lightrag")
 
 
 def format_recipe_document(record: Dict[str, Any]) -> str:
     """
-    将 Neo4j 记录格式化为 LightRAG 文档格式
+    将菜谱 JSON 记录格式化为 LightRAG 文档格式
 
     Parameters
     ----------
     record : Dict[str, Any]
-        Neo4j 查询返回的记录
+        标准化后的菜谱记录
 
     Returns
     -------
     str
         格式化后的菜谱文档
     """
-    dish_name = record.get("dish_name", "")
+    dish_name = record["dish_name"]
     instructions = record.get("instructions", "")
     cook_time = record.get("cook_time", "")
     ingredients = record.get("ingredients", [])
@@ -63,12 +61,16 @@ def format_recipe_document(record: Dict[str, Any]) -> str:
         doc_parts.append(f"**烹饪时长**: {cook_time}")
 
     if ingredients:
-        doc_parts.append(f"\n**食材**:\n")
+        doc_parts.append("\n**食材**:\n")
         for ing in ingredients:
             if isinstance(ing, dict):
-                name = ing.get("name", "")
-                amount = ing.get("amount", "")
-                doc_parts.append(f"- {name}: {amount}" if amount else f"- {name}")
+                name = ing["name"]
+                if name is None:
+                    continue
+                amount = ing.get("amount")
+                doc_parts.append(
+                    f"- {name}: {amount}" if amount is not None and amount != "" else f"- {name}"
+                )
             else:
                 doc_parts.append(f"- {ing}")
 
@@ -78,100 +80,15 @@ def format_recipe_document(record: Dict[str, Any]) -> str:
     return "\n".join(doc_parts)
 
 
-async def import_from_neo4j(lightrag: LightRAGAPI, limit: int = None) -> int:
-    """
-    从 Neo4j 导入菜谱数据到 LightRAG
-
-    Parameters
-    ----------
-    lightrag : LightRAGAPI
-        LightRAG API 实例
-    limit : int, optional
-        限制导入的菜品数量，用于测试
-
-    Returns
-    -------
-    int
-        导入的文档数量
-    """
-    try:
-        from neo4j import GraphDatabase
-
-        logger.info("开始从 Neo4j 导入菜谱数据")
-
-        # 连接 Neo4j
-        driver = GraphDatabase.driver(
-            settings.NEO4J_URI,
-            auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
-        )
-
-        documents = []
-
-        with driver.session(database=settings.NEO4J_DATABASE) as session:
-            # 构建查询
-            query = """
-            MATCH (d:Dish)
-            OPTIONAL MATCH (d)-[r_main:HAS_MAIN_INGREDIENT]->(i_main:Ingredient)
-            OPTIONAL MATCH (d)-[r_aux:HAS_AUX_INGREDIENT]->(i_aux:Ingredient)
-            OPTIONAL MATCH (d)-[:HAS_FLAVOR]->(f:Flavor)
-            OPTIONAL MATCH (d)-[:USES_METHOD]->(m:CookingMethod)
-            OPTIONAL MATCH (d)-[:BELONGS_TO_TYPE]->(t:DishType)
-            WITH d,
-                 collect(DISTINCT {name: i_main.name, amount: r_main.amount_text}) as main_ingredients,
-                 collect(DISTINCT {name: i_aux.name, amount: r_aux.amount_text}) as aux_ingredients,
-                 collect(DISTINCT f.name) as flavors,
-                 collect(DISTINCT m.name) as methods,
-                 collect(DISTINCT t.name) as types
-            RETURN d.name as dish_name,
-                   d.instructions as instructions,
-                   d.cook_time as cook_time,
-                   main_ingredients + aux_ingredients as ingredients,
-                   flavors,
-                   methods,
-                   types
-            """
-
-            if limit:
-                query += f" LIMIT {limit}"
-
-            logger.info(f"执行 Neo4j 查询{'（限制 ' + str(limit) + ' 条）' if limit else ''}")
-            result = session.run(query)
-
-            for record in result:
-                record_dict = dict(record)
-                doc = format_recipe_document(record_dict)
-                documents.append(doc)
-
-                if len(documents) % 10 == 0:
-                    logger.info(f"已准备 {len(documents)} 个文档")
-
-        driver.close()
-
-        logger.info(f"共准备了 {len(documents)} 个菜谱文档")
-
-        # 批量插入到 LightRAG
-        logger.info("开始插入文档到 LightRAG")
-        result = await lightrag.insert_documents(documents)
-
-        logger.info(f"导入完成: 总数={result['total']}, 成功={result['success']}, 失败={result['error']}")
-
-        return result['success']
-
-    except ImportError:
-        logger.error("neo4j 包未安装，请运行 'pip install neo4j'")
-        raise
-    except Exception as e:
-        logger.error(f"从 Neo4j 导入失败: {str(e)}", exc_info=True)
-        raise
-
-
-async def import_from_json(lightrag: LightRAGAPI, json_path: str, limit: int = None) -> int:
+async def import_from_json(
+    lightrag: "LightRAGService", json_path: str, limit: Optional[int] = None
+) -> int:
     """
     从 JSON 文件导入菜谱数据到 LightRAG
 
     Parameters
     ----------
-    lightrag : LightRAGAPI
+    lightrag : LightRAGService
         LightRAG API 实例
     json_path : str
         JSON 文件路径
@@ -183,40 +100,37 @@ async def import_from_json(lightrag: LightRAGAPI, json_path: str, limit: int = N
     int
         导入的文档数量
     """
-    try:
-        logger.info(f"开始从 JSON 文件导入: {json_path}")
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if limit == 0:
+        return 0
+    logger.info(f"开始从 JSON 文件导入: {json_path}")
 
-        with open(json_path, "r", encoding="utf-8") as f:
-            raw_recipes = json.load(f)
+    raw_recipes = json.loads(await asyncio.to_thread(Path(json_path).read_text, encoding="utf-8"))
 
-        recipes = _normalize_recipe_payload(raw_recipes)
+    recipes = _normalize_recipe_payload(raw_recipes)
 
-        if limit is not None and limit > 0:
-            recipes = recipes[:limit]
+    if limit is not None:
+        recipes = recipes[:limit]
 
-        documents = []
+    documents = []
 
-        for recipe in recipes:
-            # 假设 JSON 格式与 Neo4j 记录格式相似
-            doc = format_recipe_document(recipe)
-            documents.append(doc)
+    for recipe in recipes:
+        doc = format_recipe_document(recipe)
+        documents.append(doc)
 
-            if len(documents) % 10 == 0:
-                logger.info(f"已准备 {len(documents)} 个文档")
+        if len(documents) % 10 == 0:
+            logger.info(f"已准备 {len(documents)} 个文档")
 
-        logger.info(f"共准备了 {len(documents)} 个菜谱文档")
+    logger.info(f"共准备了 {len(documents)} 个菜谱文档")
 
-        # 批量插入到 LightRAG
-        logger.info("开始插入文档到 LightRAG")
-        result = await lightrag.insert_documents(documents)
+    # 批量插入到 LightRAG
+    logger.info("开始插入文档到 LightRAG")
+    result = await lightrag.insert_documents(documents)
 
-        logger.info(f"导入完成: 总数={result['total']}, 成功={result['success']}, 失败={result['error']}")
+    logger.info("导入完成: 总数=%s, 成功=%s, 失败=%s", result.total, result.success, result.failed)
 
-        return result['success']
-
-    except Exception as e:
-        logger.error(f"从 JSON 导入失败: {str(e)}", exc_info=True)
-        raise
+    return result.success
 
 
 def _normalize_recipe_payload(raw: Any) -> List[Dict[str, Any]]:
@@ -226,92 +140,99 @@ def _normalize_recipe_payload(raw: Any) -> List[Dict[str, Any]]:
       1. 列表: [ {...}, {...} ]
       2. 字典: { "菜名": {...}, ... }
     """
-    records: List[Dict[str, Any]] = []
-
+    entries: Iterable[Tuple[Optional[str], Any]]
     if isinstance(raw, dict):
-        for idx, (dish_name, payload) in enumerate(raw.items(), start=1):
-            record = _coerce_recipe_entry(payload)
-            if "dish_name" not in record or not record["dish_name"]:
-                record["dish_name"] = dish_name or f"菜谱{idx}"
-            records.append(record)
-        return records
+        entries = raw.items()
+    elif isinstance(raw, list):
+        entries = ((None, entry) for entry in raw)
+    else:
+        raise ValueError("不支持的菜谱数据格式，期望为 list 或 dict。")
 
-    if isinstance(raw, list):
-        for idx, payload in enumerate(raw, start=1):
-            record = _coerce_recipe_entry(payload)
-            if "dish_name" not in record or not record["dish_name"]:
-                fallback_name = (
-                    record.get("dishName")
-                    or record.get("name")
-                    or record.get("title")
-                )
-                if fallback_name:
-                    record["dish_name"] = fallback_name
-                else:
-                    record["dish_name"] = f"菜谱{idx}"
-            records.append(record)
-        return records
+    from gustobot.infrastructure.knowledge.recipe_import import recipe_json_entry_to_recipe
 
-    raise ValueError("不支持的菜谱数据格式，期望为 list 或 dict。")
-
-
-def _coerce_recipe_entry(entry: Any) -> Dict[str, Any]:
-    """确保每个菜谱条目是 dict，并复制一份以避免修改原对象。"""
-    if isinstance(entry, dict):
-        return dict(entry)
-    return {"dish_name": str(entry), "instructions": ""}  # 最少保留菜名
+    records = []
+    for source_name, payload in entries:
+        if not isinstance(payload, dict):
+            raise TypeError("每个菜谱条目必须为对象")
+        record = dict(payload)
+        dish_name = (
+            record.get("dish_name")
+            or source_name
+            or record.get("dishName")
+            or record.get("name")
+            or record.get("title")
+        )
+        if not isinstance(dish_name, str) or not dish_name.strip():
+            raise ValueError("菜谱必须提供非空菜名")
+        record["dish_name"] = dish_name
+        if any(key in record for key in ("主食材", "辅料", "做法")):
+            recipe = recipe_json_entry_to_recipe(dish_name, record)
+            record.update(
+                cook_time=recipe["time"],
+                ingredients=recipe["ingredients"],
+                instructions="\n".join(recipe["steps"]) if recipe["steps"] is not None else "",
+            )
+        records.append(record)
+    return records
 
 
 async def main():
     """主函数"""
+    from gustobot.application.services.lightrag_service import LightRAGService
+    from gustobot.config import settings
+    from gustobot.config.domain import get_domain_definition
+
+    from gustobot.infrastructure.core.resources import close_on_exit
+
     import argparse
 
     parser = argparse.ArgumentParser(description="LightRAG 初始化脚本")
     parser.add_argument(
         "--source",
         type=str,
-        choices=["neo4j", "json"],
-        default="neo4j",
-        help="数据源类型 (neo4j 或 json)"
+        choices=["json"],
+        default="json",
+        help="菜谱 JSON 数据源",
     )
     parser.add_argument(
         "--json-path",
         type=str,
         default=str(project_root / "data" / "recipe.json"),
-        help="JSON 文件路径（当 source=json 时使用）"
+        help="JSON 文件路径（当 source=json 时使用）",
     )
+    parser.add_argument("--limit", type=int, default=None, help="限制导入数量（用于测试）")
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="限制导入数量（用于测试）"
-    )
-    parser.add_argument(
-        "--working-dir",
-        type=str,
-        default=None,
-        help="LightRAG 工作目录（覆盖配置文件）"
+        "--working-dir", type=str, default=None, help="LightRAG 工作目录（覆盖配置文件）"
     )
 
     args = parser.parse_args()
+    if args.limit is not None and args.limit < 0:
+        parser.error("--limit cannot be negative")
+    domain = get_domain_definition()
+    if domain.id != "recipes":
+        parser.error(
+            "This is a recipe-only importer; select the recipes domain configuration "
+            "before importing recipe JSON data."
+        )
 
     try:
         # 创建 LightRAG API 实例
         logger.info("初始化 LightRAG")
-        lightrag = LightRAGAPI(working_dir=args.working_dir)
+        lightrag = LightRAGService(
+            working_dir=args.working_dir,
+            default_mode=settings.LIGHTRAG_RETRIEVAL_MODE,
+            default_top_k=settings.LIGHTRAG_TOP_K,
+        )
 
-        # 根据数据源类型导入
-        if args.source == "neo4j":
-            count = await import_from_neo4j(lightrag, limit=args.limit)
-        elif args.source == "json":
+        async with close_on_exit(lightrag.cleanup):
             count = await import_from_json(lightrag, args.json_path, limit=args.limit)
 
-        logger.info(f"✅ LightRAG 初始化完成！成功导入 {count} 个菜谱文档")
-        logger.info(f"📂 工作目录: {lightrag.working_dir}")
-        logger.info(f"🔍 检索模式: {lightrag.retrieval_mode}")
+            logger.info("LightRAG 初始化完成，成功导入 %s 个菜谱文档", count)
+            logger.info("工作目录: %s", lightrag.working_dir)
+            logger.info("检索模式: %s", lightrag.default_mode)
 
-    except Exception as e:
-        logger.error(f"❌ 初始化失败: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("LightRAG 初始化失败")
         sys.exit(1)
 
 

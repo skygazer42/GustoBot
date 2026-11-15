@@ -2,10 +2,11 @@
 Pydantic schemas for chat history management.
 Based on ChatDB implementation.
 """
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
 
 # Chat History Snapshot Schemas
@@ -26,8 +27,7 @@ class ConversationHistorySnapshotResponse(BaseModel):
     response_data: Dict[str, Any]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Save Conversation History Request
@@ -52,8 +52,7 @@ class ConversationHistoryResponse(BaseModel):
     response: Dict[str, Any]
     user_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Conversation History List Response
@@ -77,5 +76,4 @@ class RestoreConversationHistoryResponse(BaseModel):
     user_id: Optional[int] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

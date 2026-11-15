@@ -1,6 +1,7 @@
 """
 Core application utilities.
 """
+
 from .database import Base, SessionLocal, engine, get_db, init_db, session_scope
 from .logger import configure_logging, get_logger
 

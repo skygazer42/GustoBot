@@ -25,8 +25,10 @@ class SearchTool:
             logger.info("External search disabled; SearchTool will operate in no-op mode.")
 
         self.endpoint = (endpoint or settings.SERPAPI_BASE_URL).rstrip("/")
-        self.timeout = timeout or settings.SERPAPI_TIMEOUT
-        self.default_results = default_results or settings.SEARCH_RESULT_COUNT
+        self.timeout = settings.SERPAPI_TIMEOUT if timeout is None else timeout
+        self.default_results = (
+            settings.SEARCH_RESULT_COUNT if default_results is None else default_results
+        )
 
     def search(self, query: str, *, num_results: Optional[int] = None) -> List[Dict]:
         """执行搜索并返回结构化结果"""
@@ -37,7 +39,11 @@ class SearchTool:
             logger.info("External search disabled via configuration; returning empty result set.")
             return []
 
-        result_count = num_results or self.default_results
+        result_count = self.default_results if num_results is None else num_results
+        if result_count < 0:
+            raise ValueError("num_results cannot be negative")
+        if result_count == 0:
+            return []
 
         params = {
             "engine": "google",
@@ -48,25 +54,21 @@ class SearchTool:
             "gl": "cn",
         }
 
-        try:
-            with httpx.Client(timeout=self.timeout, trust_env=False) as client:
-                response = client.get(self.endpoint, params=params)
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.error("Search request failed: {}", exc)
-            return []
+        with httpx.Client(timeout=self.timeout, trust_env=False) as client:
+            response = client.get(self.endpoint, params=params)
+            response.raise_for_status()
 
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            logger.error("Failed to decode search response: {}", exc)
-            return []
+        payload = response.json()
 
         return self._parse_results(payload, limit=result_count)
 
     def _parse_results(self, data: Dict, *, limit: int) -> List[Dict]:
         """Normalize SerpAPI payload."""
-        organic_results = data.get("organic_results") or []
+        if "error" in data:
+            raise RuntimeError(f"Search provider failed: {data['error']}")
+        if limit <= 0:
+            return []
+        organic_results = data.get("organic_results", [])
         results: List[Dict] = []
 
         for item in organic_results:

@@ -66,7 +66,9 @@ async def invoke_chat(client: httpx.AsyncClient, message: str, idx: int) -> Dict
         "stream": False,
     }
     try:
-        resp = await client.post(CHAT_ENDPOINT, json=payload, headers={"Content-Type": "application/json"})
+        resp = await client.post(
+            CHAT_ENDPOINT, json=payload, headers={"Content-Type": "application/json"}
+        )
     except httpx.TimeoutException as exc:
         return {"status": 0, "payload": payload, "error": f"timeout: {exc}"}
     except httpx.HTTPError as exc:
@@ -108,7 +110,7 @@ def evaluate_case(case: Dict[str, Any], resp: Dict[str, Any]) -> Dict[str, Any]:
 
     # 可选校验：是否返回来源
     if case.get("expect_sources"):
-        sources = data.get("sources") or []
+        sources = data["sources"]
         if not sources:
             outcome["details"] = "无来源返回，但预期应包含知识库来源"
             return outcome
@@ -116,7 +118,7 @@ def evaluate_case(case: Dict[str, Any], resp: Dict[str, Any]) -> Dict[str, Any]:
     # 可选校验：回答中包含特定片段
     must_contain = case.get("must_contain")
     if must_contain:
-        message = (data.get("message") or "").strip()
+        message = data["message"].strip()
         if must_contain not in message:
             outcome["details"] = f"回答未包含预期片段: {must_contain!r}"
             return outcome
@@ -129,26 +131,25 @@ def summarize(results: List[Dict[str, Any]]) -> None:
     """输出汇总结果。"""
     total = len(results)
     passed = sum(1 for item in results if item["passed"])
-    print("\n" + "=" * 60)
-    print("📊 路由冒烟测试结果")
-    print("=" * 60)
+    print("路由冒烟测试结果")
     for item in results:
-        status = "✅" if item["passed"] else "❌"
+        status = "通过" if item["passed"] else "失败"
         print(f"{status} {item['question']}")
-        print(f"   预期路由: {item['expected_route']} | 实际路由: {item.get('actual_route', 'N/A')}")
+        print(
+            f"   预期路由: {item['expected_route']} | 实际路由: {item.get('actual_route', 'N/A')}"
+        )
         if item["description"]:
             print(f"   描述: {item['description']}")
         if not item["passed"] and item["details"]:
             print(f"   失败原因: {item['details']}")
-    print("-" * 60)
     print(f"通过率: {passed}/{total} = {passed / total * 100:.1f}%")
 
 
 async def main() -> int:
-    print("🧪 GustoBot 路由冒烟测试")
+    print("GustoBot 路由冒烟测试")
     print(f"目标接口: {CHAT_ENDPOINT}\n")
 
-    # NOTE: Run sequentially to avoid overloading the backend (some routes call external LLM/image APIs).
+    # Run sequentially to avoid overloading external LLM/image services.
     # Keep a generous timeout so slow models still pass.
     async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
         responses = []

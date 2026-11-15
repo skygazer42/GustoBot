@@ -1,15 +1,19 @@
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, Mapping
+from typing import Any, Callable, Dict, Iterable
 
-@dataclass(frozen=True, slots=True)
+from openai.types.chat import ChatCompletionToolParam
+from openai.types.shared_params import FunctionDefinition
+
+
+@dataclass(frozen=True)
 class ToolSpec:
     """Describe a tool so it can be surfaced to LLMs."""
 
     name: str
     description: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: Dict[str, object] = field(default_factory=dict)
 
-    def as_openai_function(self) -> Dict[str, Any]:
+    def as_openai_function(self) -> FunctionDefinition:
         """
         Return the spec formatted for OpenAI function calling.
         """
@@ -19,7 +23,7 @@ class ToolSpec:
             "parameters": self.parameters,
         }
 
-    def as_openai_tool(self) -> Dict[str, Any]:
+    def as_openai_tool(self) -> ChatCompletionToolParam:
         """
         Return the spec wrapped in the format expected by OpenAI `tools`.
         """

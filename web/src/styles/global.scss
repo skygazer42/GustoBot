@@ -117,6 +117,27 @@ button:disabled {
   min-height: 100dvh;
 }
 
+.app-shell[data-mode='technology'] {
+  --paper: #f3eee3;
+  --ink: #292d29;
+  --muted: #626a60;
+  --subtle: #626a60;
+  --clay: #52614d;
+  --clay-hover: #3e4c39;
+  --line: #c8c7b7;
+  --control-line: #a9b09f;
+  --wash: #e6e3d6;
+  --archive-latin: Georgia, 'Times New Roman', serif;
+  --archive-number: #94702c;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.app-shell[data-mode='technology'] .product-header {
+  width: min(1328px, calc(100% - clamp(40px, 7.78vw, 112px)));
+  border-bottom-color: var(--ink);
+}
+
 .app-shell :where(button, a, input, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--clay);
   outline-offset: 3px;

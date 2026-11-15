@@ -2,16 +2,13 @@
 Milvus向量数据库封装
 使用Milvus作为向量存储引擎
 """
+
+import json
+from uuid import uuid4
+
 from typing import List, Dict, Any, Optional
 from loguru import logger
-from pymilvus import (
-    connections,
-    Collection,
-    CollectionSchema,
-    FieldSchema,
-    DataType,
-    utility
-)
+from pymilvus import connections, Collection, CollectionSchema, FieldSchema, DataType, utility
 
 
 class VectorStore:
@@ -24,7 +21,7 @@ class VectorStore:
         port: int = 19530,
         dimension: int = 1536,
         index_type: str = "IVF_FLAT",
-        metric_type: str = "IP"  # Inner Product (cosine similarity)
+        metric_type: str = "IP",  # Inner Product (cosine similarity)
     ):
         """
         初始化Milvus向量数据库
@@ -44,7 +41,8 @@ class VectorStore:
         self.index_type = index_type
         self.metric_type = metric_type
 
-        self.collection = None
+        self._connection_alias = f"knowledge_{uuid4().hex}"
+        self.collection: Collection
 
         self._initialize()
 
@@ -52,16 +50,12 @@ class VectorStore:
         """初始化Milvus连接和集合"""
         try:
             # 连接到Milvus
-            connections.connect(
-                alias="default",
-                host=self.host,
-                port=self.port
-            )
+            connections.connect(alias=self._connection_alias, host=self.host, port=self.port)
             logger.info(f"Connected to Milvus at {self.host}:{self.port}")
 
             # 检查集合是否存在
-            if utility.has_collection(self.collection_name):
-                self.collection = Collection(self.collection_name)
+            if utility.has_collection(self.collection_name, using=self._connection_alias):
+                self.collection = Collection(self.collection_name, using=self._connection_alias)
                 logger.info(f"Loaded existing collection: {self.collection_name}")
             else:
                 # 创建新集合
@@ -71,8 +65,11 @@ class VectorStore:
             # 加载集合到内存
             self.collection.load()
 
-        except Exception as e:
-            logger.error(f"Failed to initialize Milvus: {e}")
+        except BaseException:
+            try:
+                connections.disconnect(self._connection_alias)
+            except Exception:
+                logger.exception("Failed to disconnect Milvus after initialization failed")
             raise
 
     def _create_collection(self):
@@ -89,28 +86,21 @@ class VectorStore:
         ]
 
         # 创建集合schema
-        schema = CollectionSchema(
-            fields=fields,
-            description="Recipe knowledge base collection"
-        )
+        schema = CollectionSchema(fields=fields, description="Recipe knowledge base collection")
 
         # 创建集合
         self.collection = Collection(
-            name=self.collection_name,
-            schema=schema
+            name=self.collection_name, schema=schema, using=self._connection_alias
         )
 
         # 创建索引
         index_params = {
             "index_type": self.index_type,
             "metric_type": self.metric_type,
-            "params": {"nlist": 128} if self.index_type == "IVF_FLAT" else {}
+            "params": {"nlist": 128} if self.index_type == "IVF_FLAT" else {},
         }
 
-        self.collection.create_index(
-            field_name="embedding",
-            index_params=index_params
-        )
+        self.collection.create_index(field_name="embedding", index_params=index_params)
 
         logger.info(f"Created index with type: {self.index_type}")
 
@@ -119,7 +109,7 @@ class VectorStore:
         ids: List[str],
         embeddings: List[List[float]],
         documents: List[str],
-        metadatas: Optional[List[Dict[str, Any]]] = None
+        metadatas: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         """
         添加文档到向量数据库
@@ -133,42 +123,36 @@ class VectorStore:
         Returns:
             是否成功
         """
-        try:
-            if not metadatas:
-                metadatas = [{}] * len(ids)
+        if metadatas is None:
+            metadatas = [{} for _ in ids]
+        if not (len(ids) == len(embeddings) == len(documents) == len(metadatas)):
+            raise ValueError("Document, metadata and embedding counts must match")
 
-            def _as_varchar(value: Any) -> str:
-                if value is None:
-                    return ""
-                return str(value)
+        def _as_varchar(value: Any) -> str:
+            if value is None:
+                return ""
+            return str(value)
 
-            # 准备插入数据
-            entities = [
-                ids,
-                embeddings,
-                documents,
-                [_as_varchar(meta.get("recipe_id")) for meta in metadatas],
-                [_as_varchar(meta.get("name")) for meta in metadatas],
-                [_as_varchar(meta.get("category")) for meta in metadatas],
-                [_as_varchar(meta.get("difficulty")) for meta in metadatas],
-            ]
+        # 准备插入数据
+        entities = [
+            ids,
+            embeddings,
+            documents,
+            [_as_varchar(meta.get("recipe_id")) for meta in metadatas],
+            [_as_varchar(meta.get("name")) for meta in metadatas],
+            [_as_varchar(meta.get("category")) for meta in metadatas],
+            [_as_varchar(meta.get("difficulty")) for meta in metadatas],
+        ]
 
-            # 插入数据
-            self.collection.insert(entities)
-            self.collection.flush()
+        # 插入数据
+        self.collection.insert(entities)
+        self.collection.flush()
 
-            logger.info(f"Added {len(ids)} documents to Milvus")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to add documents: {e}")
-            return False
+        logger.info(f"Added {len(ids)} documents to Milvus")
+        return True
 
     def search(
-        self,
-        query_embedding: List[float],
-        top_k: int = 10,
-        filter_expr: Optional[str] = None
+        self, query_embedding: List[float], top_k: int = 10, filter_expr: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         搜索相似文档
@@ -181,28 +165,25 @@ class VectorStore:
         Returns:
             搜索结果列表
         """
-        try:
-            # 搜索参数
-            search_params = {
-                "metric_type": self.metric_type,
-                "params": {"nprobe": 10}
-            }
+        # 搜索参数
+        search_params = {"metric_type": self.metric_type, "params": {"nprobe": 10}}
 
-            # 执行搜索
-            results = self.collection.search(
-                data=[query_embedding],
-                anns_field="embedding",
-                param=search_params,
-                limit=top_k,
-                expr=filter_expr,
-                output_fields=["id", "content", "recipe_id", "name", "category", "difficulty"]
-            )
+        # 执行搜索
+        results = self.collection.search(
+            data=[query_embedding],
+            anns_field="embedding",
+            param=search_params,
+            limit=top_k,
+            expr=filter_expr,
+            output_fields=["id", "content", "recipe_id", "name", "category", "difficulty"],
+        )
 
-            # 格式化结果
-            formatted_results = []
-            for hits in results:
-                for hit in hits:
-                    formatted_results.append({
+        # 格式化结果
+        formatted_results = []
+        for hits in results:
+            for hit in hits:
+                formatted_results.append(
+                    {
                         "id": hit.entity.get("id"),
                         "content": hit.entity.get("content"),
                         "score": float(hit.score),
@@ -211,15 +192,12 @@ class VectorStore:
                             "name": hit.entity.get("name"),
                             "category": hit.entity.get("category"),
                             "difficulty": hit.entity.get("difficulty"),
-                        }
-                    })
+                        },
+                    }
+                )
 
-            logger.info(f"Found {len(formatted_results)} results")
-            return formatted_results
-
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
-            return []
+        logger.info(f"Found {len(formatted_results)} results")
+        return formatted_results
 
     def delete_documents(self, ids: List[str]) -> bool:
         """
@@ -231,49 +209,34 @@ class VectorStore:
         Returns:
             是否成功
         """
-        try:
-            expr = f"id in {ids}"
-            self.collection.delete(expr)
-            self.collection.flush()
+        expr = "id in " + json.dumps(ids, ensure_ascii=False)
+        self.collection.delete(expr)
+        self.collection.flush()
 
-            logger.info(f"Deleted {len(ids)} documents")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete documents: {e}")
-            return False
+        logger.info(f"Deleted {len(ids)} documents")
+        return True
 
     def get_collection_stats(self) -> Dict[str, Any]:
         """获取集合统计信息"""
-        try:
-            stats = self.collection.num_entities
-            return {
-                "name": self.collection_name,
-                "document_count": stats,
-                "dimension": self.dimension,
-                "index_type": self.index_type,
-                "metric_type": self.metric_type
-            }
-        except Exception as e:
-            logger.error(f"Failed to get stats: {e}")
-            return {}
+        stats = self.collection.num_entities
+        return {
+            "name": self.collection_name,
+            "document_count": stats,
+            "dimension": self.dimension,
+            "index_type": self.index_type,
+            "metric_type": self.metric_type,
+        }
 
     def clear_collection(self) -> bool:
         """清空集合"""
-        try:
-            self.collection.drop()
-            self._create_collection()
-            self.collection.load()
+        self.collection.drop()
+        self._create_collection()
+        self.collection.load()
 
-            logger.info(f"Cleared collection: {self.collection_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to clear collection: {e}")
-            return False
+        logger.info(f"Cleared collection: {self.collection_name}")
+        return True
 
     def close(self):
         """关闭连接"""
-        try:
-            connections.disconnect("default")
-            logger.info("Disconnected from Milvus")
-        except Exception as e:
-            logger.error(f"Failed to disconnect: {e}")
+        connections.disconnect(self._connection_alias)
+        logger.info("Disconnected from Milvus")

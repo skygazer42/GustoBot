@@ -6,7 +6,6 @@ They only validate deterministic transforms from source data -> recipe payloads
 that the HTTP API accepts.
 """
 
-
 import sys
 from pathlib import Path
 
@@ -42,22 +41,5 @@ def test_recipe_json_entry_to_recipe_basic_mapping() -> None:
     assert "菜干 200g" in recipe["ingredients"]
     assert "豆豉 2匙" in recipe["ingredients"]
     assert recipe["steps"][:2] == ["准备的食材。", "香肉肠切片。"]
-    assert "口味" in (recipe.get("tips") or "")
-    assert "工艺" in (recipe.get("tips") or "")
-
-
-def test_wikipedia_page_to_recipe_mapping() -> None:
-    from gustobot.crawler.wikipedia import wikipedia_page_to_recipe
-
-    page = {
-        "title": "川菜",
-        "extract": "川菜是中国八大菜系之一，以麻辣著称。",
-        "fullurl": "https://zh.wikipedia.org/wiki/%E5%B7%9D%E8%8F%9C",
-    }
-
-    recipe = wikipedia_page_to_recipe(page, query="川菜")
-
-    assert recipe["name"] == "川菜"
-    assert recipe["category"].startswith("Wikipedia")
-    assert recipe["steps"] == ["川菜是中国八大菜系之一，以麻辣著称。"]
-    assert "wikipedia.org" in (recipe.get("tips") or "")
+    assert "口味" in recipe["tips"]
+    assert "工艺" in recipe["tips"]

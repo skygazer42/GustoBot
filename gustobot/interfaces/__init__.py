@@ -3,4 +3,3 @@ Interface adapters bridging external channels (HTTP, CLI, etc.) with the applica
 """
 
 __all__ = ["http"]
-

@@ -6,7 +6,16 @@ authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10,<3.14"
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+cohere-reranker = ["cohere"]
+test = ["pytest==7.4.4", "pytest-asyncio==0.23.3", "pytest-cov==4.1.0"]
+dev = [
+    "black==24.1.1", "flake8==7.0.0", "mypy==1.19.1", "pre-commit==3.6.0",
+    "ruff", "bandit", "IPython",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -14,7 +23,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 100
-target-version = ['py39']
+target-version = ['py310']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -24,10 +33,42 @@ python_functions = ["test_*"]
 addopts = "-v"
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
+plugins = ["pydantic.mypy"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+check_untyped_defs = true
+explicit_package_bases = true
+mypy_path = ["kb_ingest"]
+files = ["gustobot", "kb_ingest", "scripts", "tests", "run.py", "start_chatbot.py"]
+
+# pytest is a test runner boundary; the locally installed version uses newer
+# Python syntax than this project's supported Python 3.10 source target.
+[[tool.mypy.overrides]]
+module = ["pytest", "_pytest.*", "mcp", "mcp.*"]
+follow_imports = "skip"
+
+# LangGraph 1.2's internal node protocols reject valid factory Callables and
+# keyword-only config parameters. Keep StateGraph's public API type checked.
+[[tool.mypy.overrides]]
+module = ["langgraph.graph._node"]
+follow_imports = "skip"
+
+# These runtime integrations do not ship usable type declarations in the
+# supported versions. First-party adapters and their consumers remain checked.
+[[tool.mypy.overrides]]
+module = [
+    "lightrag", "lightrag.*", "regex",
+    "pandas", "pandas.*", "tqdm", "tqdm.*",
+    "jose", "jose.*", "cohere",
+    "pymilvus", "pymilvus.*", "aiofiles", "requests", "requests.*",
+    "psycopg2", "pgvector.*", "yaml",
+]
+ignore_missing_imports = true
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

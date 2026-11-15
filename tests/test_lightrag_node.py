@@ -1,45 +1,41 @@
 """
 测试 LightRAG Node 的初始化和基本功能
 """
+
 import asyncio
-import os
+import logging
 from dotenv import load_dotenv
 
-# 加载环境变量
-load_dotenv()
+from gustobot.infrastructure.core.resources import close_on_exit
 
-# 导入必要的模块
-from gustobot.application.agents.kg_sub_graph.agentic_rag_agents.components.customer_tools.node import LightRAGAPI
-from gustobot.infrastructure.core.logger import get_logger
-
-logger = get_logger(service="test-lightrag")
+logger = logging.getLogger("test-lightrag")
 
 
 async def test_initialization():
-    """测试 LightRAG 初始化"""
+    """测试初始化；成功后将 API 的关闭责任交给调用方。"""
+    from gustobot.application.services.lightrag_service import LightRAGService
+
     logger.info("=" * 50)
     logger.info("测试 LightRAG 初始化")
     logger.info("=" * 50)
 
+    # 创建 LightRAG API 实例
+    lightrag_api = LightRAGService(
+        working_dir="./test_lightrag_data",
+        default_mode="hybrid",
+        default_top_k=5,
+    )
+
+    # 初始化
+    logger.info("开始初始化 LightRAG...")
     try:
-        # 创建 LightRAG API 实例
-        lightrag_api = LightRAGAPI(
-            working_dir="./test_lightrag_data",
-            retrieval_mode="hybrid",
-            top_k=5,
-            enable_neo4j=False  # 先测试不使用 Neo4j
-        )
-
-        # 初始化
-        logger.info("开始初始化 LightRAG...")
         await lightrag_api.initialize()
-        logger.info("✓ LightRAG 初始化成功")
+    except BaseException:
+        async with close_on_exit(lightrag_api.cleanup):
+            raise
+    logger.info("LightRAG 初始化成功")
 
-        return lightrag_api
-
-    except Exception as e:
-        logger.error(f"✗ 初始化失败: {str(e)}", exc_info=True)
-        raise
+    return lightrag_api
 
 
 async def test_embedding():
@@ -48,21 +44,19 @@ async def test_embedding():
     logger.info("测试 Embedding 函数")
     logger.info("=" * 50)
 
-    try:
-        lightrag_api = await test_initialization()
-
+    lightrag_api = await test_initialization()
+    async with close_on_exit(lightrag_api.cleanup):
         # 测试 embedding
         test_texts = ["这是一个测试文本", "红烧肉的做法", "如何制作宫保鸡丁"]
         logger.info(f"测试文本: {test_texts}")
 
-        embeddings = await lightrag_api.rag.embedding_func(test_texts)
-        logger.info(f"✓ Embedding 成功")
+        rag = lightrag_api.rag
+        if rag is None:
+            raise RuntimeError("LightRAG initialization did not establish a runtime")
+        embeddings = await rag.embedding_func(test_texts)
+        logger.info("Embedding 成功")
         logger.info(f"  - 向量维度: {len(embeddings[0])}")
         logger.info(f"  - 向量数量: {len(embeddings)}")
-
-    except Exception as e:
-        logger.error(f"✗ Embedding 测试失败: {str(e)}", exc_info=True)
-        raise
 
 
 async def test_insert_document():
@@ -71,63 +65,59 @@ async def test_insert_document():
     logger.info("测试插入文档")
     logger.info("=" * 50)
 
-    try:
-        lightrag_api = await test_initialization()
-
+    lightrag_api = await test_initialization()
+    async with close_on_exit(lightrag_api.cleanup):
         # 测试文档
         test_doc = """
-        红烧肉是一道经典的中华料理，以五花肉为主要食材。
+    红烧肉是一道经典的中华料理，以五花肉为主要食材。
 
-        主要食材：
-        - 五花肉 500克
-        - 冰糖 30克
-        - 生抽 2勺
-        - 老抽 1勺
-        - 料酒 2勺
+    主要食材：
+    - 五花肉 500克
+    - 冰糖 30克
+    - 生抽 2勺
+    - 老抽 1勺
+    - 料酒 2勺
 
-        制作步骤：
-        1. 将五花肉切成2厘米见方的块状
-        2. 冷水下锅，焯水去除血沫
-        3. 锅中放少许油，放入冰糖炒糖色
-        4. 加入五花肉翻炒上色
-        5. 加入生抽、老抽、料酒
-        6. 加水没过肉，大火烧开后转小火炖1小时
-        7. 大火收汁即可
+    制作步骤：
+    1. 将五花肉切成2厘米见方的块状
+    2. 冷水下锅，焯水去除血沫
+    3. 锅中放少许油，放入冰糖炒糖色
+    4. 加入五花肉翻炒上色
+    5. 加入生抽、老抽、料酒
+    6. 加水没过肉，大火烧开后转小火炖1小时
+    7. 大火收汁即可
 
-        烹饪技巧：
-        - 糖色不要炒过头，否则会发苦
-        - 炖煮时间要足够，肉质才会软烂
-        - 最后收汁要用大火，让汁水浓稠
-        """
+    烹饪技巧：
+    - 糖色不要炒过头，否则会发苦
+    - 炖煮时间要足够，肉质才会软烂
+    - 最后收汁要用大火，让汁水浓稠
+    """
 
         logger.info("插入测试文档...")
         result = await lightrag_api.insert_documents([test_doc])
-        logger.info(f"✓ 文档插入成功")
-        logger.info(f"  - 成功: {result['success']}")
-        logger.info(f"  - 失败: {result['error']}")
-
-    except Exception as e:
-        logger.error(f"✗ 文档插入失败: {str(e)}", exc_info=True)
-        raise
+        logger.info("文档插入成功")
+        logger.info(f"  - 成功: {result.success}")
+        logger.info(f"  - 失败: {result.failed}")
 
 
 async def test_query():
     """测试查询功能"""
+    from gustobot.application.services.lightrag_service import LightRAGService
+
     logger.info("\n" + "=" * 50)
     logger.info("测试查询功能")
     logger.info("=" * 50)
 
-    try:
-        # 先插入文档
-        await test_insert_document()
+    # 先插入文档
+    await test_insert_document()
 
-        # 创建新的 API 实例进行查询
-        lightrag_api = LightRAGAPI(
-            working_dir="./test_lightrag_data",
-            retrieval_mode="hybrid",
-            top_k=5,
-            enable_neo4j=False
-        )
+    # 创建新的 API 实例进行查询
+    lightrag_api = LightRAGService(
+        working_dir="./test_lightrag_data",
+        default_mode="hybrid",
+        default_top_k=5,
+    )
+    async with close_on_exit(lightrag_api.cleanup):
         await lightrag_api.initialize()
 
         # 测试查询
@@ -135,65 +125,55 @@ async def test_query():
         logger.info(f"查询: {query}")
 
         result = await lightrag_api.query(query, mode="hybrid")
-        logger.info(f"✓ 查询成功")
-        logger.info(f"  - 查询模式: {result['mode']}")
-        logger.info(f"  - 响应长度: {len(result['response'])} 字符")
-        logger.info(f"\n响应内容:\n{result['response'][:500]}...")
-
-    except Exception as e:
-        logger.error(f"✗ 查询失败: {str(e)}", exc_info=True)
-        raise
+        logger.info("查询成功")
+        logger.info("  - 查询模式: hybrid")
+        logger.info(f"  - 响应长度: {len(result)} 字符")
+        logger.info(f"\n响应内容:\n{result[:500]}...")
 
 
-async def test_with_neo4j():
-    """测试 Neo4j 集成"""
+async def test_second_working_directory():
+    """测试独立工作目录"""
+    from gustobot.application.services.lightrag_service import LightRAGService
+
     logger.info("\n" + "=" * 50)
-    logger.info("测试 Neo4j 集成")
+    logger.info("测试独立工作目录")
     logger.info("=" * 50)
 
-    try:
-        # 创建使用 Neo4j 的实例
-        lightrag_api = LightRAGAPI(
-            working_dir="./test_lightrag_neo4j",
-            retrieval_mode="hybrid",
-            top_k=5,
-            enable_neo4j=True
-        )
+    # 创建独立工作目录的实例
+    lightrag_api = LightRAGService(
+        working_dir="./test_lightrag",
+        default_mode="hybrid",
+        default_top_k=5,
+    )
 
-        logger.info("初始化 LightRAG (使用 Neo4j)...")
+    async with close_on_exit(lightrag_api.cleanup):
+        logger.info("初始化独立的 LightRAG 工作目录...")
         await lightrag_api.initialize()
-        logger.info("✓ 使用 Neo4j 的 LightRAG 初始化成功")
-
-    except Exception as e:
-        logger.error(f"✗ Neo4j 集成测试失败 (这是正常的，如果 Neo4j 未运行): {str(e)}")
-        logger.info("跳过 Neo4j 测试...")
+        logger.info("独立 LightRAG 工作目录初始化成功")
 
 
 async def main():
     """运行所有测试"""
     logger.info("开始测试 LightRAG Node 实现\n")
 
-    try:
-        # 测试 1: 初始化
-        await test_initialization()
+    # 测试 1: 初始化
+    api = await test_initialization()
+    await api.cleanup()
 
-        # 测试 2: Embedding
-        await test_embedding()
+    # 测试 2: Embedding
+    await test_embedding()
 
-        # 测试 3: 插入文档和查询
-        await test_query()
+    # 测试 3: 插入文档和查询
+    await test_query()
 
-        # 测试 4: Neo4j 集成 (可选)
-        await test_with_neo4j()
+    # 测试 4: 独立工作目录 (可选)
+    await test_second_working_directory()
 
-        logger.info("\n" + "=" * 50)
-        logger.info("✓ 所有测试完成")
-        logger.info("=" * 50)
-
-    except Exception as e:
-        logger.error(f"\n✗ 测试失败: {str(e)}")
-        raise
+    logger.info("\n" + "=" * 50)
+    logger.info("所有测试完成")
+    logger.info("=" * 50)
 
 
 if __name__ == "__main__":
+    load_dotenv()
     asyncio.run(main())

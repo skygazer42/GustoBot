@@ -10,12 +10,12 @@
     <section class="archive-flow" aria-labelledby="flow-title">
       <header class="archive-flow-heading">
         <h2 id="flow-title">从一个问题，到一份回答。</h2>
-        <p lang="en">Request → Route → Response</p>
+        <p lang="en">Question → Evidence → Response</p>
       </header>
       <ArchitectureDiagram />
       <dl class="archive-implementation" aria-label="技术与数据补注">
         <div><dt>界面与服务</dt><dd>Vue 3 / TypeScript / Vite<span>FastAPI / LangGraph 负责接收与编排</span></dd></div>
-        <div><dt>检索补注</dt><dd>文档与关系共享 LightRAG<span>领域配置决定资料范围与索引。</span></dd></div>
+        <div><dt>检索补注</dt><dd>本体约束事实与原文查询<span>Neo4j 管关系，Milvus 查原文，MySQL 保存会话与导入状态。</span></dd></div>
       </dl>
     </section>
 
@@ -46,10 +46,10 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
 .technology-page {
   display: grid;
   grid-template-areas: 'intro flow' 'source flow' 'footer footer';
-  grid-template-columns: 258px minmax(0, 1fr);
+  grid-template-columns: 208px minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
-  gap: 24px 56px;
-  width: min(1328px, calc(100% - clamp(40px, 7.78vw, 112px)));
+  gap: 28px 40px;
+  width: min(var(--container-max), calc(100% - 48px));
   margin: 0 auto;
   padding: 40px 0 20px;
   animation: archive-arrive 220ms var(--ease) both;
@@ -62,23 +62,22 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   margin: 0;
   color: var(--clay);
   font-family: var(--archive-latin);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
-  letter-spacing: 1.6px;
-  text-transform: uppercase;
+  letter-spacing: .2px;
 }
 .archive-eyebrow > span { color: var(--ink); font-size: 18px; letter-spacing: 0; }
 .archive-intro h1 {
   margin: 22px 0 18px;
   font-family: var(--serif);
-  font-size: 64px;
+  font-size: 36px;
   font-weight: 600;
   line-height: 1.22;
   letter-spacing: 2px;
 }
-.archive-intro h1 > span { display: block; }
-.archive-english { margin: 0 0 28px; color: var(--clay); font: italic 23px / 1.3 var(--archive-latin); }
-.archive-deck { margin: 0; font-family: var(--serif); font-size: 17px; line-height: 1.9; }
+.archive-intro h1 > span { display: inline; }
+.archive-english { margin: 0 0 28px; color: var(--clay); font: 15px / 1.6 var(--sans); }
+.archive-deck { margin: 0; font-size: 16px; line-height: 1.8; }
 .archive-deck > span { padding-bottom: 4px; border-bottom: 1px solid var(--archive-number); }
 .archive-flow { grid-area: flow; min-width: 0; }
 .archive-flow-heading {
@@ -92,7 +91,7 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   border-bottom: 1px solid var(--line);
 }
 .archive-flow-heading h2 { margin: 0; font-family: var(--serif); font-size: 23px; font-weight: 600; line-height: 1.5; }
-.archive-flow-heading p { margin: 0; color: var(--clay); font: italic 13px / 1.5 var(--archive-latin); }
+.archive-flow-heading p { margin: 0; color: var(--clay); font: 13px / 1.5 var(--sans); }
 .archive-implementation {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -109,11 +108,10 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   margin: 0 0 12px;
   color: var(--clay);
   font-family: var(--archive-latin), var(--sans);
-  font-size: 12px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: .2px;
 }
-.archive-source h2 { margin: 0 0 12px; font-family: var(--serif); font-size: 19px; font-weight: 600; line-height: 1.6; }
+.archive-source h2 { margin: 0 0 12px; font-family: var(--serif); font-size: 18px; font-weight: 600; line-height: 1.6; }
 .archive-source > p:not(.archive-label) { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.8; }
 .archive-source-link { gap: 24px; font-size: 14px; text-decoration-color: var(--clay); }
 .archive-source-link .ui-icon { transition: transform var(--duration) var(--ease); }
@@ -132,17 +130,12 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   color: var(--muted);
   font-size: 14px;
 }
-.archive-footer > [lang='en'] { font-family: var(--archive-latin); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; }
+.archive-footer > [lang='en'] { font-family: var(--sans); font-size: 13px; }
 @keyframes archive-arrive {
   from { opacity: 0.7; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@media (min-width: 1240px) and (max-width: 1370px) {
-  .technology-page { grid-template-columns: 220px minmax(0, 1fr); column-gap: 36px; }
-  .archive-intro h1 { font-size: 60px; }
-  .archive-source h2 { font-size: 18px; }
-}
-@media (max-width: 1239px) {
+@media (max-width: 1100px) {
   .technology-page {
     grid-template-areas: 'intro' 'flow' 'source' 'footer';
     grid-template-columns: minmax(0, 1fr);
@@ -151,7 +144,7 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   }
   .archive-intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 32px; }
   .archive-eyebrow { grid-column: 1 / -1; }
-  .archive-intro h1 { margin: 12px 0; font-size: 46px; }
+  .archive-intro h1 { margin: 12px 0; font-size: 36px; }
   .archive-intro h1 > span { display: inline; }
   .archive-english { grid-column: 1; margin: 0; }
   .archive-deck { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
@@ -164,10 +157,10 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   .archive-source-link { grid-column: 1; grid-row: 3; justify-self: start; }
 }
 @media (max-width: 600px) {
-  .technology-page { row-gap: 28px; padding-top: 26px; }
+  .technology-page { width: calc(100% - 40px); row-gap: 28px; padding-top: 26px; }
   .archive-intro { display: block; }
-  .archive-intro h1 { margin: 14px 0 10px; font-size: 40px; }
-  .archive-english { margin-bottom: 22px; font-size: 21px; }
+  .archive-intro h1 { margin: 14px 0 10px; font-size: 32px; }
+  .archive-english { margin-bottom: 22px; }
   .archive-deck { font-size: 16px; }
   .archive-deck > br { display: none; }
   .archive-flow-heading { display: block; margin-bottom: 20px; }

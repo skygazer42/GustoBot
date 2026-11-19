@@ -6,6 +6,6 @@ Modules in this package coordinate domain logic and infrastructure adapters.
 
 __all__ = [
     "agents",
-    "services",
     "prompts",
+    "services",
 ]

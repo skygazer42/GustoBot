@@ -1,309 +1,186 @@
-﻿version: '3.8'
-
 services:
-  # 后端服务
   backend:
-    build:
+    build: &backend-build
       context: .
       dockerfile: Dockerfile
       target: server
-      args:
-        # LightRAG 构建时初始化（可选）
-        # 注意：不要通过 build args 传递密钥，避免在构建日志中泄露。
-        - INIT_LIGHTRAG_ON_BUILD=${INIT_LIGHTRAG_ON_BUILD:-true}
-        - LLM_BASE_URL=${LLM_BASE_URL}
-        - LLM_MODEL=${LLM_MODEL}
-        - EMBEDDING_MODEL=${EMBEDDING_MODEL}
-        - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
-        - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION}
-        - LIGHTRAG_INIT_LIMIT=${LIGHTRAG_INIT_LIMIT}
     ports:
-      - "8000:8000"
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    environment:
-      # 基础配置
-      - DEBUG=${DEBUG:-True}
-      - KNOWLEDGE_DOMAIN_FILE=${KNOWLEDGE_DOMAIN_FILE:-gustobot/config/domains/recipes.json}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - REDIS_CACHE_EXPIRE=${REDIS_CACHE_EXPIRE:-43200}
-      - REDIS_CACHE_THRESHOLD=${REDIS_CACHE_THRESHOLD:-0.92}
-      - REDIS_CACHE_MAX_SIZE=${REDIS_CACHE_MAX_SIZE:-1000}
-
-      # 数据库配置
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/gustobot.db}
-      - SQL_DATABASE_URL=${SQL_DATABASE_URL:-}
-      - MYSQL_ROOT_PASSWORD=rootpass
-      - MYSQL_DATABASE=recipe_db
-      - MYSQL_USER=recipe_user
-      - MYSQL_PASSWORD=recipepass
-
-      # Milvus配置
-      - MILVUS_HOST=milvus
-      - MILVUS_PORT=19530
-      - MILVUS_COLLECTION=${MILVUS_COLLECTION:-recipes}
-      - MILVUS_INDEX_TYPE=${MILVUS_INDEX_TYPE:-IVF_FLAT}
-      - MILVUS_METRIC_TYPE=${MILVUS_METRIC_TYPE:-IP}
-
-      # LLM配置
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_MODEL=${LLM_MODEL}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL}
-      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
-
-      # LightRAG配置（需要OPENAI_*变量）
-      - OPENAI_API_KEY=${LLM_API_KEY}
-      - OPENAI_API_BASE=${LLM_BASE_URL}
-      - OPENAI_MODEL=${LLM_MODEL}
-      - LIGHTRAG_WORKING_DIR=${LIGHTRAG_WORKING_DIR:-./data/lightrag}
-      - LIGHTRAG_RETRIEVAL_MODE=${LIGHTRAG_RETRIEVAL_MODE:-hybrid}
-      - LIGHTRAG_TOP_K=${LIGHTRAG_TOP_K:-10}
-      - LIGHTRAG_MAX_TOKEN_SIZE=${LIGHTRAG_MAX_TOKEN_SIZE:-4096}
-      - INIT_LIGHTRAG_ON_BUILD=${INIT_LIGHTRAG_ON_BUILD:-true}
-      - LIGHTRAG_INIT_LIMIT=0
-  
-      # Embedding配置
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
-      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
-      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
-      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION}
-
-      # Rerank配置
-      - RERANK_ENABLED=${RERANK_ENABLED}
-      - RERANK_PROVIDER=${RERANK_PROVIDER}
-      - RERANK_BASE_URL=${RERANK_BASE_URL}
-      - RERANK_ENDPOINT=${RERANK_ENDPOINT}
-      - RERANK_API_KEY=${RERANK_API_KEY}
-      - RERANK_MODEL=${RERANK_MODEL}
-      - RERANK_TIMEOUT=${RERANK_TIMEOUT:-30}
-      - RERANK_MAX_CANDIDATES=${RERANK_MAX_CANDIDATES}
-      - RERANK_TOP_N=${RERANK_TOP_N}
-      - RERANK_SCORE_FUSION_ALPHA=${RERANK_SCORE_FUSION_ALPHA}
-
-      # Vision模型配置
-      - VISION_API_KEY=${VISION_API_KEY}
-      - VISION_BASE_URL=${VISION_BASE_URL}
-      - VISION_MODEL=${VISION_MODEL}
-
-      # Image Generation配置
-      - IMAGE_GENERATION_API_KEY=${IMAGE_GENERATION_API_KEY}
-      - IMAGE_GENERATION_BASE_URL=${IMAGE_GENERATION_BASE_URL}
-      - IMAGE_GENERATION_MODEL=${IMAGE_GENERATION_MODEL}
-      - IMAGE_GENERATION_SIZE=${IMAGE_GENERATION_SIZE}
-
-      # 知识库配置
-      - KB_TOP_K=5
-      - KB_SIMILARITY_THRESHOLD=${KB_SIMILARITY_THRESHOLD:-0.2}
-      - KB_POSTGRES_SIMILARITY_THRESHOLD=${KB_POSTGRES_SIMILARITY_THRESHOLD:-0.5}
-      - KB_POSTGRES_RERANK_THRESHOLD=${KB_POSTGRES_RERANK_THRESHOLD:-0.8}
-      - KB_RERANK_SCORE_THRESHOLD=${KB_RERANK_SCORE_THRESHOLD:-0.8}
-      - KB_CHUNK_SIZE=512
-      - KB_CHUNK_OVERLAP=80
-      - KB_ENABLE_EXTERNAL_SEARCH=false
-      - INIT_KB_MILVUS=${INIT_KB_MILVUS:-true}
-      - KB_DATA_FILE=${KB_DATA_FILE:-/app/data/kb/data.txt}
-      - KB_MILVUS_SENTINEL=${KB_MILVUS_SENTINEL:-/app/data/.kb_milvus_ingested}
-
-      # 会话配置
-      - CONVERSATION_HISTORY_TTL=${CONVERSATION_HISTORY_TTL:-259200}
-      - CONVERSATION_HISTORY_MAX_MESSAGES=${CONVERSATION_HISTORY_MAX_MESSAGES:-200}
-
-      # 外部服务配置
-      - INGEST_SERVICE_URL=${INGEST_SERVICE_URL:-http://kb_ingest:8000}
-      - FILE_UPLOAD_MAX_MB=${FILE_UPLOAD_MAX_MB:-2}
-
-      # Agent配置
-      - MAX_ITERATIONS=${MAX_ITERATIONS:-10}
-      - AGENT_TIMEOUT=${AGENT_TIMEOUT:-300}
-
-      # CORS配置
-      - CORS_ORIGINS=${CORS_ORIGINS}
-
-      # Tiktoken缓存目录
-      - TIKTOKEN_CACHE_DIR=/app/data/tiktoken_cache
+      - "${APP_PORT:-8000}:8000"
+    environment: &knowledge-environment
+      APP_NAME: GustoBot
+      DEBUG: "${DEBUG:-false}"
+      KNOWLEDGE_DOMAIN_FILE: "${KNOWLEDGE_DOMAIN_FILE:-gustobot/config/domains/recipes.yaml}"
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the application MySQL connection}"
+      NEO4J_URI: "${NEO4J_URI:-bolt://neo4j:7687}"
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD:?Set NEO4J_PASSWORD}"
+      NEO4J_DATABASE: "${NEO4J_DATABASE:-neo4j}"
+      MILVUS_HOST: milvus
+      MILVUS_PORT: "19530"
+      MILVUS_COLLECTION: "${MILVUS_COLLECTION:-gustobot_documents_v1}"
+      MILVUS_INDEX_TYPE: IVF_FLAT
+      MILVUS_METRIC_TYPE: IP
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.openai.com/v1}"
+      LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
+      LLM_EXTRA_BODY: "${LLM_EXTRA_BODY:-null}"
+      EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
+      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-https://api.openai.com/v1}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
+      EMBEDDING_DIMENSION: "${EMBEDDING_DIMENSION:-1536}"
+      EMBEDDING_BATCH_SIZE: "${EMBEDDING_BATCH_SIZE:-64}"
+      DOCUMENT_EMBEDDING_TIMEOUT: "${DOCUMENT_EMBEDDING_TIMEOUT:-60}"
+      BUILD_EMBEDDING_TIMEOUT: "${BUILD_EMBEDDING_TIMEOUT:-60}"
+      SEMANTIC_LINKING_MODE: "${SEMANTIC_LINKING_MODE:-off}"
+      SEMANTIC_EMBEDDING_REVISION: "${SEMANTIC_EMBEDDING_REVISION:-}"
+      SEMANTIC_CONCEPT_TOP_K: "${SEMANTIC_CONCEPT_TOP_K:-8}"
+      SEMANTIC_ENTITY_TOP_K: "${SEMANTIC_ENTITY_TOP_K:-10}"
+      SEMANTIC_FAMILY_LIMIT: "${SEMANTIC_FAMILY_LIMIT:-20}"
+      SEMANTIC_EMBEDDING_TIMEOUT: "${SEMANTIC_EMBEDDING_TIMEOUT:-3}"
+      SEMANTIC_ANN_TIMEOUT: "${SEMANTIC_ANN_TIMEOUT:-1}"
+      SEMANTIC_BUILD_OPERATION_TIMEOUT: "${SEMANTIC_BUILD_OPERATION_TIMEOUT:-30}"
+      SEMANTIC_INITIALIZATION_TIMEOUT: "${SEMANTIC_INITIALIZATION_TIMEOUT:-30}"
+      SEMANTIC_RETRIEVAL_DEADLINE: "${SEMANTIC_RETRIEVAL_DEADLINE:-5}"
+      SEMANTIC_INDEX_POLL_SECONDS: "${SEMANTIC_INDEX_POLL_SECONDS:-5}"
+      SEMANTIC_INDEX_BATCH_SIZE: "${SEMANTIC_INDEX_BATCH_SIZE:-512}"
+      SEMANTIC_INDEX_QUIET_SECONDS: "${SEMANTIC_INDEX_QUIET_SECONDS:-5}"
+      RERANK_ENABLED: "${RERANK_ENABLED:-false}"
+      RERANK_PROVIDER: "${RERANK_PROVIDER:-custom}"
+      RERANK_API_FORMAT: "${RERANK_API_FORMAT:-dashscope}"
+      RERANK_BASE_URL: "${RERANK_BASE_URL:-}"
+      RERANK_ENDPOINT: "${RERANK_ENDPOINT:-}"
+      RERANK_API_KEY: "${RERANK_API_KEY:-}"
+      RERANK_MODEL: "${RERANK_MODEL:-}"
+      RERANK_TIMEOUT: "${RERANK_TIMEOUT:-30}"
+      RERANK_MAX_CANDIDATES: "${RERANK_MAX_CANDIDATES:-20}"
+      RERANK_TOP_N: "${RERANK_TOP_N:-6}"
+      VISION_API_KEY: "${VISION_API_KEY:-}"
+      VISION_BASE_URL: "${VISION_BASE_URL:-}"
+      VISION_MODEL: "${VISION_MODEL:-}"
+      IMAGE_GENERATION_API_KEY: "${IMAGE_GENERATION_API_KEY:-}"
+      IMAGE_GENERATION_BASE_URL: "${IMAGE_GENERATION_BASE_URL:-}"
+      IMAGE_GENERATION_MODEL: "${IMAGE_GENERATION_MODEL:-}"
+      IMAGE_GENERATION_SIZE: "${IMAGE_GENERATION_SIZE:-1024x1024}"
+      KB_TOP_K: "${KB_TOP_K:-5}"
+      KB_CHUNK_SIZE: "${KB_CHUNK_SIZE:-512}"
+      KB_CHUNK_OVERLAP: "${KB_CHUNK_OVERLAP:-80}"
+      FILE_UPLOAD_MAX_MB: "${FILE_UPLOAD_MAX_MB:-20}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5174,http://localhost:3000}"
     volumes:
-      - ./gustobot:/app/gustobot
-      - ./data:/app/data
-      - ./uploads:/app/uploads
-      - ./.env:/app/.env
-    networks:
-      - gustobot-network
+      - ./data:/app/data:ro
+      - uploads_data:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
-    command: uvicorn gustobot.main:application --host 0.0.0.0 --port 8000 --reload
+
+  migrate:
+    profiles: [setup]
+    build: *backend-build
+    entrypoint: []
+    command: ["python", "scripts/migrate_database.py"]
+    environment: *knowledge-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  semantic-indexer:
+    profiles: [semantic]
+    build: *backend-build
+    command: ["python", "-m", "scripts.build_semantic_index", "watch", "--batch-size", "${SEMANTIC_INDEX_BATCH_SIZE:-512}", "--poll-seconds", "${SEMANTIC_INDEX_POLL_SECONDS:-5}", "--quiet-seconds", "${SEMANTIC_INDEX_QUIET_SECONDS:-5}"]
+    environment: *knowledge-environment
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   mysql:
-    profiles: [sql]
-    image: mysql:8.0
-    ports:
-      - "13306:3306"
+    image: mysql:8.0.36
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpass
-      - MYSQL_DATABASE=recipe_db
-      - MYSQL_USER=recipe_user
-      - MYSQL_PASSWORD=recipepass
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./data/init_mysql.sql:/docker-entrypoint-initdb.d/00_init.sql
-      - ./data/insert_sample_data.sql:/docker-entrypoint-initdb.d/10_seed.sql
-    command: --default-authentication-plugin=mysql_native_password
-    networks:
-      - gustobot-network
-
-  redis:
-    profiles: [legacy-cache]
-    image: redis:7-alpine
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-gustobot}"
+      MYSQL_USER: "${MYSQL_USER:-gustobot}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
     ports:
-      - "6379:6379"
+      - "${MYSQL_PORT:-13306}:3306"
     volumes:
-      - redis_data:/data
-    networks:
-      - gustobot-network
-
-  # Milvus向量数据库
-  etcd:
-    profiles: [legacy-kb]
-    image: quay.io/coreos/etcd:v3.5.5
-    environment:
-      - ETCD_AUTO_COMPACTION_MODE=revision
-      - ETCD_AUTO_COMPACTION_RETENTION=1000
-      - ETCD_QUOTA_BACKEND_BYTES=4294967296
-      - ETCD_SNAPSHOT_COUNT=50000
-    volumes:
-      - etcd_data:/etcd
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
-    networks:
-      - gustobot-network
-
-  minio:
-    profiles: [legacy-kb]
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
-    environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-    ports:
-      - "9001:9001"
-      - "9000:9000"
-    volumes:
-      - minio_data:/minio_data
-    command: minio server /minio_data --console-address ":9001"
+      - application_mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-    networks:
-      - gustobot-network
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD}"
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - facts_neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:7474"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
 
   milvus:
-    profiles: [legacy-kb]
-    image: milvusdb/milvus:v2.3.3
+    image: milvusdb/milvus:v2.5.12
     command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
     environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-    volumes:
-      - milvus_data:/var/lib/milvus
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
     ports:
-      - "19530:19530"
-      - "9091:9091"
-    depends_on:
-      - etcd
-      - minio
-    networks:
-      - gustobot-network
-
-  kb_postgres:
-    profiles: [legacy-kb]
-    image: ankane/pgvector
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_HEALTH_PORT:-9091}:9091"
+    volumes:
+      - documents_milvus_data:/var/lib/milvus
+      - ./docker/milvus/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:ro
+      - ./docker/milvus/user.yaml:/milvus/configs/user.yaml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${KB_PGDATABASE:-vector_db}
-      POSTGRES_USER: ${KB_PGUSER:-postgres}
-      POSTGRES_PASSWORD: ${KB_PGPASSWORD:-postgres}
-    ports:
-      - "${KB_PG_PORT:-5433}:5432"
-    volumes:
-      - kb_pgdata:/var/lib/postgresql/data
-      - ./docker/pgvector/init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - gustobot-network
 
-  kb_ingest:
-    profiles: [legacy-kb]
-    build:
-      context: ./kb_ingest
-      dockerfile: Dockerfile
+  redis:
+    profiles: [cache]
+    image: redis:7.2-alpine
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
-    depends_on:
-      - kb_postgres
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    env_file:
-      - .env
-    environment:
-      # PostgreSQL配置
-      PGHOST: ${KB_PGHOST:-kb_postgres}
-      PGPORT: ${KB_PGPORT:-5432}
-      PGDATABASE: ${KB_PGDATABASE:-vector_db}
-      PGUSER: ${KB_PGUSER:-postgres}
-      PGPASSWORD: ${KB_PGPASSWORD:-postgres}
-      # LLM配置
-      LLM_PROVIDER: ${KB_LLM_PROVIDER:-openai}
-      LLM_MODEL: ${KB_LLM_MODEL}
-      LLM_API_KEY: ${KB_LLM_API_KEY}
-      LLM_BASE_URL: ${KB_LLM_BASE_URL}
-      LLM_TEMPERATURE: ${KB_LLM_TEMPERATURE:-0.3}
-      USE_LLM: ${KB_USE_LLM:-false}
-      # Embedding配置
-      EMBEDDING_PROVIDER: ${KB_EMBEDDING_PROVIDER:-openai}
-      EMBEDDING_MODEL: ${KB_EMBEDDING_MODEL}
-      EMBEDDING_API_KEY: ${KB_EMBEDDING_API_KEY}
-      EMBEDDING_BASE_URL: ${KB_EMBEDDING_BASE_URL}
-      EMBEDDING_DIMENSION: ${KB_EMBEDDING_DIMENSION:-1024}
-      # Rerank配置
-      RERANK_ENABLED: ${KB_RERANK_ENABLED:-true}
-      RERANK_PROVIDER: ${KB_RERANK_PROVIDER:-custom}
-      RERANK_BASE_URL: ${KB_RERANK_BASE_URL}
-      RERANK_ENDPOINT: ${KB_RERANK_ENDPOINT}
-      RERANK_API_KEY: ${KB_RERANK_API_KEY}
-      RERANK_MODEL: ${KB_RERANK_MODEL}
-      RERANK_TIMEOUT: ${KB_RERANK_TIMEOUT:-30}
-      RERANK_MAX_CANDIDATES: ${KB_RERANK_MAX_CANDIDATES:-20}
-      RERANK_TOP_N: ${KB_RERANK_TOP_N:-6}
-      RERANK_SCORE_FUSION_ALPHA: ${KB_RERANK_SCORE_FUSION_ALPHA:-0.5}
-      # 批处理配置
-      BATCH_SIZE: ${KB_BATCH_SIZE:-16}
-      RETRY_TIMES: ${KB_RETRY_TIMES:-3}
-      RETRY_DELAY: ${KB_RETRY_DELAY:-5}
-      # Excel 初始数据导入
-      INIT_KB_EXCEL: ${INIT_KB_EXCEL:-true}
-      KB_EXCEL_PATH: ${KB_EXCEL_PATH:-/app/data/历史菜谱源头.xlsx}
-      KB_EXCEL_SENTINEL: ${KB_EXCEL_SENTINEL:-/app/data/.kb_excel_ingested}
-    ports:
-      - "${KB_INGEST_PORT:-8100}:8000"
-    volumes:
-      - ./kb_ingest/data:/app/data
-    command: uvicorn kb_service.main:app --host 0.0.0.0 --port 8000
-    networks:
-      - gustobot-network
-
-
-networks:
-  gustobot-network:
-    driver: bridge
 
 volumes:
+  application_mysql_data:
+  facts_neo4j_data:
+  documents_milvus_data:
+  uploads_data:
   redis_data:
-  etcd_data:
-  minio_data:
-  milvus_data:
-  mysql_data:
-  kb_pgdata:

@@ -2,14 +2,14 @@
 CRUD operations for conversations.
 """
 
-from typing import List, Optional
-
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from gustobot.infrastructure.core.database import commit_session
-
-from gustobot.infrastructure.persistence.db.models.conversation import Conversation, DialogueType
+from gustobot.infrastructure.persistence.db.models.conversation import (
+    Conversation,
+    DialogueType,
+)
 
 
 class ConversationCRUD:
@@ -35,13 +35,13 @@ class ConversationCRUD:
         db.refresh(conversation)
         return conversation
 
-    def get(self, db: Session, *, id: int) -> Optional[Conversation]:
+    def get(self, db: Session, *, id: int) -> Conversation | None:
         """Get a conversation by ID."""
         return db.query(Conversation).filter(Conversation.id == id).first()
 
     def get_by_user(
         self, db: Session, *, user_id: int, skip: int = 0, limit: int = 100
-    ) -> List[Conversation]:
+    ) -> list[Conversation]:
         """Get all conversations for a user."""
         return (
             db.query(Conversation)
@@ -61,7 +61,7 @@ class ConversationCRUD:
         db.refresh(db_obj)
         return db_obj
 
-    def update_activity(self, db: Session, *, conversation_id: int) -> Optional[Conversation]:
+    def update_activity(self, db: Session, *, conversation_id: int) -> Conversation | None:
         """Update conversation activity timestamp."""
         conversation = self.get(db, id=conversation_id)
         if conversation is None:
@@ -71,7 +71,7 @@ class ConversationCRUD:
         db.refresh(conversation)
         return conversation
 
-    def delete(self, db: Session, *, id: int) -> Optional[Conversation]:
+    def delete(self, db: Session, *, id: int) -> Conversation | None:
         """Delete a conversation (soft delete by changing status)."""
         conversation = self.get(db, id=id)
         if conversation is None:

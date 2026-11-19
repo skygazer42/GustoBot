@@ -1,282 +1,333 @@
-"""Knowledge base service implemented with LangChain primitives."""
+"""Deterministic document ingestion and retrieval of published source versions."""
 
 import asyncio
-from typing import TypedDict, Any, Dict, List, Optional
-from uuid import uuid4
+import hashlib
+import json
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Literal, Protocol
 
-from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field
 
 from gustobot.config import settings
+from gustobot.config.domain import get_domain_definition
+from gustobot.domain.knowledge import DomainDefinition, SourceDocument
 from gustobot.infrastructure.core.resources import close_on_exit
+
 from .embeddings import OpenAICompatibleEmbeddings
-from .vector_store import VectorStore
 from .reranker import Reranker
+from .vector_store import DocumentChunk, VectorHit, VectorStore
 
 
-class IngestionResult(TypedDict):
-    add_count: int
-    ids: List[str]
-    stored: bool
+def source_version(text: str) -> str:
+    """Hash exact raw source text so graph facts and document chunks share a version."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class DocumentIngestionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    domain_id: str
+    source_id: str
+    version: str
+    chunks: int = Field(ge=1)
+    embedded: int = Field(ge=0)
+    ids: list[str]
+
+
+class DocumentVectors(Protocol):
+    def existing_ids(self, ids: Sequence[str]) -> set[str]: ...
+    def read_chunk(
+        self,
+        chunk_id: str,
+        *,
+        domain_id: str,
+        source_id: str,
+        source_version: str,
+        ontology_version: str,
+    ) -> DocumentChunk | None: ...
+    def upsert(
+        self, chunks: Sequence[DocumentChunk], embeddings: Sequence[Sequence[float]]
+    ) -> None: ...
+
+    def refresh_entity_links(
+        self, chunks: Sequence[DocumentChunk], *, replace_entity_ids: bool
+    ) -> None: ...
+    def search(
+        self,
+        embedding: Sequence[float],
+        *,
+        domain_id: str,
+        ontology_version: str,
+        source_versions: Mapping[str, str],
+        entity_ids: Sequence[str] | None,
+        top_k: int,
+    ) -> list[VectorHit]: ...
+    def close(self) -> None: ...
+
+
+class DocumentEmbedder(Protocol):
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+    def embed_query(self, text: str) -> list[float]: ...
+    def close(self) -> None: ...
 
 
 class KnowledgeService:
-    """Facade for ingesting documents and performing similarity search."""
-
     def __init__(
         self,
         *,
-        vector_store: Optional[VectorStore] = None,
-        chunk_size: Optional[int] = None,
-        chunk_overlap: Optional[int] = None,
+        domain: DomainDefinition | None = None,
+        vector_store: DocumentVectors | None = None,
+        embedder: DocumentEmbedder | None = None,
+        embedding_model: str | None = None,
+        reranker: Reranker | Literal[False] | None = None,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        source_versions: Callable[[], Mapping[str, str]] | None = None,
     ) -> None:
+        self.domain = get_domain_definition() if domain is None else domain
+        self.embedding_model = (
+            settings.EMBEDDING_MODEL if embedding_model is None else embedding_model
+        )
         self.chunk_size = settings.KB_CHUNK_SIZE if chunk_size is None else chunk_size
         self.chunk_overlap = settings.KB_CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
-
+        if self.chunk_size <= 0 or not 0 <= self.chunk_overlap < self.chunk_size:
+            raise ValueError(
+                "chunk_size must be positive and chunk_overlap smaller than chunk_size"
+            )
+        if not self.embedding_model.strip():
+            raise ValueError("Embedding model is required")
         self.splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
-            separators=["\n\n", "\n", "。", "！", "？", " "],
-            length_function=len,  # 使用字符长度而不是 tiktoken
+            separators=["\n\n", "\n", "。", "！", "？", " ", ""],
+            strip_whitespace=False,
         )
-
-        self.reranker = Reranker()
-        embedding_api_key = settings.EMBEDDING_API_KEY or settings.LLM_API_KEY
-        self.embedder = OpenAICompatibleEmbeddings(
-            model=settings.EMBEDDING_MODEL,
-            api_key=embedding_api_key,
-            base_url=settings.EMBEDDING_BASE_URL,
-            dimension=settings.EMBEDDING_DIMENSION,
-        )
-
+        self.source_versions = source_versions
+        self.reranker = None if reranker is False else Reranker() if reranker is None else reranker
+        self._owns_embedder = embedder is None
         self._owns_vector_store = vector_store is None
+        api_key = settings.EMBEDDING_API_KEY
+        if api_key is None:
+            api_key = settings.LLM_API_KEY
+        fingerprint = None
+        if settings.SEMANTIC_EMBEDDING_REVISION.strip():
+            from gustobot.domain.linking import embedding_fingerprint
+
+            fingerprint = embedding_fingerprint(
+                provider=settings.EMBEDDING_PROVIDER,
+                base_url=settings.EMBEDDING_BASE_URL,
+                model=self.embedding_model,
+                revision=settings.SEMANTIC_EMBEDDING_REVISION,
+                dimension=settings.EMBEDDING_DIMENSION,
+            )
+        self.embedder: DocumentEmbedder = (
+            OpenAICompatibleEmbeddings(
+                model=self.embedding_model,
+                api_key=api_key,
+                base_url=settings.EMBEDDING_BASE_URL,
+                dimension=settings.EMBEDDING_DIMENSION,
+                max_batch_size=settings.EMBEDDING_BATCH_SIZE,
+                request_timeout=settings.DOCUMENT_EMBEDDING_TIMEOUT,
+                purpose="document",
+                max_retries=0,
+                space_fingerprint=fingerprint,
+            )
+            if embedder is None
+            else embedder
+        )
         try:
-            self.vector_store = (
-                vector_store
-                if vector_store is not None
-                else VectorStore(
+            self.vector_store: DocumentVectors = (
+                VectorStore(
                     collection_name=settings.MILVUS_COLLECTION,
                     host=settings.MILVUS_HOST,
                     port=settings.MILVUS_PORT,
                     dimension=settings.EMBEDDING_DIMENSION,
+                    embedding_model=self.embedding_model,
                     index_type=settings.MILVUS_INDEX_TYPE,
                     metric_type=settings.MILVUS_METRIC_TYPE,
                 )
+                if vector_store is None
+                else vector_store
             )
         except BaseException:
-            try:
-                self.embedder.close()
-            except Exception:
-                logger.exception("Failed to close embedding client after initialization failed")
+            if self._owns_embedder:
+                try:
+                    self.embedder.close()
+                # Cleanup preserves the initialization error.
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to close embedding client after initialization failed")
             raise
 
-        logger.info(
-            "KnowledgeService initialised (chunk_size={}, chunk_overlap={})",
-            self.chunk_size,
-            self.chunk_overlap,
+    async def ingest_source(
+        self, source: SourceDocument, *, entity_ids: Sequence[str] | None = None
+    ) -> DocumentIngestionResult:
+        if not source.text.strip():
+            raise ValueError("Source text must not be empty")
+        version = source_version(source.text)
+        contents = await asyncio.to_thread(self.splitter.split_text, source.text)
+        entities = [] if entity_ids is None else list(dict.fromkeys(entity_ids))
+        chunks = []
+        for index, content in enumerate(contents):
+            identity = json.dumps(
+                [
+                    self.domain.id,
+                    source.id,
+                    version,
+                    self.domain.version,
+                    self.embedding_model,
+                    index,
+                    content,
+                ],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            chunks.append(
+                DocumentChunk(
+                    id=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+                    domain_id=self.domain.id,
+                    source_id=source.id,
+                    source_version=version,
+                    ontology_version=self.domain.version,
+                    embedding_model=self.embedding_model,
+                    chunk_index=index,
+                    content=content,
+                    uri=source.uri,
+                    entity_ids=entities,
+                )
+            )
+        existing = await asyncio.to_thread(
+            self.vector_store.existing_ids, [chunk.id for chunk in chunks]
+        )
+        pending = [chunk for chunk in chunks if chunk.id not in existing]
+        previous = [chunk for chunk in chunks if chunk.id in existing]
+        if previous:
+            await asyncio.to_thread(
+                self.vector_store.refresh_entity_links,
+                previous,
+                replace_entity_ids=entity_ids is not None,
+            )
+        if pending:
+            embeddings = await asyncio.to_thread(
+                self.embedder.embed_documents, [chunk.content for chunk in pending]
+            )
+            if len(embeddings) != len(pending):
+                raise ValueError("Chunk and embedding counts must match")
+            await asyncio.to_thread(self.vector_store.upsert, pending, embeddings)
+        return DocumentIngestionResult(
+            domain_id=self.domain.id,
+            source_id=source.id,
+            version=version,
+            chunks=len(chunks),
+            embedded=len(pending),
+            ids=[chunk.id for chunk in chunks],
         )
 
     async def ingest_text(
-        self,
-        text: str,
-        *,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> IngestionResult:
-        if not text or not text.strip():
-            return {"add_count": 0, "ids": [], "stored": False}
+        self, text: str, *, metadata: dict[str, Any] | None = None
+    ) -> DocumentIngestionResult:
+        values = {} if metadata is None else metadata
+        source_id = values.get("source_id", source_version(text))
+        source = SourceDocument(id=source_id, text=text, uri=values.get("uri"))
+        return await self.ingest_source(source, entity_ids=values.get("entity_ids"))
 
-        documents = await asyncio.to_thread(self._split_into_documents, text, metadata or {})
-        if not documents:
-            return {"add_count": 0, "ids": [], "stored": False}
-
-        embeddings = await asyncio.to_thread(
-            self.embedder.embed_documents,
-            [doc.page_content for doc in documents],
+    def read_chunk(
+        self, chunk_id: str, *, source_id: str, source_version: str, ontology_version: str
+    ) -> DocumentChunk | None:
+        return self.vector_store.read_chunk(
+            chunk_id,
+            domain_id=self.domain.id,
+            source_id=source_id,
+            source_version=source_version,
+            ontology_version=ontology_version,
         )
-
-        result = await asyncio.to_thread(self._store_documents, documents, embeddings)
-        return result
-
-    async def add_document(
-        self,
-        *,
-        doc_id: Optional[str],
-        title: str,
-        content: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        meta = metadata.copy() if metadata else {}
-        meta.setdefault("title", title)
-        meta.setdefault("name", title)
-        if doc_id:
-            meta.setdefault("recipe_id", doc_id)
-        result = await self.ingest_text(content, metadata=meta)
-        return result["add_count"] > 0
-
-    async def add_recipe(self, recipe_id: str, recipe_data: Dict[str, Any]) -> bool:
-        document = self._format_recipe_document(recipe_data)
-        metadata = {
-            "recipe_id": recipe_id,
-            "name": recipe_data["name"],
-            "category": recipe_data.get("category", ""),
-            "difficulty": recipe_data.get("difficulty", ""),
-        }
-        result = await self.ingest_text(document, metadata=metadata)
-        return result["add_count"] > 0
-
-    async def add_recipes_batch(self, recipes: List[Dict[str, Any]]) -> Dict[str, int]:
-        success_count = 0
-        error_count = 0
-        for recipe in recipes:
-            recipe_id = recipe.get("id")
-            if recipe_id is None or recipe_id == "":
-                recipe_id = recipe.get("recipe_id")
-            if recipe_id is None or recipe_id == "":
-                recipe_id = str(uuid4())
-            if await self.add_recipe(str(recipe_id), recipe):
-                success_count += 1
-            else:
-                error_count += 1
-        return {"success": success_count, "error": error_count, "total": len(recipes)}
 
     async def search(
         self,
         query: str,
         *,
-        top_k: Optional[int] = None,
-        similarity_threshold: Optional[float] = None,
-        filter_expr: Optional[str] = None,
+        top_k: int | None = None,
+        entity_ids: Sequence[str] | None = None,
+        similarity_threshold: float | None = None,
         filter_by_similarity: bool = True,
-    ) -> List[Dict[str, Any]]:
-        if not query or not query.strip():
+    ) -> list[dict[str, Any]]:
+        limit = settings.KB_TOP_K if top_k is None else top_k
+        if limit < 0 or limit > 1000:
+            raise ValueError("top_k must be between zero and 1000")
+        if limit == 0 or not query.strip():
             return []
-
-        top_k = settings.KB_TOP_K if top_k is None else top_k
-        if top_k < 0:
-            raise ValueError("top_k cannot be negative")
-        if top_k == 0:
+        if self.source_versions is None:
+            raise ValueError("A published source_versions provider is required for document search")
+        versions = dict(await asyncio.to_thread(self.source_versions))
+        if not versions:
             return []
-        similarity_threshold = (
-            similarity_threshold
-            if similarity_threshold is not None
-            else settings.KB_SIMILARITY_THRESHOLD
-        )
-
-        # 如果启用 reranker，先召回更多候选文档
-        recall_k = top_k
-        if self.reranker.enabled:
-            recall_k = settings.RERANK_MAX_CANDIDATES  # 召回更多文档用于重排
-
+        recall = limit
+        if self.reranker is not None and self.reranker.enabled:
+            recall = max(limit, settings.RERANK_MAX_CANDIDATES)
         embedding = await asyncio.to_thread(self.embedder.embed_query, query)
-        results = await asyncio.to_thread(
+        hits = await asyncio.to_thread(
             self.vector_store.search,
             embedding,
-            recall_k,  # 使用更大的召回数量
-            filter_expr,
+            domain_id=self.domain.id,
+            ontology_version=self.domain.version,
+            source_versions=versions,
+            entity_ids=entity_ids,
+            top_k=recall,
         )
-
-        candidates = results
-        if filter_by_similarity and similarity_threshold is not None:
-            candidates = [r for r in candidates if r["score"] >= similarity_threshold]
-
-        # 使用 reranker 精排
-        if candidates and self.reranker.enabled:
-            candidates = await self.reranker.rerank(query, candidates, top_k)
-
-        if self.reranker.enabled:
+        candidates: list[dict[str, Any]] = []
+        threshold = (
+            settings.KB_SIMILARITY_THRESHOLD
+            if similarity_threshold is None
+            else similarity_threshold
+        )
+        for hit in hits:
+            chunk = hit["chunk"]
+            if (
+                chunk.domain_id != self.domain.id
+                or chunk.ontology_version != self.domain.version
+                or versions.get(chunk.source_id) != chunk.source_version
+                or chunk.embedding_model != self.embedding_model
+            ):
+                raise ValueError(
+                    "Document search returned a chunk outside the published source scope"
+                )
+            if filter_by_similarity and hit["score"] < threshold:
+                continue
+            candidates.append(
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "score": hit["score"],
+                    "metadata": chunk.model_dump(exclude={"content"}),
+                }
+            )
+        if candidates and self.reranker is not None and self.reranker.enabled:
+            candidates = await self.reranker.rerank(query, candidates, limit)
             filtered = []
             for candidate in candidates:
-                rerank_score = candidate.get("rerank_score")
-                if rerank_score is not None:
-                    if rerank_score < settings.KB_RERANK_SCORE_THRESHOLD:
+                score = candidate.get("rerank_score")
+                if score is not None:
+                    if score < settings.KB_RERANK_SCORE_THRESHOLD:
                         continue
-                elif similarity_threshold is not None and candidate["score"] < similarity_threshold:
+                elif candidate["score"] < threshold:
                     continue
                 filtered.append(candidate)
             candidates = filtered
-        elif not filter_by_similarity and similarity_threshold is not None:
-            candidates = [r for r in candidates if r["score"] >= similarity_threshold]
-
-        return candidates[:top_k]
-
-    async def delete_recipe(self, recipe_id: str) -> bool:
-        return await asyncio.to_thread(self.vector_store.delete_documents, [recipe_id])
-
-    async def get_stats(self) -> Dict[str, Any]:
-        def _stats() -> Dict[str, Any]:
-            stats = self.vector_store.get_collection_stats()
-            stats.update(
-                {
-                    "chunk_size": self.chunk_size,
-                    "chunk_overlap": self.chunk_overlap,
-                    "embedding_model": settings.EMBEDDING_MODEL,
-                }
-            )
-            return stats
-
-        return await asyncio.to_thread(_stats)
-
-    async def clear(self) -> bool:
-        return await asyncio.to_thread(self.vector_store.clear_collection)
+        return candidates[:limit]
 
     async def close(self) -> None:
         async def close_embedder() -> None:
-            await asyncio.to_thread(self.embedder.close)
+            if self._owns_embedder:
+                await asyncio.to_thread(self.embedder.close)
 
         async with close_on_exit(close_embedder):
             if self._owns_vector_store:
                 await asyncio.to_thread(self.vector_store.close)
 
-    def _split_into_documents(self, text: str, metadata: Dict[str, Any]) -> List[Document]:
-        base_document = Document(page_content=text, metadata=metadata)
-        chunks = self.splitter.split_documents([base_document])
-        return chunks or [base_document]
-
-    def _store_documents(
-        self,
-        documents: List[Document],
-        embeddings: List[List[float]],
-    ) -> IngestionResult:
-        if len(documents) != len(embeddings):
-            raise ValueError("Document and embedding counts must match")
-        if not documents:
-            return {"add_count": 0, "ids": [], "stored": False}
-
-        ids: List[str] = []
-        contents: List[str] = []
-        metadatas: List[Dict[str, Any]] = []
-
-        for index, doc in enumerate(documents):
-            metadata = dict(doc.metadata)
-            for identity_field in ("recipe_id", "id", "source"):
-                base_id = metadata.get(identity_field)
-                if base_id is not None and base_id != "":
-                    break
-            else:
-                base_id = uuid4().hex
-            chunk_id = f"{base_id}_{index}"
-            metadata.setdefault("recipe_id", base_id)
-            metadata.setdefault("chunk_id", chunk_id)
-            if "name" not in metadata and "title" in metadata:
-                metadata["name"] = metadata["title"]
-
-            ids.append(chunk_id)
-            contents.append(doc.page_content)
-            metadatas.append(metadata)
-
-        success = self.vector_store.add_documents(
-            ids=ids,
-            embeddings=embeddings,
-            documents=contents,
-            metadatas=metadatas,
-        )
-
-        return {"add_count": len(ids) if success else 0, "ids": ids, "stored": success}
-
     @staticmethod
-    def _format_recipe_document(recipe: Dict[str, Any]) -> str:
-        parts: List[str] = []
+    def _format_recipe_document(recipe: dict[str, Any]) -> str:
+        parts: list[str] = []
         name = recipe.get("name")
         if name:
             parts.append(f"菜名：{name}")
@@ -289,11 +340,15 @@ class KnowledgeService:
         if difficulty:
             parts.append(f"难度：{difficulty}")
 
-        time_cost = recipe.get("time") or recipe.get("cook_time")
-        if time_cost:
+        time_cost = recipe.get("time")
+        if time_cost is None:
+            time_cost = recipe.get("cook_time")
+        if time_cost is not None and time_cost != "":
             parts.append(f"耗时：{time_cost}")
 
-        ingredients = recipe.get("ingredients") or recipe.get("ingredient_list")
+        ingredients = recipe.get("ingredients")
+        if ingredients is None:
+            ingredients = recipe.get("ingredient_list")
         if ingredients:
             if isinstance(ingredients, list):
                 formatted = "、".join(str(item) for item in ingredients)

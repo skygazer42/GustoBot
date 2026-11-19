@@ -6,7 +6,7 @@ Anonymous session management - no authentication required.
 
 from fastapi import APIRouter
 
-from gustobot.interfaces.http.v1 import sessions, chat, upload
+from gustobot.interfaces.http.v1 import chat, sessions, upload
 
 api_router = APIRouter()
 

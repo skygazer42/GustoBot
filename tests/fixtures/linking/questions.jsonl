@@ -1,0 +1,5 @@
+{"id": "exact", "question": "清蒸鱼怎么做", "expected": "exact", "entity": "清蒸鱼"}
+{"id": "typo", "question": "清争鱼怎么做", "expected": "semantic_candidate", "entity": "清蒸鱼"}
+{"id": "ambiguous", "question": "家庭版佛跳墙加多少糖", "expected": "clarify", "entity": "家庭版佛跳墙"}
+{"id": "supertype", "question": "家庭版佛跳墙的糖类用量", "expected": "clarify", "property": "ingredientQuantity"}
+{"id": "unknown", "question": "不存在菜名用量", "expected": "no_candidates"}

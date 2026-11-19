@@ -8,8 +8,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from gustobot.infrastructure.core import database
-from gustobot.infrastructure.persistence.crud.crud_chat_session import chat_session
-from gustobot.infrastructure.persistence.crud.crud_chat_message import chat_session_snapshot
+from gustobot.infrastructure.persistence.crud.chat import (
+    chat_session,
+    chat_session_snapshot,
+)
 from gustobot.infrastructure.persistence.crud.conversation import conversation_crud
 from gustobot.infrastructure.persistence.db.models import (
     ChatMessage,
@@ -17,8 +19,11 @@ from gustobot.infrastructure.persistence.db.models import (
     Conversation,
     DialogueType,
 )
-from gustobot.interfaces.http.models.chat_message import ChatSessionSnapshotCreate
-from gustobot.interfaces.http.models.chat_session import ChatSessionCreate, ChatSessionUpdate
+from gustobot.interfaces.http.models.session import (
+    ChatSessionCreate,
+    ChatSessionSnapshotCreate,
+    ChatSessionUpdate,
+)
 
 
 @pytest.fixture
@@ -112,9 +117,11 @@ def test_session_scope_preserves_original_error_when_rollback_fails(monkeypatch,
     monkeypatch.setattr(session, "rollback", failing_rollback)
     monkeypatch.setattr(session, "close", close)
 
-    with pytest.raises(RuntimeError, match="operation failed") as failure:
-        with database.session_scope():
-            raise original
+    with (
+        pytest.raises(RuntimeError, match="operation failed") as failure,
+        database.session_scope(),
+    ):
+        raise original
 
     assert failure.value is original
     assert cleanup == ["rollback", "close"]

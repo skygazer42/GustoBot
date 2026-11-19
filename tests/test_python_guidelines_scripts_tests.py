@@ -12,22 +12,16 @@ import sys
 from importlib import util
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TypedDict
 from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-
 
 READERS = (
     "scripts.append_qa_to_alpaca",
     "scripts.recipe_to_alpaca",
     "scripts.replace_in",
 )
-
-
-class RequestPayload(TypedDict, total=False):
-    json: list[dict[str, object]]
 
 
 @pytest.mark.parametrize("module_name", READERS)
@@ -79,8 +73,8 @@ def test_recipe_payload_preserves_explicit_empty_fields():
             [{"name": "菜", "category": "", "类型": "fallback", "time": "", "耗时": "10分钟"}]
         )
     )
-    assert payload["category"] == ""
-    assert payload["time"] == ""
+    assert payload["record"]["category"] == ""
+    assert payload["record"]["time"] == ""
     assert list(_iter_payloads_from_json({"菜": {}}, limit=0)) == []
 
 
@@ -88,19 +82,19 @@ def test_import_response_requires_server_statistics():
     from scripts.import_recipes import _post_batch
 
     transport = httpx.MockTransport(lambda request: httpx.Response(201, json={}))
-    with httpx.Client(transport=transport) as client:
-        with pytest.raises(KeyError):
-            _post_batch(client, api_base_url="http://test", recipes=[{"name": "菜"}])
+    with (
+        httpx.Client(transport=transport) as client,
+        pytest.raises(ValueError, match="receipt"),
+    ):
+        _post_batch(client, api_base_url="http://test", recipes=[{"name": "菜"}])
 
 
 def test_import_response_preserves_zero_success():
     from scripts.import_recipes import _post_batch
 
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(201, json={"statistics": {"success": 0}})
-    )
+    transport = httpx.MockTransport(lambda request: httpx.Response(201, json=[]))
     with httpx.Client(transport=transport) as client:
-        inserted, _ = _post_batch(client, api_base_url="http://test", recipes=[{"name": "菜"}])
+        inserted, _ = _post_batch(client, api_base_url="http://test", recipes=[])
     assert inserted == 0
 
 
@@ -387,27 +381,6 @@ def test_cli_api_diagnostic_checks_response_and_closes_client(monkeypatch, capsy
     }
 
 
-def test_history_import_closes_knowledge_service_on_failure(monkeypatch, tmp_path):
-    from scripts import import_history_data
-
-    path = tmp_path / "history.txt"
-    path.write_text("历史资料" * 20, encoding="utf-8")
-    events = []
-
-    class Service:
-        async def add_document(self, **kwargs):
-            raise RuntimeError("write failed")
-
-        async def close(self):
-            events.append("closed")
-
-    monkeypatch.setattr("gustobot.infrastructure.knowledge.KnowledgeService", Service)
-    monkeypatch.setattr(import_history_data, "TEXT_FILE", path)
-    with pytest.raises(RuntimeError, match="write failed"):
-        asyncio.run(import_history_data.import_history_text())
-    assert events == ["closed"]
-
-
 def test_csv_writer_includes_cuisine_files(tmp_path):
     from scripts.recipe_kg_to_csv import RecipeRecord, _build_graph_assets, _write_csv
 
@@ -430,99 +403,6 @@ def test_csv_writer_includes_cuisine_files(tmp_path):
     assert "cuisine_1" in (tmp_path / "rel_belongs_cuisine.csv").read_text(encoding="utf-8")
 
 
-class _Response:
-    def __init__(self, status, payload):
-        self.status = status
-        self.payload = payload
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return None
-
-    def raise_for_status(self):
-        if self.status >= 400:
-            raise RuntimeError(f"HTTP {self.status}")
-
-    async def json(self):
-        return self.payload
-
-    async def text(self):
-        return "failure"
-
-
-class _Session:
-    def __init__(self, response, requests):
-        self.response = response
-        self.requests = requests
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return None
-
-    def post(self, url, **kwargs):
-        self.requests.append((url, kwargs))
-        return self.response
-
-    def get(self, url, **kwargs):
-        self.requests.append((url, kwargs))
-        return self.response
-
-
-def test_json_initializer_accepts_bundled_name_keyed_recipes(monkeypatch, tmp_path):
-    from scripts import init_kb_data
-
-    path = tmp_path / "recipe.json"
-    path.write_text(
-        json.dumps({"麻婆豆腐": {"主料": ["豆腐"], "做法": ["煮熟"]}}), encoding="utf-8"
-    )
-    requests: list[tuple[str, RequestPayload]] = []
-    monkeypatch.setattr(init_kb_data, "RECIPE_FILE", path)
-    monkeypatch.setattr(
-        init_kb_data.aiohttp,
-        "ClientSession",
-        lambda **kwargs: _Session(
-            _Response(201, {"statistics": {"success": 1, "error": 0}}), requests
-        ),
-    )
-    asyncio.run(init_kb_data.load_json_recipes())
-    assert requests[0][0] == "http://localhost:8000/api/v1/knowledge/recipes/batch"
-    assert requests[0][1]["json"][0]["name"] == "麻婆豆腐"
-
-
-def test_excel_initializer_http_failure_stays_visible(monkeypatch, tmp_path):
-    from scripts import init_pgvector_simple
-
-    path = tmp_path / "source.xlsx"
-    path.write_bytes(b"offline workbook")
-    monkeypatch.setattr(init_pgvector_simple, "EXCEL_FILE", path)
-    monkeypatch.setattr(
-        init_pgvector_simple.aiohttp,
-        "ClientSession",
-        lambda **kwargs: _Session(_Response(500, {}), []),
-    )
-    with pytest.raises(RuntimeError, match="HTTP 500"):
-        asyncio.run(init_pgvector_simple.init_pgvector_from_excel())
-
-
-def test_sample_initializer_uses_backend_and_accepts_created(monkeypatch):
-    from scripts import init_pgvector_simple
-
-    requests: list[tuple[str, RequestPayload]] = []
-    monkeypatch.setattr(
-        init_pgvector_simple.aiohttp,
-        "ClientSession",
-        lambda **kwargs: _Session(
-            _Response(201, {"statistics": {"success": 3, "error": 0}}), requests
-        ),
-    )
-    assert asyncio.run(init_pgvector_simple.add_sample_recipes()) is True
-    assert requests[0][0] == "http://localhost:8000/api/v1/knowledge/recipes/batch"
-
-
 def test_chat_diagnostic_fetches_history_with_open_client(monkeypatch):
     spec = util.spec_from_file_location(
         "chat_diagnostic", Path(__file__).with_name("test_chat_api.py")
@@ -537,7 +417,18 @@ def test_chat_diagnostic_fetches_history_with_open_client(monkeypatch):
     def respond(request):
         requests.append(request.method)
         if request.method == "POST":
-            return httpx.Response(200, json={"session_id": "offline", "route": "expected"})
+            return httpx.Response(
+                200,
+                json={
+                    "session_id": "offline",
+                    "route": "expected",
+                    "message": "fixture answer",
+                    "message_id": "fixture-message",
+                    "route_logic": "fixture",
+                    "sources": [],
+                    "metadata": {},
+                },
+            )
         return httpx.Response(200, json=[])
 
     original_client = httpx.AsyncClient
@@ -603,89 +494,25 @@ def test_csv_writer_requires_all_graph_asset_groups(tmp_path):
         _write_csv(tmp_path, {})
 
 
-def test_milvus_bootstrap_reports_partial_failure_after_cleanup(monkeypatch, tmp_path):
-    from scripts import init_kb_milvus
+@pytest.mark.parametrize(
+    "description,expected", [(0, "0"), (False, "False"), (None, ""), ("", ""), ("原文", "原文")]
+)
+def test_alpaca_description_preserves_zero_false_and_absence(
+    monkeypatch, tmp_path, description, expected
+):
+    from scripts import recipe_to_alpaca
 
-    path = tmp_path / "knowledge.txt"
-    path.write_text("甲" * 1000 + "\n\n" + "乙" * 1000, encoding="utf-8")
-    service = SimpleNamespace(
-        ingest_text=AsyncMock(side_effect=[RuntimeError("write failed"), {"add_count": 2}]),
-        close=AsyncMock(),
-    )
-    monkeypatch.setattr(init_kb_milvus, "KnowledgeService", Mock(return_value=service))
-    with pytest.raises(RuntimeError, match="1/2"):
-        asyncio.run(init_kb_milvus.ingest_file(path))
-    assert service.ingest_text.await_count == 2
-    service.close.assert_awaited_once()
-
-
-def test_lightrag_json_import_retains_bundled_recipe_content(tmp_path):
-    from scripts.init_lightrag import import_from_json
-    from gustobot.application.services.lightrag_service import LightRAGInsertResponse
-
-    path = tmp_path / "recipes.json"
-    path.write_text(
+    source = tmp_path / "recipes.json"
+    target = tmp_path / "alpaca.jsonl"
+    source.write_text(
         json.dumps(
-            {"测试菜": {"主食材": [["豆腐", "200g"]], "做法": "1:切块。2:煮熟。", "耗时": "10分钟"}}
+            [{"name": "示例菜谱", "description": description, "recipeIngredient": ["盐 0g"]}],
+            ensure_ascii=False,
         ),
         encoding="utf-8",
     )
-    lightrag = Mock(
-        spec=["insert_documents"],
-        insert_documents=AsyncMock(
-            return_value=LightRAGInsertResponse(total=1, success=1, failed=0)
-        ),
+    monkeypatch.setattr(
+        sys, "argv", ["recipe_to_alpaca", "--in", str(source), "--out", str(target)]
     )
-    assert asyncio.run(import_from_json(lightrag, str(path))) == 1
-    document = lightrag.insert_documents.call_args.args[0][0]
-    assert all(text in document for text in ("测试菜", "豆腐", "200g", "切块", "煮熟", "10分钟"))
-
-
-@pytest.mark.parametrize("payload", [{"测试菜": 123}, [{"instructions": "无菜名"}]])
-def test_lightrag_json_import_rejects_missing_recipe_contract(payload):
-    from scripts.init_lightrag import _normalize_recipe_payload
-
-    with pytest.raises((TypeError, ValueError)):
-        _normalize_recipe_payload(payload)
-
-
-@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
-@pytest.mark.parametrize("cleanup_fails", [False, True])
-@pytest.mark.asyncio
-async def test_lightrag_diagnostic_releases_failed_initialization(
-    monkeypatch, error_type, cleanup_fails
-):
-    spec = util.spec_from_file_location(
-        "lightrag_diagnostic", Path(__file__).with_name("test_lightrag_node.py")
-    )
-    assert spec is not None and spec.loader is not None
-    diagnostic = util.module_from_spec(spec)
-    spec.loader.exec_module(diagnostic)
-    module = importlib.import_module("gustobot.application.services.lightrag_service")
-    failure = error_type("initialization failed")
-    client = SimpleNamespace(
-        initialize=AsyncMock(side_effect=failure),
-        cleanup=AsyncMock(side_effect=RuntimeError("cleanup failed") if cleanup_fails else None),
-    )
-    monkeypatch.setattr(module, "LightRAGService", Mock(return_value=client))
-    with pytest.raises(error_type) as raised:
-        await diagnostic.test_initialization()
-    assert raised.value is failure
-    client.cleanup.assert_awaited_once()
-
-
-def test_router_diagnostic_reports_missing_route_with_other_results(monkeypatch):
-    monkeypatch.setenv("GUSTOBOT_RUN_INTEGRATION_TESTS", "1")
-    spec = util.spec_from_file_location(
-        "router_diagnostic", Path(__file__).with_name("test_heuristic_router.py")
-    )
-    assert spec is not None and spec.loader is not None
-    diagnostic = util.module_from_spec(spec)
-    spec.loader.exec_module(diagnostic)
-    responses = [{"success": False, "actual_route": None, "logic": None}] + [
-        {"success": True, "actual_route": "graphrag-query", "logic": "heuristic"} for _ in range(4)
-    ]
-    monkeypatch.setattr(diagnostic, "test_query", AsyncMock(side_effect=responses))
-    monkeypatch.setattr(diagnostic.asyncio, "sleep", AsyncMock())
-    with pytest.raises(AssertionError, match="1 routing cases failed"):
-        asyncio.run(diagnostic.main())
+    recipe_to_alpaca.main()
+    assert json.loads(target.read_text(encoding="utf-8"))["input"] == expected

@@ -3,6 +3,7 @@
 """
 
 import pytest
+
 from gustobot.infrastructure.knowledge import KnowledgeService
 
 

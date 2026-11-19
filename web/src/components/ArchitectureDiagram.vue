@@ -1,6 +1,6 @@
 <template>
   <figure class="architecture-figure" aria-labelledby="architecture-description">
-    <div class="architecture-flow">
+    <div class="architecture-flow" :style="{ '--selected-route': selectedIndex, '--merge-top': `${Math.min((selectedIndex + .5) * 25, 50)}%`, '--merge-height': `${Math.abs((selectedIndex + .5) * 25 - 50)}%` }">
       <div class="architecture-entry">
         <section class="architecture-node architecture-input" aria-labelledby="architecture-input-title">
           <p class="architecture-node-label">起点 / INPUT</p>
@@ -15,76 +15,59 @@
         <section class="architecture-node architecture-router" aria-labelledby="architecture-router-title">
           <p class="architecture-node-label">编排 / ORCHESTRATE</p>
           <h3 id="architecture-router-title" class="architecture-latin">LangGraph</h3>
-          <p>识别意图，按需分流</p>
+          <p>理解对象与条件，组织证据</p>
         </section>
         <p class="architecture-fork-note">
-          <strong>四条路径，按需选择。</strong>
-          <span>依问题与资料，进入合适分支。</span>
+          <strong>一份计划，按需取证。</strong>
+          <span>依据领域定义，组合事实与原文。</span>
         </p>
       </div>
 
       <div class="architecture-processing">
         <span class="architecture-distribution" aria-hidden="true"></span>
+        <span class="architecture-merge-selected" aria-hidden="true"></span>
         <div class="architecture-path-group">
-          <p class="architecture-path-label">按需选择的处理路径</p>
-          <ul class="architecture-paths" aria-label="四条替代处理路径，并非依次执行">
-            <li>
+          <p class="architecture-path-label">点选一条路径，看看如何取证与回答。</p>
+          <ul class="architecture-paths" aria-label="按需使用的能力，事实与文档可组合取证">
+            <li v-for="(path, index) in paths" :key="path.title" :class="{ 'is-selected': selectedIndex === index }">
               <span class="architecture-branch-line" aria-hidden="true"></span>
-              <span class="architecture-number" aria-hidden="true">01</span>
-              <h3>日常问答</h3>
-              <div class="architecture-path-copy">
-                <p class="architecture-technology">大模型</p>
-                <p>回答当前领域的一般问题。</p>
-              </div>
-            </li>
-            <li>
-              <span class="architecture-branch-line" aria-hidden="true"></span>
-              <span class="architecture-number" aria-hidden="true">02</span>
-              <h3>文档检索</h3>
-              <div class="architecture-path-copy">
-                <p class="architecture-technology architecture-fallback">
-                  <span>LightRAG</span>
-                  <span class="architecture-condition">共享领域索引</span>
-                  <span>文档上下文</span>
-                </p>
-                <p>从当前领域资料中检索相关内容。</p>
-              </div>
-            </li>
-            <li>
-              <span class="architecture-branch-line" aria-hidden="true"></span>
-              <span class="architecture-number" aria-hidden="true">03</span>
-              <h3>关系与统计</h3>
-              <div class="architecture-path-copy">
-                <p class="architecture-technology">LightRAG / 可选 SQL</p>
-                <p>同一索引回答关系问题；统计按需启用。</p>
-              </div>
-            </li>
-            <li>
-              <span class="architecture-branch-line" aria-hidden="true"></span>
-              <span class="architecture-number" aria-hidden="true">04</span>
-              <h3>文件处理</h3>
-              <div class="architecture-path-copy">
-                <p class="architecture-technology">解析 → 入库 → 检索</p>
-                <p>将上传资料转为可检索的内容。</p>
-              </div>
+              <button class="architecture-path-button" type="button" :aria-pressed="selectedIndex === index" :aria-label="path.title" aria-controls="architecture-answer" @click="selectedIndex = index">
+                <span class="architecture-number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
+                <span class="architecture-path-title">{{ path.title }}</span>
+                <span class="architecture-path-copy"><span class="architecture-technology">{{ path.technology }}</span><span>{{ path.description }}</span></span>
+              </button>
             </li>
           </ul>
         </div>
 
-        <section class="architecture-answer" aria-labelledby="architecture-answer-title">
+        <section id="architecture-answer" class="architecture-answer" aria-labelledby="architecture-answer-title" aria-live="polite">
           <p class="architecture-node-label">汇总 / RESPONSE</p>
           <h3 id="architecture-answer-title">回答</h3>
-          <p class="architecture-answer-main">正文<br class="architecture-answer-break">与可用来源</p>
-          <p>汇总所选路径的结果；有来源信息时，一并列出出处。</p>
+          <p class="architecture-answer-main">{{ selectedPath.output }}</p>
+          <p class="architecture-sample">{{ selectedPath.evidence }}</p>
+          <p class="architecture-source">{{ selectedPath.source }}</p>
         </section>
       </div>
     </div>
     <figcaption id="architecture-description" class="sr-only">
-      自然语言或文件经 FastAPI 接收，由 LangGraph 识别意图，按需调用处理分支，最终汇总正文与可用来源。
-      四条分支为替代路径，并非依次执行。文档与关系检索共享当前领域的 LightRAG 索引，SQL 统计按需启用。
+      自然语言或文件经 FastAPI 接收，由统一问答流程依据本体理解对象与条件，按需查询事实和原文，返回回答与来源。
+      Neo4j 保存菜谱事实与关系，Milvus 检索文档片段。临时附件阅读与长期知识导入分别处理。
     </figcaption>
   </figure>
 </template>
+
+<script setup lang="ts">
+import { computed, ref } from "vue";
+
+const paths = [
+  { title: "日常问答", technology: "大模型", description: "回答当前领域的一般问题。", output: "把一般问题说清楚", evidence: "结合当前对话回答；没有资料支持的具体用量，不凭空估算。", source: "回答方式 · 不代表实时查询结果" },
+  { title: "文档检索", technology: "Milvus · 原文片段", description: "按来源与版本查找相关内容。", output: "带着原文回答", evidence: "“锅中油预热，放入蛋液。”", source: "菜谱原文 · data/recipe.json / 番茄炒蛋" },
+  { title: "事实与关系", technology: "OWL / SHACL / Neo4j", description: "对齐具体做法，求值并校验证据。", output: "先确认做法，再查事实", evidence: "RecipeVariant → HAS_STEP → CookingStep", source: "关系定义 · recipes.ttl / HAS_STEP" },
+  { title: "附件阅读", technology: "上传 → 解析 → 本轮阅读", description: "临时附件与长期知识分别处理。", output: "依据本轮附件回答", evidence: "先解析文件，再结合问题读取内容。文件未记载的内容，明确说明。", source: "处理方式 · 长期知识单独导入" }
+];
+const selectedIndex = ref(2);
+const selectedPath = computed(() => paths[selectedIndex.value]);
+</script>
 
 <style scoped lang="scss">
 .architecture-figure {
@@ -97,7 +80,7 @@
 .architecture-flow {
   --route-gutter: clamp(42px, 6.9cqw, 70px);
   --merge-gutter: clamp(46px, 8.7cqw, 88px);
-  --answer-width: clamp(150px, 17.6cqw, 178px);
+  --answer-width: clamp(190px, 23cqw, 250px);
   --router-center: 59.375%;
   padding-top: 6px;
 }
@@ -106,7 +89,7 @@
   display: grid;
   grid-template-columns: repeat(16, minmax(0, 1fr));
   align-items: stretch;
-  margin-bottom: 28px;
+  margin-bottom: 60px;
 }
 
 .architecture-node {
@@ -123,7 +106,7 @@
 
 .architecture-node p,
 .architecture-answer p,
-.architecture-path-copy p {
+.architecture-path-copy {
   margin: 0;
   color: var(--muted);
   font-size: 14px;
@@ -146,7 +129,7 @@
 }
 
 .architecture-node .architecture-latin {
-  font-family: var(--archive-latin, Georgia, serif);
+  font-family: var(--sans);
   font-size: 24px;
   font-weight: 400;
 }
@@ -182,7 +165,7 @@
   top: 100%;
   left: 50%;
   width: 1px;
-  height: 10px;
+  height: 42px;
   background: var(--clay);
   content: '';
 }
@@ -211,17 +194,19 @@
 
 .architecture-distribution {
   position: absolute;
+  z-index: 1;
   top: -18px;
   right: calc(100% - var(--router-center));
-  bottom: 87.5%;
+  bottom: calc(100% - (var(--selected-route) + .5) * 25%);
   left: calc(var(--route-gutter) * .4);
   border-top: 1px solid var(--clay);
   border-left: 1px solid var(--clay);
   pointer-events: none;
 }
 
-.architecture-path-group { grid-column: 2; min-width: 0; }
-.architecture-path-label { display: none; }
+.architecture-path-group { position: relative; grid-column: 2; min-width: 0; }
+.architecture-path-label { position: absolute; top: -48px; margin: 0; color: var(--muted); font-size: 13px; }
+.architecture-merge-selected { position: absolute; z-index: 1; top: var(--merge-top); right: calc(var(--answer-width) + var(--merge-gutter) * .5); width: 1px; height: var(--merge-height); background: var(--clay); pointer-events: none; }
 
 .architecture-paths {
   position: relative;
@@ -238,7 +223,7 @@
   top: 12.5%;
   bottom: 12.5%;
   width: 1px;
-  background: var(--clay);
+  background: var(--control-line);
   content: '';
 }
 
@@ -247,13 +232,27 @@
 
 .architecture-paths > li {
   position: relative;
-  display: grid;
-  grid-template-columns: 46px 164px minmax(0, 1fr);
-  align-content: start;
   min-width: 0;
-  padding: 17px 0 14px;
   border-top: 1px solid var(--line);
 }
+
+.architecture-path-button {
+  display: grid;
+  grid-template-columns: 40px minmax(100px, .85fr) minmax(0, 1.5fr);
+  align-items: start;
+  width: 100%;
+  min-height: 100%;
+  padding: 17px 10px 17px 0;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  transition: background-color var(--duration) var(--ease);
+}
+.architecture-path-button:hover,
+.architecture-paths > .is-selected .architecture-path-button { background: var(--wash); }
+.architecture-paths > .is-selected .architecture-path-title { color: var(--clay); }
 
 .architecture-paths > li:last-child { border-bottom: 1px solid var(--line); }
 
@@ -263,7 +262,7 @@
   left: calc(var(--route-gutter) * -.6);
   width: calc(var(--route-gutter) * .6 - 12px);
   height: 1px;
-  background: var(--clay);
+  background: var(--control-line);
 }
 
 .architecture-branch-line::before {
@@ -297,60 +296,35 @@
   right: calc(var(--merge-gutter) * -.5);
   width: calc(var(--merge-gutter) * .5 - 12px);
   height: 1px;
-  background: var(--clay);
+  background: var(--control-line);
   content: '';
 }
 
 .architecture-number {
-  color: var(--archive-number, #94702c);
-  font-family: var(--archive-latin, Georgia, serif);
-  font-size: 26px;
-  font-style: italic;
+  color: var(--clay);
+  font-family: var(--serif);
+  font-size: 24px;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
-.architecture-paths h3 {
+.architecture-path-title {
   margin: 1px 0 0;
   font-family: var(--serif);
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 600;
   line-height: 1.3;
 }
 
 .architecture-path-copy { min-width: 0; padding-left: 7px; }
+.architecture-path-copy > span { display: block; }
 
 .architecture-path-copy .architecture-technology {
   margin-bottom: 7px;
   color: var(--ink);
-  font-family: var(--archive-latin, Georgia, serif), var(--sans);
-  font-size: 18px;
-  line-height: 1.3;
-}
-
-.architecture-fallback {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-
-.architecture-fallback .architecture-condition {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--clay);
   font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.architecture-condition::before,
-.architecture-condition::after {
-  width: 12px;
-  height: 1px;
-  background: var(--clay);
-  content: '';
+  font-size: 15px;
+  line-height: 1.3;
 }
 
 .architecture-answer {
@@ -399,9 +373,14 @@
   line-height: 1.6;
 }
 
+.architecture-answer .architecture-sample { color: var(--ink); overflow-wrap: anywhere; }
+.architecture-answer .architecture-source { margin-top: 12px; font-size: 13px; }
+.architecture-paths > .is-selected::after,
+.architecture-paths > .is-selected .architecture-branch-line { background: var(--clay); }
+.architecture-paths > .is-selected .architecture-branch-line::before { background: var(--clay); }
+
 @container (max-width: 900px) and (min-width: 801px) {
-  .architecture-paths > li { grid-template-columns: 38px 132px minmax(0, 1fr); }
-  .architecture-paths h3 { font-size: 19px; }
+  .architecture-path-button { grid-template-columns: 34px minmax(92px, .85fr) minmax(0, 1.5fr); }
   .architecture-path-copy { padding-left: 0; }
 }
 
@@ -458,6 +437,7 @@
   }
 
   .architecture-path-label {
+    position: static;
     display: block;
     margin: 0 0 14px;
     color: var(--clay);
@@ -468,20 +448,18 @@
 
   .architecture-paths { grid-template-rows: none; }
 
-  .architecture-paths > li {
+  .architecture-path-button {
     grid-template-columns: 36px minmax(0, 1fr);
     gap: 8px 0;
     padding: 17px 0;
   }
 
   .architecture-number { grid-row: 1 / span 2; }
-  .architecture-paths h3 { font-size: 20px; }
+  .architecture-path-title { font-size: 20px; }
   .architecture-path-copy { grid-column: 2; padding-left: 0; }
-  .architecture-path-copy .architecture-technology { font-size: 18px; }
-  .architecture-condition::before,
-  .architecture-condition::after { display: none; }
-
+  .architecture-path-copy .architecture-technology { font-size: 15px; }
   .architecture-distribution,
+  .architecture-merge-selected,
   .architecture-paths::before,
   .architecture-paths::after,
   .architecture-branch-line,
@@ -508,6 +486,5 @@
   }
 
   .architecture-answer h3 { margin-bottom: 12px; font-size: 30px; }
-  .architecture-answer-break { display: none; }
 }
 </style>

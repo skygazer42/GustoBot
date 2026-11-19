@@ -1,25 +1,29 @@
 """
 SQLAlchemy ORM models used across the application.
 
-These were previously imported from the `gustobot.domain.models` package. That alias is
-still available for backward compatibility, but new code should import from
-`gustobot.infrastructure.persistence.db.models` to make the intent (database layer) explicit.
+Import concrete table definitions from this package or their defining modules.
 """
 
+from .chat import ChatMessage, ChatSession, ChatSessionSnapshot
 from .chat_history import ConversationHistorySnapshot
-from .chat_message import ChatMessage, ChatSessionSnapshot
-from .chat_session import ChatSession
 from .conversation import Conversation, DialogueType
+from .knowledge import IngestionJob, KnowledgeSource, UploadedAsset
 from .message import Message
+from .semantic_index import SemanticIndexGeneration, SemanticIndexPublication
 from .user import User
 
 __all__ = [
-    "ConversationHistorySnapshot",
     "ChatMessage",
-    "ChatSessionSnapshot",
     "ChatSession",
+    "ChatSessionSnapshot",
     "Conversation",
+    "ConversationHistorySnapshot",
     "DialogueType",
+    "IngestionJob",
+    "KnowledgeSource",
     "Message",
+    "SemanticIndexGeneration",
+    "SemanticIndexPublication",
+    "UploadedAsset",
     "User",
 ]

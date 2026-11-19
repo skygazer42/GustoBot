@@ -1,12 +1,13 @@
 """Bounded resource cleanup for asynchronous owners."""
 
 import asyncio
+import math
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Awaitable, Callable, Coroutine, Optional, TypeVar
+from typing import Any, TypeVar
 
 import anyio
 from loguru import logger
-
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -17,9 +18,9 @@ async def close_on_exit(
     close: Callable[[], Awaitable[None]], *, timeout: float = 5
 ) -> AsyncIterator[None]:
     """Release an owner, keeping an active operation failure or cancellation visible."""
-    if timeout <= 0:
-        raise ValueError("cleanup timeout must be positive")
-    failure: Optional[BaseException] = None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("cleanup timeout must be finite and positive")
+    failure: BaseException | None = None
     try:
         yield
     except BaseException as exc:
@@ -48,9 +49,9 @@ async def acquire_in_thread(
     and closes that result before propagating. The close callback must be async;
     adapt a blocking close with ``asyncio.to_thread``.
     """
-    if timeout <= 0:
-        raise ValueError("cleanup timeout must be positive")
-    failure: Optional[BaseException] = None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("cleanup timeout must be finite and positive")
+    failure: BaseException | None = None
 
     async def wait_for_owner(operation: Coroutine[Any, Any, R]) -> R:
         nonlocal failure
@@ -59,7 +60,8 @@ async def acquire_in_thread(
         async def run() -> None:
             try:
                 outcome.set_result(await operation)
-            except BaseException as exc:
+            # The owner retains cancellation until the resource has been closed.
+            except BaseException as exc:  # noqa: BLE001
                 # A Future retains the original CancelledError on Python 3.10;
                 # a cancelled Task drops its message and identity on that runtime.
                 outcome.set_exception(exc)
@@ -90,7 +92,8 @@ async def acquire_in_thread(
     try:
         if failure is None:
             yield resource
-    except BaseException as exc:
+    # The owner retains cancellation until the resource has been closed.
+    except BaseException as exc:  # noqa: BLE001
         failure = exc
 
     # Run the existing exit policy under its own task so native task.cancel()

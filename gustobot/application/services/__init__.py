@@ -3,7 +3,9 @@ Application services providing orchestration over infrastructure components.
 """
 
 __all__ = [
-    "lightrag_service",
+    "knowledge_ingestion",
+    "knowledge_query",
+    "knowledge_runtime",
     "llm_client",
     "redis_cache",
     "search_service",

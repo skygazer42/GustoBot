@@ -11,9 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def check_requirements() -> bool:
-    if sys.version_info < (3, 9):
-        print("需要 Python 3.9 或更高版本")
-        return False
     print(f"Python 版本: {sys.version.split()[0]}")
 
     if not (PROJECT_ROOT / ".env").is_file():

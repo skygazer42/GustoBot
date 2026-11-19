@@ -5,7 +5,6 @@ Regression tests for cuisine-oriented recipe graph support.
 import json
 from pathlib import Path
 
-
 K_MAIN = "\u4e3b\u6599"
 K_AUX = "\u8f85\u6599"
 K_TIME = "\u8017\u65f6"
@@ -33,7 +32,9 @@ def _write_recipe_fixture(path: Path) -> None:
 
 
 def test_recipe_json_parser_keeps_cuisine_styles(tmp_path: Path) -> None:
-    from gustobot.infrastructure.knowledge.recipe_kg.recipe_json_parser import load_recipe_records
+    from gustobot.infrastructure.knowledge.recipe_catalog import (
+        load_recipe_records,
+    )
 
     recipe_path = tmp_path / "recipe.json"
     _write_recipe_fixture(recipe_path)
@@ -47,7 +48,9 @@ def test_recipe_json_parser_keeps_cuisine_styles(tmp_path: Path) -> None:
 
 
 def test_recipe_csv_assets_include_cuisine_nodes_and_relationships(tmp_path: Path) -> None:
-    from gustobot.infrastructure.knowledge.recipe_kg.recipe_json_parser import load_recipe_records
+    from gustobot.infrastructure.knowledge.recipe_catalog import (
+        load_recipe_records,
+    )
     from scripts.recipe_kg_to_csv import _build_graph_assets
 
     recipe_path = tmp_path / "recipe.json"

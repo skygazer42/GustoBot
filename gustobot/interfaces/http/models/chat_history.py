@@ -4,7 +4,7 @@ Based on ChatDB implementation.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,7 +15,7 @@ class ConversationHistorySnapshotCreate(BaseModel):
 
     conversation_id: int
     query: str
-    response_data: Dict[str, Any]
+    response_data: dict[str, Any]
 
 
 class ConversationHistorySnapshotResponse(BaseModel):
@@ -24,7 +24,7 @@ class ConversationHistorySnapshotResponse(BaseModel):
     id: int
     conversation_id: int
     query: str
-    response_data: Dict[str, Any]
+    response_data: dict[str, Any]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -37,8 +37,8 @@ class SaveConversationHistoryRequest(BaseModel):
     conversation_id: int
     title: str
     query: str
-    response: Dict[str, Any]
-    user_id: Optional[int] = None
+    response: dict[str, Any]
+    user_id: int | None = None
 
 
 # Conversation History Response
@@ -49,8 +49,8 @@ class ConversationHistoryResponse(BaseModel):
     title: str
     timestamp: datetime
     query: str
-    response: Dict[str, Any]
-    user_id: Optional[int] = None
+    response: dict[str, Any]
+    user_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,7 +59,7 @@ class ConversationHistoryResponse(BaseModel):
 class ConversationHistoryListResponse(BaseModel):
     """Response containing list of conversation histories."""
 
-    sessions: List[ConversationHistoryResponse]
+    sessions: list[ConversationHistoryResponse]
     total: int
     page: int
     page_size: int
@@ -72,8 +72,8 @@ class RestoreConversationHistoryResponse(BaseModel):
     conversation_id: int
     title: str
     query: str
-    response: Dict[str, Any]
-    user_id: Optional[int] = None
+    response: dict[str, Any]
+    user_id: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -2,8 +2,8 @@
 Unified access to application tools.
 """
 
-from functools import lru_cache
-from typing import Any, List
+from functools import cache
+from typing import Any
 
 from openai.types.chat import ChatCompletionToolParam
 from openai.types.shared_params import FunctionDefinition
@@ -37,7 +37,7 @@ registry.register(
 )
 
 
-def list_tool_specs() -> List[FunctionDefinition]:
+def list_tool_specs() -> list[FunctionDefinition]:
     """
     Return tool function definitions formatted for OpenAI function calling.
     """
@@ -51,14 +51,14 @@ def get_tool_spec(name: str) -> FunctionDefinition:
     return registry.get_spec(name).as_openai_function()
 
 
-def list_openai_tools() -> List[ChatCompletionToolParam]:
+def list_openai_tools() -> list[ChatCompletionToolParam]:
     """
     Return tool entries suitable for the OpenAI `tools` argument.
     """
     return [spec.as_openai_tool() for spec in registry.get_specs()]
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_tool(name: str) -> Any:
     """
     Instantiate and cache a tool by name.

@@ -3,7 +3,6 @@ Logging utilities centralised for the application.
 """
 
 import sys
-from typing import Optional
 
 from loguru import logger
 
@@ -17,21 +16,21 @@ DEFAULT_FORMAT = (
 
 def configure_logging(
     *,
-    level: Optional[str] = None,
+    level: str | None = None,
     debug: bool = False,
-    log_format: Optional[str] = None,
+    log_format: str | None = None,
     serialize: bool = False,
 ) -> None:
     """
     Configure the global Loguru logger with a consistent format.
     """
-    resolved_level = level or ("DEBUG" if debug else "INFO")
+    resolved_level = ("DEBUG" if debug else "INFO") if level is None else level
     logger.remove()
     logger.add(
         sys.stderr,
-        format=log_format or DEFAULT_FORMAT,
+        format=DEFAULT_FORMAT if log_format is None else log_format,
         level=resolved_level,
-        diagnose=debug,
+        diagnose=False,
         serialize=serialize,
     )
 

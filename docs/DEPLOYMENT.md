@@ -1,526 +1,91 @@
-> 历史文档：下文保留旧部署与接口说明。2026-11-15 已将图查询统一至 LightRAG，移除 Cypher/Neo4j 运行链路；当前配置、接口和部署请以 [领域知识服务](DOMAIN_KNOWLEDGE.md) 与 [快速启动](QUICK_START.md) 为准。
+# 部署与升级
 
-# GustoBot 部署文档
+## 默认服务
 
-本指南详细说明如何部署 GustoBot 智能菜谱助手系统。
+`docker-compose.yml` 默认包含后端、MySQL、Neo4j、Milvus。Milvus 的内嵌 etcd 与本地存储配置取自 [Milvus v2.5.12 官方单机脚本](https://github.com/milvus-io/milvus/blob/v2.5.12/scripts/standalone_embed.sh)，配置文件只读挂载，不另起 etcd 或 MinIO。
 
-## 📋 目录
+| 服务 | 镜像/运行时 | 默认宿主机端口 | 持久化 |
+| --- | --- | --- | --- |
+| backend | Python 3.11；项目支持 3.10–3.13 | 8000 | `uploads_data`；原始 `data/` 只读挂载 |
+| mysql | `mysql:8.0.36` | 13306 | `application_mysql_data` |
+| neo4j | `neo4j:5.26-community` | 7474、7687 | `facts_neo4j_data` |
+| milvus | `milvusdb/milvus:v2.5.12` | 19530、9091 | `documents_milvus_data`，包含内嵌 etcd |
+| redis | `redis:7.2-alpine`；仅 `cache` profile | 无默认宿主机端口 | `redis_data` |
+| migrate | 后端镜像；仅 `setup` profile | 无 | 显式应用 MySQL 版本迁移后退出 |
+| semantic-indexer | 后端镜像；仅 `semantic` profile | 无 | 复用 MySQL generation 与 Milvus 候选集合 |
 
-1. [系统要求](#系统要求)
-2. [快速部署](#快速部署)
-3. [详细配置](#详细配置)
-4. [Docker 部署](#docker-部署)
-5. [生产环境部署](#生产环境部署)
-6. [故障排除](#故障排除)
+Redis 不属于当前知识请求的必需依赖。旧 pgvector、KB ingest、LightRAG 索引初始化不在默认部署中。
 
-## 🔧 系统要求
+默认菜谱模型由本地 RDF 清单加载，镜像必须包含 `gustobot/config/ontologies/*.ttl`、领域清单、来源映射和运维 CLI。RDFLib、OWL-RL 和 pySHACL 在应用进程中执行，不另起推理数据库或 JVM。当前模型版本为 `2026-11-17.1`，数值投影版本为 `exact_numeric_v1`。应用不自动把旧图事实、文档或候选标为新版本。设备与通用领域仍按其明确的 YAML 契约工作。
 
-### 最低配置
-- **Python**: 3.9+
-- **内存**: 4GB RAM
-- **存储**: 10GB 可用空间
-- **网络**: 互联网连接（用于 API 调用）
+## 配置与启动
 
-### 推荐配置
-- **Python**: 3.9+
-- **内存**: 8GB RAM
-- **存储**: 50GB 可用空间（SSD 推荐）
-- **CPU**: 4 核心
-- **网络**: 稳定的互联网连接
-
-### 依赖服务（可选）
-- **Milvus**: 向量数据库（用于知识检索）
-- **Redis**: 缓存服务
-- **Neo4j**: 图数据库（用于图谱查询）
-- **MySQL**: 关系数据库（用于结构化数据）
-
-## 🚀 快速部署
-
-### 1. 克隆项目
-
-```bash
-git clone https://github.com/your-username/GustoBot.git
-cd GustoBot
+```powershell
+Copy-Item .env.example .env
+# 编辑密码和需要使用的模型服务配置。
+docker compose --env-file .env config --quiet
+docker compose --env-file .env --profile setup build backend migrate
+docker compose --env-file .env up -d mysql neo4j milvus
+docker compose --env-file .env --profile setup run --rm migrate
+docker compose --env-file .env up -d backend
+docker compose --env-file .env ps
 ```
 
-### 2. 创建虚拟环境
+`DATABASE_URL` 必须使用 `mysql+pymysql://`。示例连接 Compose 的 `mysql:3306`；宿主机程序通过 `localhost:13306` 连接。保持 `MYSQL_*` 与连接串一致，对连接串中的保留字符做 URL 编码。现有 MySQL/Neo4j 卷的账号密码不会因修改环境变量而自动更改。
 
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
+模型凭据只在运行时通过环境配置提供，不作为镜像 build args。Dockerfile 安装依赖并复制代码和迁移文件；不打包历史知识索引，不执行模型调用或数据导入。`migrate` 使用空 entrypoint，只依赖 MySQL 健康，显式运行幂等迁移后退出。后端入口仅运行 `scripts/migrate_database.py --check`；缺表、缺少迁移或未知版本会阻止 API 启动，不在启动时静默建表。
 
-# Linux/Mac
-python3 -m venv venv
-source venv/bin/activate
+已有部署必须先完成停写与一致备份，再运行上述显式迁移。单纯启动 `backend` 或 `semantic-indexer` 不等于批准 schema 更新。
+
+## 候选 worker 与健康状态
+
+`SEMANTIC_LINKING_MODE` 默认 `off`。候选索引使用独立集合，集合名由 schema 和 embedding 指纹派生；`MILVUS_COLLECTION` 仍用于原文集合。修改模型名、部署修订或维度后必须建立对应的新候选范围。
+
+```powershell
+docker compose --env-file .env exec backend python scripts/build_semantic_index.py status --kind all
+docker compose --env-file .env --profile semantic up --build -d semantic-indexer
 ```
 
-### 3. 安装依赖
+worker 与后端使用相同配置，等待后端健康后执行 `watch`。默认轮询和静默窗口均为 5 秒，同一 scope 的构建由 MySQL 租约竞争；构建与发布算法和手工 CLI 一致。worker healthcheck 的 `os.kill(1, 0)` 只检查进程存活，不代表 scope 已初始化、索引已发布或已经校准。
 
-```bash
-pip install -r requirements.txt
+发布就绪需要检查 `status` 中的领域、本体版本、模型指纹、embedding 指纹、generation 与图 revision。图变化导致实体候选 stale 时，名称／ID 路径仍可工作；旧向量不会冒充当前图。完整审计、投影、发布和模式切换见 [运行手册](RUNBOOK_SEMANTIC_INDEX.md)。
+
+## 显式知识导入
+
+```powershell
+docker compose --env-file .env exec backend python scripts/import_knowledge.py recipes --path data/recipe.json --limit 10
+docker compose --env-file .env exec backend python scripts/import_knowledge.py documents --path data/kb/data.txt --source-id recipe-history
 ```
 
-### 4. 配置环境变量
+菜谱事实直接映射并校验，不调用抽取模型；原文入库需要 embedding。文档抽取与事实导入是显式操作，上传附件不会自动入库。完整命令选项通过 `--help` 查看。
 
-创建 `.env` 文件：
+同一输入重复导入应保持来源与事实身份，变更输入保留新的做法版本。首次导入先使用小范围样例核对单位、未知值、来源和版本，再导入全量。
 
-```env
-# OpenAI API（必需）
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_API_BASE=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4
+## 升级现有部署
 
-# 数据库配置
-DATABASE_URL=sqlite:///./gustobot.db
-REDIS_URL=redis://localhost:6379
+先备份 MySQL、图数据库、向量索引、上传文件及原始资料，再核对环境配置。当前 Compose 使用新的应用/事实/文档卷名，保留旧 `mysql_data`、`milvus_data`、`kb_pgdata`、`etcd_data`、`minio_data` 等历史卷，启动不会清理这些卷。
 
-# Milvus配置
-MILVUS_HOST=localhost
-MILVUS_PORT=19530
-MILVUS_COLLECTION=gustobot_recipes
+旧 SQLite 会话及外部 pgvector 数据不自动成为当前应用数据。按需要导出历史应用记录，或从原始资料重新显式入库。仓库中的 LightRAG 索引和旧图导出已清理；旧 SQL 样例归档在 `data/reference/legacy_mysql/`，不能挂入 MySQL 初始化目录。当前 schema 由版本迁移维护，不执行旧样例库的删除重建脚本。
 
-# Neo4j配置
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
+候选 P0 的同模型旧事实可在停写与完整审计通过后建立 fingerprint/revision 范围，不要求无条件重新生成已核验的事实。正式模型从旧版本升级到 `2026-11-17.1` 时，需要匹配的事实版本、来源发布和数值投影；不能仅回填新 fingerprint 或修改 `ontology_version`。数值投影升级先 `--dry-run`，确认来源与范围后才 `--publish`；它会推进图 revision，随后重建实体 generation。
 
-# 文件上传配置
-FILE_UPLOAD_MAX_MB=50
-UPLOAD_DIR=./uploads
+文档 embedding 模型或维度变化时使用新的 `MILVUS_COLLECTION` 并重新发布原文。候选 embedding 使用独立的 `SEMANTIC_EMBEDDING_REVISION` 与 scope；已有集合校验失败不会自动 drop 或复用错误空间。
 
-# 应用配置
-DEBUG=false
-HOST=0.0.0.0
-PORT=8000
-CORS_ORIGINS=["*"]
+模型／数据回退需要一起恢复匹配的模型文件、MySQL、Neo4j、原始资料／上传资产和文档发布范围。仅切换候选 generation 不能恢复被新模型写入替换的事实。先使用 `off`，再验证恢复后的范围与修订；可重建候选不等于可以删除原始证据。
+
+`scripts/verify_knowledge_snapshot.py` 核验已有备份文件的 hash、实际编译模型及导出元数据的一致性。它不连接数据库，也不执行 dump、删除或 restore；`database_restore_verified` 始终为 `false`。备份清单格式、恢复门禁和两类回退的操作顺序见 [运行手册](RUNBOOK_SEMANTIC_INDEX.md)。
+
+停止当前服务可执行 `docker compose --env-file .env down`，保留数据卷。仅在明确要删除当前数据并已完成备份时才考虑卷删除操作；升级不需要 `down -v`。
+
+## 验证与诊断
+
+```powershell
+docker compose --env-file .env config --quiet
+docker compose --env-file .env logs --tail 100 backend mysql neo4j milvus
+python -m pip install -r requirements-dev.txt
+python -m pytest tests/test_backend_deployment.py
 ```
 
-### 5. 启动服务
+部署回归会用独立临时环境文件渲染 Compose，并执行迁移成功/失败的入口脚本替身。它不会读取真实 `.env`，也不会启动或修改数据库。图集成测试需要显式设置 `GUSTOBOT_TEST_NEO4J_CONFIG`，其 JSON 包含隔离测试服务的 `uri/user/password/database`；测试仅清理自己生成的 UUID 领域。
 
-```bash
-# 使用启动脚本（推荐）
-python start_chatbot.py
-
-# 或手动启动
-python -m uvicorn gustobot.main:application --reload --host 0.0.0.0 --port 8000
-```
-
-### 6. 访问系统
-
-- **聊天界面**: http://localhost:8000/
-- **API 文档**: http://localhost:8000/docs
-- **健康检查**: http://localhost:8000/health
-
-## 📝 详细配置
-
-### 环境变量说明
-
-| 变量名 | 必需 | 说明 | 示例 |
-|--------|------|------|------|
-| OPENAI_API_KEY | 是 | OpenAI API 密钥 | sk-... |
-| OPENAI_MODEL | 否 | 使用的模型 | gpt-4, gpt-3.5-turbo |
-| DATABASE_URL | 否 | 数据库连接字符串 | sqlite:///./gustobot.db |
-| REDIS_URL | 否 | Redis 连接字符串 | redis://localhost:6379 |
-| MILVUS_HOST | 否 | Milvus 主机地址 | localhost |
-| NEO4J_URI | 否 | Neo4j 连接地址 | bolt://localhost:7687 |
-| DEBUG | 否 | 调试模式 | true/false |
-| FILE_UPLOAD_MAX_MB | 否 | 最大上传文件大小(MB) | 50 |
-
-### 数据库初始化
-
-如果使用 MySQL/PostgreSQL：
-
-```bash
-# 创建数据库
-mysql -u root -p -e "CREATE DATABASE gustobot;"
-
-# 运行迁移（如果有）
-alembic upgrade head
-```
-
-### Milvus 设置
-
-```bash
-# 使用 Docker 启动 Milvus
-docker-compose up -d milvus etcd minio
-
-# 或使用 Python 客户端创建 collection
-python -c "
-from pymilvus import connections, CollectionSchema, FieldSchema, DataType, Collection
-connections.connect('default', host='localhost', port='19530')
-# 创建 collection...
-"
-```
-
-### Neo4j 设置
-
-```bash
-# 使用 Docker 启动 Neo4j
-docker-compose up -d neo4j
-
-# 访问 Neo4j Browser: http://localhost:17474
-# 用户名: neo4j
-# 密码: 在 docker-compose.yml 中配置
-```
-
-## 🐳 Docker 部署
-
-### 1. 使用 Docker Compose（推荐）
-
-创建 `docker-compose.yml`：
-
-```yaml
-version: '3.8'
-
-services:
-  gustobot:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - REDIS_URL=redis://redis:6379
-      - MILVUS_HOST=milvus
-      - NEO4J_URI=bolt://neo4j:7687
-    volumes:
-      - ./uploads:/app/uploads
-    depends_on:
-      - redis
-      - milvus
-      - neo4j
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-  milvus:
-    image: milvusdb/milvus:v2.3.0
-    ports:
-      - "19530:19530"
-    environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-    volumes:
-      - milvus_data:/var/lib/milvus
-    depends_on:
-      - etcd
-      - minio
-
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.5
-    environment:
-      - ETCD_AUTO_COMPACTION_MODE=revision
-      - ETCD_AUTO_COMPACTION_RETENTION=1000
-      - ETCD_QUOTA_BACKEND_BYTES=4294967296
-    volumes:
-      - etcd_data:/etcd
-
-  minio:
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
-    environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-
-  neo4j:
-    image: neo4j:5.12-community
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    environment:
-      - NEO4J_AUTH=neo4j/password
-      - NEO4J_PLUGINS=["apoc"]
-    volumes:
-      - neo4j_data:/data
-
-volumes:
-  milvus_data:
-  etcd_data:
-  minio_data:
-  neo4j_data:
-```
-
-### 2. 构建和运行
-
-```bash
-# 构建镜像
-docker build -t gustobot .
-
-# 运行服务
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f gustobot
-```
-
-### 3. Dockerfile
-
-```dockerfile
-FROM python:3.9-slim
-
-WORKDIR /app
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# 复制依赖文件
-COPY requirements.txt .
-
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 复制源代码
-COPY . .
-
-# 创建上传目录
-RUN mkdir -p uploads
-
-# 暴露端口
-EXPOSE 8000
-
-# 启动命令
-CMD ["python", "-m", "uvicorn", "gustobot.main:application", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-## 🌐 生产环境部署
-
-### 1. 使用 Gunicorn（Linux）
-
-```bash
-# 安装 Gunicorn
-pip install gunicorn
-
-# 创建 gunicorn.conf.py
-bind = "0.0.0.0:8000"
-workers = 4
-worker_class = "uvicorn.workers.UvicornWorker"
-worker_connections = 1000
-timeout = 60
-keepalive = 2
-max_requests = 1000
-max_requests_jitter = 100
-preload_app = True
-```
-
-启动服务：
-
-```bash
-gunicorn -c gunicorn.conf.py gustobot.main:application
-```
-
-### 2. 使用 Systemd（Linux 服务）
-
-创建服务文件 `/etc/systemd/system/gustobot.service`：
-
-```ini
-[Unit]
-Description=GustoBot Chat Service
-After=network.target
-
-[Service]
-User=gustobot
-Group=gustobot
-WorkingDirectory=/opt/gustobot
-Environment="PATH=/opt/gustobot/venv/bin"
-ExecStart=/opt/gustobot/venv/bin/gunicorn -c gunicorn.conf.py gustobot.main:application
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用和启动服务：
-
-```bash
-sudo systemctl enable gustobot
-sudo systemctl start gustobot
-sudo systemctl status gustobot
-```
-
-### 3. 使用 Nginx 反向代理
-
-创建 Nginx 配置 `/etc/nginx/sites-available/gustobot`：
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # SSE 支持（流式返回）
-    location /api/v1/chat/stream {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 3600;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # 静态文件
-    location /uploads/ {
-        alias /opt/gustobot/uploads/;
-        expires 30d;
-    }
-}
-```
-
-启用配置：
-
-```bash
-sudo ln -s /etc/nginx/sites-available/gustobot /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### 4. SSL/HTTPS 配置
-
-使用 Let's Encrypt：
-
-```bash
-# 安装 Certbot
-sudo apt install certbot python3-certbot-nginx
-
-# 获取证书
-sudo certbot --nginx -d your-domain.com
-
-# 自动续期
-sudo crontab -e
-# 添加: 0 12 * * * /usr/bin/certbot renew --quiet
-```
-
-## 🔍 故障排除
-
-### 常见问题
-
-1. **LLM API 错误**
-   ```
-   错误: OPENAI_API_KEY is not configured
-   解决: 在 .env 文件中设置正确的 API 密钥（LLM_API_KEY 或 OPENAI_API_KEY）
-   ```
-
-2. **端口占用**
-   ```
-   错误: Port 8000 is already in use
-   解决: 更改端口或停止占用端口的进程
-   ```
-
-3. **文件上传失败**
-   ```
-   错误: 413 Request Entity Too Large
-   解决: 增加 FILE_UPLOAD_MAX_MB 的值
-   ```
-
-4. **CORS 错误**
-   ```
-   错误: Access to fetch at 'http://localhost:8000' has been blocked by CORS policy
-   解决: 检查 CORS_ORIGINS 配置
-   ```
-
-5. **依赖服务连接失败**
-   ```
-   错误: Could not connect to Milvus
-   解决: 确保 Milvus 服务正在运行并检查配置
-   ```
-
-### 日志查看
-
-```bash
-# 开发模式
-python start_chatbot.py
-
-# 查看应用日志
-tail -f logs/gustobot.log
-
-# Docker 日志
-docker-compose logs -f gustobot
-
-# Systemd 日志
-journalctl -u gustobot -f
-```
-
-### 性能优化
-
-1. **增加并发处理**
-   ```python
-   # 在 uvicorn 命令中添加 --workers
-   uvicorn gustobot.main:application --workers 4
-   ```
-
-2. **启用 Redis 缓存**
-   ```env
-   REDIS_URL=redis://localhost:6379
-   REDIS_CACHE_TTL=3600
-   ```
-
-3. **使用 CDN**
-   - 将静态文件托管到 CDN
-   - 减少 API 响应大小
-
-4. **数据库优化**
-   - 添加适当的索引
-   - 使用连接池
-   - 定期清理旧数据
-
-## 📞 技术支持
-
-如果遇到问题，请：
-
-1. 查看日志文件获取详细错误信息
-2. 检查环境变量配置
-3. 确保所有依赖服务正常运行
-4. 提交 Issue 到 GitHub 仓库
-
-## 🔄 更新和维护
-
-### 更新应用
-
-```bash
-# 拉取最新代码
-git pull origin main
-
-# 更新依赖
-pip install -r requirements.txt
-
-# 重启服务
-sudo systemctl restart gustobot
-```
-
-### 备份数据
-
-```bash
-# 备份数据库
-mysqldump -u root -p gustobot > backup.sql
-
-# 备份上传文件
-tar -czf uploads_backup.tar.gz uploads/
-
-# 备份 Redis
-redis-cli BGSAVE
-cp dump.rdb redis_backup.rdb
-```
-
----
-
-## 📚 其他资源
-
-- [API 文档](http://localhost:8000/docs)
-- [项目主页](https://github.com/your-username/GustoBot)
-- [贡献指南](CONTRIBUTING.md)
-- [许可证](LICENSE)
+配置可解析不等于外部服务已联通。发布前还需核对实际 MySQL 迁移、Neo4j 事实与来源、Milvus embedding 维度和检索，以及使用者配置的模型服务。完整知识接口见 [领域知识服务](DOMAIN_KNOWLEDGE.md)。

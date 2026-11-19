@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Batch import recipes into the KB via the HTTP API.
+Batch import original recipe records into the fact graph via the HTTP API.
 
 Example:
   python scripts/import_recipes.py --file data/recipe.json --batch-size 100
@@ -11,8 +11,9 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -24,15 +25,13 @@ if str(PROJECT_ROOT) not in sys.path:
 def _iter_payloads_from_json(
     raw: Any,
     *,
-    limit: Optional[int] = None,
-) -> Iterator[Dict[str, Any]]:
+    limit: int | None = None,
+) -> Iterator[dict[str, Any]]:
     """
     Yield KB recipe payloads from either:
     - dict keyed by recipe name (bundled data/recipe.json format)
     - list of recipe dicts (already-normalized)
     """
-
-    from gustobot.infrastructure.knowledge.recipe_import import recipe_json_entry_to_recipe
 
     emitted = 0
 
@@ -41,9 +40,9 @@ def _iter_payloads_from_json(
             if limit is not None and emitted >= limit:
                 return
             if not isinstance(entry, dict):
-                continue
+                raise TypeError(f"Recipe {name!r} must contain an object record")
             emitted += 1
-            yield recipe_json_entry_to_recipe(str(name), entry)
+            yield {"name": str(name), "record": entry}
         return
 
     if isinstance(raw, list):
@@ -51,33 +50,24 @@ def _iter_payloads_from_json(
             if limit is not None and emitted >= limit:
                 return
             if not isinstance(item, dict):
-                continue
-            name = item.get("name") or item.get("title") or item.get("菜名")
-            if not name:
-                continue
+                raise TypeError("Each recipe must be an object")
+            name = next((item[field] for field in ("name", "title", "菜名") if field in item), None)
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Each recipe needs an explicit nonempty name")
             emitted += 1
-            # If already matches API fields, keep as-is, otherwise attempt a light mapping.
-            if "主食材" in item or "辅料" in item or "做法" in item:
-                yield recipe_json_entry_to_recipe(str(name), item)
-            else:
-                payload = {
-                    "name": str(name),
-                    "category": item.get("category", item.get("类型")),
-                    "time": item.get("time", item.get("耗时")),
-                    "ingredients": item.get("ingredients"),
-                    "steps": item.get("steps"),
-                    "tips": item.get("tips"),
-                }
-                yield payload
+            record = item.get("record", item)
+            if not isinstance(record, dict):
+                raise TypeError("Each recipe record must be an object")
+            yield {"name": name, "record": record}
         return
 
     raise TypeError(f"Unsupported JSON root type: {type(raw)!r}")
 
 
-def _chunked(iterable: Iterable[Dict[str, Any]], size: int) -> Iterator[List[Dict[str, Any]]]:
+def _chunked(iterable: Iterable[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
     if size <= 0:
         raise ValueError("batch size must be positive")
-    batch: List[Dict[str, Any]] = []
+    batch: list[dict[str, Any]] = []
     for item in iterable:
         batch.append(item)
         if len(batch) >= size:
@@ -91,17 +81,23 @@ def _post_batch(
     client: httpx.Client,
     *,
     api_base_url: str,
-    recipes: List[Dict[str, Any]],
-) -> Tuple[int, Dict[str, Any]]:
+    recipes: list[dict[str, Any]],
+) -> tuple[int, list[dict[str, Any]]]:
     url = api_base_url.rstrip("/") + "/api/v1/knowledge/recipes/batch"
     response = client.post(url, json=recipes)
     response.raise_for_status()
     payload = response.json()
-    inserted = int(payload["statistics"]["success"])
-    return inserted, payload
+    if not isinstance(payload, list) or len(payload) != len(recipes):
+        raise ValueError("Import response must contain one receipt per recipe")
+    if any(
+        not isinstance(receipt, dict) or receipt.get("status") != "graph_ready"
+        for receipt in payload
+    ):
+        raise ValueError("Each import receipt must report graph_ready")
+    return len(payload), payload
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Batch import recipes into KB")
     parser.add_argument("--file", required=True, help="Path to recipe JSON file")
     parser.add_argument("--batch-size", type=int, default=100, help="Recipes per request")

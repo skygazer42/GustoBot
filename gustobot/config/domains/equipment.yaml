@@ -1,0 +1,55 @@
+id: equipment
+version: '2026-11-16.2'
+name: 设备维护知识服务
+description: 有来源依据的设备、部件和故障信息。
+classes:
+  Equipment:
+    label: 设备
+    description: 可定位的设备。
+    identity: source_assigned
+    grain: 来源记录中的一台设备。
+    properties:
+      serial: {type: string, required: true}
+      enabled: {type: boolean}
+      count: {type: integer, minimum: 0}
+      weight: {type: number, minimum: 0}
+  Component:
+    label: 部件
+    description: 设备的组成部件。
+    identity: source_assigned
+    grain: 一台设备上的一个部件。
+    properties: {}
+  Fault:
+    label: 故障
+    description: 来源观察到的故障。
+    identity: source_assigned
+    grain: 一条有时间和设备上下文的故障记载。
+    properties: {}
+allowed_edges:
+  HAS_COMPONENT:
+    domain: [Equipment]
+    range: [Component]
+    description: 设备包含部件。
+    properties:
+      slot: {type: integer, minimum: 0}
+  HAS_FAULT:
+    domain: [Component]
+    range: [Fault]
+    description: 部件出现故障。
+    properties:
+      confidence: {type: number, minimum: 0, maximum: 1}
+  CAUSES:
+    domain: [Fault]
+    range: [Fault]
+    description: 来源明确支持的一种故障导致另一种故障。
+lexicon:
+  - terms: [设备, 序列号]
+    refs: [Equipment, Equipment.serial]
+  - terms: [部件, 组成]
+    refs: [HAS_COMPONENT]
+  - terms: [故障, 维护记录]
+    refs: [HAS_FAULT]
+  - terms: [导致, 原因]
+    refs: [CAUSES]
+document_scope: 设备手册、维护记录、部件说明和故障分析资料。
+interpretation_notes: [没有来源依据的故障原因不能作为确定结论。]

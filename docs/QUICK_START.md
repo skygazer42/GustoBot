@@ -1,18 +1,90 @@
 # GustoBot 快速启动
 
-## 配置与运行
+## Docker Compose
 
-需要 Python 3.10–3.13。先复制示例配置，填写真实的 LLM 与 Embedding 服务参数：
+在仓库根目录执行：
 
 ```powershell
 Copy-Item .env.example .env
+```
+
+编辑 `.env`：更换 `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`NEO4J_PASSWORD`，并同步 `DATABASE_URL` 中的应用账号和密码。连接串中的保留字符需要 URL 编码，`MYSQL_PASSWORD` 保留原密码。示例使用 Compose 内部主机名 `mysql`、`neo4j`、`milvus`。
+
+聊天和 embedding 均使用 OpenAI-compatible 接口，无需填写模型商。将示例中的占位地址和模型 ID 替换为服务实际暴露的值；两种接口可使用同一网关，也可分别配置：
+
+```dotenv
+LLM_BASE_URL=https://your-api.example/v1
+LLM_API_KEY=your-api-key
+LLM_MODEL=your-chat-model
+EMBEDDING_BASE_URL=https://your-api.example/v1
+EMBEDDING_API_KEY=your-api-key
+EMBEDDING_MODEL=your-embedding-model
+EMBEDDING_DIMENSION=1536
+```
+
+图事实导入和类型校验不调用模型；文档入库需要 embedding，文档事实抽取和一般答案生成需要聊天模型。`EMBEDDING_DIMENSION` 必须匹配实际模型输出。
+
+```powershell
+docker compose --env-file .env config --quiet
+docker compose --env-file .env --profile setup build backend migrate
+docker compose --env-file .env up -d mysql neo4j milvus
+docker compose --env-file .env --profile setup run --rm migrate
+docker compose --env-file .env up -d backend
+docker compose --env-file .env logs -f backend
+```
+
+默认服务为后端、MySQL 8.0、Neo4j 5.26 和 Milvus 2.5。Milvus 使用内嵌 etcd 与本地对象存储。`setup` profile 的 `migrate` 服务显式应用迁移；后端等待存储健康后只执行 `scripts/migrate_database.py --check`，不补表、不修改 schema。首次启动缺少迁移时，先运行迁移命令再启动后端。构建和启动不导入数据、不调用模型。
+
+| 地址 | 用途 |
+| --- | --- |
+| `http://localhost:8000/docs` | API 文档 |
+| `http://localhost:8000/health` | 后端健康检查 |
+| `http://localhost:7474` | Neo4j Browser |
+| `localhost:13306` | MySQL 宿主机连接 |
+| `localhost:19530` | Milvus 宿主机连接 |
+
+端口可在 `.env` 中调整。Redis 不参与默认请求链；需要保留的可选服务时可执行 `docker compose --env-file .env --profile cache up -d redis`。
+
+## 导入样例
+
+先导入少量菜谱事实，核对领域、来源和做法版本：
+
+```powershell
+docker compose --env-file .env exec backend python scripts/import_knowledge.py recipes --path data/recipe.json --limit 10
+```
+
+去掉 `--limit` 可导入整个输入文件。相同源记录重复导入保留身份；内容变化产生新的来源与做法版本，不按同名覆盖其他做法。
+
+原文导入是独立操作：
+
+```powershell
+docker compose --env-file .env exec backend python scripts/import_knowledge.py documents --path data/kb/data.txt --source-id recipe-history
+```
+
+CLI 支持的完整选项以 `python scripts/import_knowledge.py --help` 为准。容器将仓库 `data/` 只读挂载为 `/app/data`；其他文件先放入可读来源目录，或使用上传与知识入库 API。
+
+## 本地 Python
+
+Python 支持 3.10–3.13。可以仅用 Compose 启动存储，再在宿主机运行 Python：
+
+```powershell
+docker compose --env-file .env up -d mysql neo4j milvus
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+$env:DATABASE_URL = "mysql+pymysql://gustobot:YOUR_URL_ENCODED_PASSWORD@localhost:13306/gustobot?charset=utf8mb4"
+$env:NEO4J_URI = "bolt://localhost:7687"
+$env:MILVUS_HOST = "localhost"
+python scripts/migrate_database.py
+python scripts/migrate_database.py --check
 python -m uvicorn gustobot.main:application --reload
 ```
 
-默认会话数据库是 SQLite。LightRAG 首次使用时初始化，读取当前领域索引；导入资料需要模型和向量服务。完整 API 以 [OpenAPI](http://localhost:8000/docs) 为准。
+将示例密码替换为实际密码，使用调整后的宿主机端口。开发检查工具安装命令是 `python -m pip install -r requirements-dev.txt`。
 
-前端独立启动：
+## 前端与领域
+
+另开终端执行：
 
 ```powershell
 Set-Location web
@@ -20,64 +92,27 @@ npm install
 npm run dev
 ```
 
-前端 URL 以 Vite 输出为准；API 默认使用 `http://localhost:8000`。
+要切换设备样板，在 `.env` 中设置 `KNOWLEDGE_DOMAIN_FILE=gustobot/config/domains/equipment.yaml` 后重启后端。另有 `generic.yaml`；每个领域需要自己的资料。默认菜谱的 YAML 是 RDF 加载清单，正式定义来自本地 OWL/RDFS 与 SHACL，当前版本为 `2026-11-17.1`。设备和通用样板使用 YAML 定义。修改定义后需要重启；版本升级还需要匹配的数据发布步骤。
 
-## 容器部署
+## 可选语义候选
 
-```powershell
-docker compose up --build
-docker compose logs -f backend
-```
-
-默认仅启动 backend，使用 SQLite 会话和本地 LightRAG 索引，不要求 Neo4j、Redis、Milvus 或 PostgreSQL。若已有 `.env` 显式配置 MySQL，须启动相应服务或自行改为 SQLite。
-
-| Profile | 用途 |
-| --- | --- |
-| `sql` | 示例 MySQL，需要时另配 SQL_DATABASE_URL 与领域 sql_enabled |
-| `legacy-kb` | 旧 Milvus、etcd、MinIO、PostgreSQL、KB ingest |
-| `legacy-cache` | 保留的 Redis 服务 |
-
-例如 `docker compose --profile legacy-kb up --build`。启用 profile 不会自动改领域的 document_backend 或注册旧 HTTP 路由。
-
-## 选择领域
+保持 `SEMANTIC_LINKING_MODE=off`，填写实际 embedding 部署修订 `SEMANTIC_EMBEDDING_REVISION`。审计不会把旧事实直接改标成当前模型：
 
 ```powershell
-$env:KNOWLEDGE_DOMAIN_FILE = "gustobot/config/domains/equipment.json"
-python -m uvicorn gustobot.main:application --reload
+docker compose --env-file .env exec backend python scripts/build_semantic_index.py bootstrap --audit
+docker compose --env-file .env exec backend python scripts/build_semantic_index.py status --kind all
 ```
 
-内置 `recipes.json`、`equipment.json` 和 `generic.json` 均默认使用共享 LightRAG。新增领域需准备自己的配置和语料，无须添加行业专属 Cypher。不同领域使用独立索引目录；修改配置后重启进程。
+只有在停写、备份和完整审计通过后，才显式运行 `bootstrap --apply-scope`。数值投影升级按 `scripts/rebuild_numeric_projection.py --dry-run`／`--publish` 处理，然后再构建候选。候选预构建命令是 `build --kind all`；发布需要明确加 `--publish`。
 
-## 导入与查询
+完成手工发布与核验后，可启动持续重建 worker：
 
-以下示例以设备领域为例。普通文档从 `/api/v1/lightrag/insert` 导入：
-
-```json
-{"documents": ["设备手册：泵 A 包含轴承 B。轴承 B 的检查记录提示振动异常。"]}
+```powershell
+docker compose --env-file .env --profile semantic up --build -d semantic-indexer
 ```
 
-向 `/api/v1/lightrag/query` 提交自然语言问题：
+worker 复用后端配置、等待后端健康，每 5 秒轮询并等待 5 秒静默窗口。其 healthcheck 仅检查 PID 存活。`ready` 状态、当前图 revision、校准和业务验收共同决定是否可从 `off` 进入 `shadow`／`on`，步骤见 [候选索引运行手册](RUNBOOK_SEMANTIC_INDEX.md)。
 
-```json
-{"query": "泵 A 的部件有什么异常？", "mode": "hybrid", "top_k": 10}
-```
+聊天入口为 `POST /api/v1/chat/`，事实 API 前缀为 `/api/v1/ontology`。同名做法有歧义时先选择具体版本。附件阅读不会自动持久化为知识；长期入库必须显式发起。
 
-`naive` 用于文档向量问答，`hybrid` 结合实体和关系上下文；二者复用同一索引。关系问题无需手写 Cypher。
-
-需要先约束事实类型时，用 `docs/examples/equipment-facts.json` 调用 `/api/v1/ontology/validate`；确认后显式提交 `/facts` 才会导入。也可以用 `/extract` 从带 URI 的来源原文抽取候选事实，返回后再提交。事实入库保留完整原文、来源及引文，再交 LightRAG 抽取合并。
-
-| 接口 | 用途 |
-| --- | --- |
-| `GET /api/v1/ontology/domain` | 当前领域定义 |
-| `POST /api/v1/ontology/extract` | 抽取并校验候选事实，不自动入库 |
-| `POST /api/v1/ontology/validate` | 校验事实，不调用索引 |
-| `POST /api/v1/ontology/facts` | 校验并导入共享索引，返回文档导入统计 |
-| `POST /api/v1/ontology/query` | 以 question/mode/top_k 查询同一 LightRAG |
-| `POST /api/v1/lightrag/query-stream` | 流式问答 |
-| `POST /api/v1/chat/` | 完整聊天与路由 |
-
-旧图路径参数 `anchor_ids/relation_types/max_hops/limit` 已移除。LightRAG 检索图不保证精确有向路径或逐边事实约束；旧 Neo4j 数据须显式导出并重新导入，本次代码调整不自动迁移数据。
-
-SQL 统计默认关闭。需要时，在领域 JSON 设置 `sql_enabled=true`、`sql_db_type`，并在环境中设置 `SQL_DATABASE_URL`。连接串不放在会公开返回的领域 JSON 中，账号应限制为只读。
-
-完整流程与 API 边界见 [领域知识服务](DOMAIN_KNOWLEDGE.md)，内置数据来源见 [数据血缘](DATA_SOURCES.md)。
+接口与结果完整性见 [领域知识服务](DOMAIN_KNOWLEDGE.md)。已有部署升级与旧卷保留见 [部署](DEPLOYMENT.md)。

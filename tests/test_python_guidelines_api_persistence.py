@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+from contextlib import aclosing
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -21,9 +22,9 @@ def test_semantic_cache_preserves_zero_threshold_and_capacity():
 
 
 def test_zero_history_limit_returns_no_messages():
-    from gustobot.application.services.redis_cache import RedisConversationHistory
-
     from redis.asyncio import Redis
+
+    from gustobot.application.services.redis_cache import RedisConversationHistory
 
     redis = Mock(spec=Redis, lrange=AsyncMock(return_value=[b'{"content":"old"}']))
     history = RedisConversationHistory(redis_client=redis)
@@ -67,59 +68,32 @@ def test_upload_rejects_missing_or_path_filenames(monkeypatch, tmp_path, filenam
 
     monkeypatch.setattr(upload, "UPLOAD_DIR", tmp_path)
     file = UploadFile(io.BytesIO(b"small"), filename=filename)
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(upload.upload_file(file))
-    assert error.value.status_code == 400
+    try:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(upload.upload_file(file))
+        assert error.value.status_code == 400
+    finally:
+        asyncio.run(file.close())
 
 
 def test_llm_missing_text_is_visible(monkeypatch):
     from gustobot.application.services.llm_client import LLMClient
 
     client = LLMClient(api_key="test")
-    monkeypatch.setattr(
-        client,
-        "complete",
-        AsyncMock(
-            return_value=SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content=None))]
-            )
-        ),
-    )
     try:
+        monkeypatch.setattr(
+            client,
+            "complete",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=None))]
+                )
+            ),
+        )
         with pytest.raises(ValueError, match="content|text"):
             asyncio.run(client.chat(system_prompt=None, user_message="hello"))
     finally:
-        assert client._client is not None
-        asyncio.run(client._client.close())
-
-
-def test_lightrag_sse_close_releases_upstream(monkeypatch):
-    from gustobot.interfaces.http import lightrag_router
-    from gustobot.application.services.lightrag_service import LightRAGQueryRequest
-
-    closed = []
-
-    async def chunks():
-        try:
-            yield "first"
-            yield "second"
-        finally:
-            closed.append(True)
-
-    monkeypatch.setattr(
-        lightrag_router,
-        "get_lightrag_service",
-        lambda: SimpleNamespace(query=AsyncMock(return_value=chunks())),
-    )
-
-    async def consume():
-        response = await lightrag_router.query_lightrag_stream(LightRAGQueryRequest(query="hello"))
-        iterator = response.body_iterator
-        assert await iterator.__anext__() == "data: first\n\n"
-        await iterator.aclose()
-
-    asyncio.run(consume())
-    assert closed == [True]
+        asyncio.run(client.close())
 
 
 def test_missing_crud_delete_is_normal_not_found():
@@ -136,19 +110,16 @@ def test_message_save_failure_rolls_back_and_propagates(monkeypatch):
     from gustobot.interfaces.http.v1 import chat
 
     db = Mock()
-    monkeypatch.setattr(
-        chat.chat_message,
-        "get_latest_by_session",
-        Mock(side_effect=RuntimeError("database failed")),
-    )
+    db.scalar = Mock(side_effect=RuntimeError("database failed"))
     with pytest.raises(RuntimeError, match="database failed"):
         asyncio.run(chat.save_message(db, "session", "hello", is_user=True))
     db.rollback.assert_called_once()
 
 
 def test_search_stream_close_releases_openai_response(monkeypatch):
-    from gustobot.application.services.search_service import SearchService
     from openai import AsyncOpenAI
+
+    from gustobot.application.services.search_service import SearchService
 
     closed = []
 
@@ -182,10 +153,9 @@ def test_search_stream_close_releases_openai_response(monkeypatch):
     )
 
     async def consume():
-        stream = service.generate_stream("hello")
-        assert "direct_answer" in await stream.__anext__()
-        assert "chunk" in await stream.__anext__()
-        await stream.aclose()
+        async with aclosing(service.generate_stream("hello")) as stream:
+            assert "direct_answer" in await stream.__anext__()
+            assert "chunk" in await stream.__anext__()
 
     asyncio.run(consume())
     assert closed == [True]

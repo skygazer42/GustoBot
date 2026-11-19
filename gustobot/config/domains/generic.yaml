@@ -1,0 +1,34 @@
+id: generic
+version: '2026-11-16.2'
+name: 通用知识服务
+description: 依据来源描述概念及其关联。
+classes:
+  Concept:
+    label: 概念
+    description: 原文中明确出现的概念。
+    identity: source_assigned
+    grain: 具有明确文档上下文的一个概念。
+    properties: {}
+  Document:
+    label: 文档
+    description: 资料中描述的文档。
+    identity: source_assigned
+    grain: 一个来源中的一个文档版本。
+    properties:
+      uri: {type: string}
+allowed_edges:
+  RELATED_TO:
+    domain: [Concept]
+    range: [Concept]
+    description: 原文明确支持的概念关联。
+  DESCRIBES:
+    domain: [Document]
+    range: [Concept]
+    description: 文档描述一个概念。
+lexicon:
+  - terms: [关联, 关系]
+    refs: [RELATED_TO]
+  - terms: [描述, 提到]
+    refs: [DESCRIBES]
+document_scope: 已提供的领域资料和文档。
+interpretation_notes: [区分原文支持的事实与尚未确认的推断。]

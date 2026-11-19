@@ -3,12 +3,22 @@
 Knowledge Base Module
 """
 
-from .vector_store import VectorStore
-from .knowledge_service import KnowledgeService
-from .reranker import Reranker
+from importlib import import_module
+
+
+def __getattr__(name: str):
+    modules = {
+        "VectorStore": ".vector_store",
+        "KnowledgeService": ".knowledge_service",
+        "Reranker": ".reranker",
+    }
+    if name not in modules:
+        raise AttributeError(name)
+    return getattr(import_module(modules[name], __name__), name)
+
 
 __all__ = [
-    "VectorStore",
     "KnowledgeService",
     "Reranker",
+    "VectorStore",
 ]

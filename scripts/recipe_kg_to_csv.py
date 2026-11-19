@@ -4,42 +4,19 @@
 import argparse
 import csv
 import hashlib
-import importlib.util
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-def _load_parser_module():
-    project_root = Path(__file__).resolve().parent.parent
-    parser_path = (
-        project_root
-        / "gustobot"
-        / "infrastructure"
-        / "knowledge"
-        / "recipe_kg"
-        / "recipe_json_parser.py"
-    )
-    spec = importlib.util.spec_from_file_location("recipe_parser", parser_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Failed to load recipe parser module from {parser_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-parser_module = _load_parser_module()
-if TYPE_CHECKING:
-    from gustobot.infrastructure.knowledge.recipe_kg.recipe_json_parser import (
-        IngredientProfile,
-        RecipeRecord,
-    )
-else:
-    IngredientProfile = parser_module.IngredientProfile
-    RecipeRecord = parser_module.RecipeRecord
-load_ingredient_profiles = parser_module.load_ingredient_profiles
-load_recipe_records = parser_module.load_recipe_records
+from gustobot.infrastructure.knowledge.recipe_catalog import (
+    IngredientProfile,
+    RecipeRecord,
+    load_ingredient_profiles,
+    load_recipe_records,
+)
 
 
 def main() -> None:
@@ -84,45 +61,45 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _build_graph_assets(
-    recipes: List["RecipeRecord"],
-    profiles: List["IngredientProfile"],
-) -> Dict[str, List[Dict[str, object]]]:
-    dish_registry: Dict[str, Dict[str, object]] = {}
-    ingredient_registry: Dict[str, Dict[str, object]] = {}
-    flavor_registry: Dict[str, Dict[str, object]] = {}
-    method_registry: Dict[str, Dict[str, object]] = {}
-    type_registry: Dict[str, Dict[str, object]] = {}
-    cuisine_registry: Dict[str, Dict[str, object]] = {}
-    step_registry: Dict[str, Dict[str, object]] = {}
-    nutrition_registry: Dict[str, Dict[str, object]] = {}
-    benefit_registry: Dict[str, Dict[str, object]] = {}
+    recipes: list["RecipeRecord"],
+    profiles: list["IngredientProfile"],
+) -> dict[str, list[dict[str, object]]]:
+    dish_registry: dict[str, dict[str, object]] = {}
+    ingredient_registry: dict[str, dict[str, object]] = {}
+    flavor_registry: dict[str, dict[str, object]] = {}
+    method_registry: dict[str, dict[str, object]] = {}
+    type_registry: dict[str, dict[str, object]] = {}
+    cuisine_registry: dict[str, dict[str, object]] = {}
+    step_registry: dict[str, dict[str, object]] = {}
+    nutrition_registry: dict[str, dict[str, object]] = {}
+    benefit_registry: dict[str, dict[str, object]] = {}
 
-    dishes: List[Dict[str, object]] = []
-    ingredients: List[Dict[str, object]] = []
-    flavors: List[Dict[str, object]] = []
-    methods: List[Dict[str, object]] = []
-    dish_types: List[Dict[str, object]] = []
-    cuisines: List[Dict[str, object]] = []
-    steps: List[Dict[str, object]] = []
-    nutrition_nodes: List[Dict[str, object]] = []
-    benefit_nodes: List[Dict[str, object]] = []
+    dishes: list[dict[str, object]] = []
+    ingredients: list[dict[str, object]] = []
+    flavors: list[dict[str, object]] = []
+    methods: list[dict[str, object]] = []
+    dish_types: list[dict[str, object]] = []
+    cuisines: list[dict[str, object]] = []
+    steps: list[dict[str, object]] = []
+    nutrition_nodes: list[dict[str, object]] = []
+    benefit_nodes: list[dict[str, object]] = []
 
-    rel_main: List[Dict[str, object]] = []
-    rel_aux: List[Dict[str, object]] = []
-    rel_flavor: List[Dict[str, object]] = []
-    rel_method: List[Dict[str, object]] = []
-    rel_type: List[Dict[str, object]] = []
-    rel_cuisine: List[Dict[str, object]] = []
-    rel_step: List[Dict[str, object]] = []
-    rel_nutrition: List[Dict[str, object]] = []
-    rel_benefit: List[Dict[str, object]] = []
+    rel_main: list[dict[str, object]] = []
+    rel_aux: list[dict[str, object]] = []
+    rel_flavor: list[dict[str, object]] = []
+    rel_method: list[dict[str, object]] = []
+    rel_type: list[dict[str, object]] = []
+    rel_cuisine: list[dict[str, object]] = []
+    rel_step: list[dict[str, object]] = []
+    rel_nutrition: list[dict[str, object]] = []
+    rel_benefit: list[dict[str, object]] = []
 
     def _ensure_node(
-        registry: Dict[str, Dict[str, object]],
+        registry: dict[str, dict[str, object]],
         name: str,
         prefix: str,
-        collection: List[Dict[str, object]],
-    ) -> Dict[str, object]:
+        collection: list[dict[str, object]],
+    ) -> dict[str, object]:
         node = registry.get(name)
         if node is None:
             node = {"id": f"{prefix}_{len(registry) + 1}", "name": name}
@@ -261,7 +238,7 @@ def _build_graph_assets(
     }
 
 
-def _write_csv(output_dir: Path, assets: Dict[str, List[Dict[str, object]]]) -> None:
+def _write_csv(output_dir: Path, assets: dict[str, list[dict[str, object]]]) -> None:
     writers = {
         "nodes_dish": (
             "dish_nodes.csv",
@@ -349,17 +326,15 @@ def _write_csv(output_dir: Path, assets: Dict[str, List[Dict[str, object]]]) -> 
                 writer.writerow(_encode_row(headers, row))
 
 
-def _encode_row(headers: List[str], row: Dict[str, object]) -> Dict[str, object]:
-    encoded: Dict[str, object] = {}
+def _encode_row(headers: list[str], row: dict[str, object]) -> dict[str, object]:
+    encoded: dict[str, object] = {}
     for header in headers:
         key = header
         if header.startswith(":START_ID"):
             key = "start"
         elif header.startswith(":END_ID"):
             key = "end"
-        elif header.endswith(":int"):
-            key = header.split(":")[0]
-        elif ":ID" in header:
+        elif header.endswith(":int") or ":ID" in header:
             key = header.split(":")[0]
         value = row[key]
         encoded[header] = value if value is not None else ""

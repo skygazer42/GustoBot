@@ -1,12 +1,12 @@
 """Deterministic domain definitions and source-backed fact validation."""
 
-from copy import deepcopy
 import importlib
-import json
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import yaml
 
 
 def _api():
@@ -51,9 +51,6 @@ def _definition_payload() -> dict[str, Any]:
             },
         },
         "document_scope": "Equipment maintenance records and manuals.",
-        "graph_keywords": ["component", "fault"],
-        "sql_keywords": ["count", "rank"],
-        "document_keywords": ["manual"],
     }
 
 
@@ -138,26 +135,16 @@ def test_valid_equipment_graph_preserves_scalar_values():
     assert graph.entities[0].properties["count"] == 0
 
 
-@pytest.mark.parametrize("field", ["id", "document_index_namespace"])
 @pytest.mark.parametrize(
     "value",
     ["", "..", "../other", "nested/../other", "/outside", "C:/outside", "C:outside", "\\outside"],
 )
-def test_domain_index_paths_stay_relative_to_the_index_root(field, value):
+def test_domain_ids_stay_relative_to_the_index_root(value):
     api = _api()
     payload = _definition_payload()
-    payload[field] = value
+    payload["id"] = value
     with pytest.raises(ValueError):
         api.DomainDefinition.model_validate(payload)
-
-
-@pytest.mark.parametrize("namespace", [None, ".", "equipment", "nested/equipment"])
-def test_domain_index_namespace_accepts_safe_relative_paths(namespace):
-    api = _api()
-    payload = _definition_payload()
-    payload["document_index_namespace"] = namespace
-    domain = api.DomainDefinition.model_validate(payload)
-    assert domain.document_index_namespace == namespace
 
 
 def test_domain_id_cannot_select_the_shared_index_root():
@@ -277,44 +264,37 @@ def test_domain_profiles_load_relative_to_repository_from_any_cwd(monkeypatch, t
     monkeypatch.setattr(
         module,
         "settings",
-        SimpleNamespace(KNOWLEDGE_DOMAIN_FILE=f"gustobot/config/domains/{profile}.json"),
+        SimpleNamespace(KNOWLEDGE_DOMAIN_FILE=f"gustobot/config/domains/{profile}.yaml"),
     )
     monkeypatch.chdir(tmp_path)
     domain = module.get_domain_definition()
     assert domain.id == profile
     api = _api()
     api.validate_graph(domain, api.KnowledgeGraph(entities=[], relations=[], sources=[]))
-    if profile == "recipes":
-        assert domain.document_index_namespace == "."
-        assert domain.document_backend == "lightrag"
-        assert domain.sql_enabled is False
-        assert {"做法", "食材"} <= set(domain.graph_keywords)
-        assert {"统计", "多少", "总数", "数量", "排名"} <= set(domain.sql_keywords)
-    else:
-        assert domain.document_index_namespace is None
-        assert domain.document_backend == "lightrag"
-        assert domain.sql_enabled is False
+    assert domain.version
+    assert domain.entity_types
+    if profile != "recipes":
         assert not any(word in domain.model_dump_json() for word in ["菜谱", "食材", "烹饪"])
 
 
 def test_equipment_profile_accepts_equipment_graph_and_recipes_rejects_it(monkeypatch):
     module = importlib.import_module("gustobot.config.domain")
-    configured = SimpleNamespace(KNOWLEDGE_DOMAIN_FILE="gustobot/config/domains/equipment.json")
+    configured = SimpleNamespace(KNOWLEDGE_DOMAIN_FILE="gustobot/config/domains/equipment.yaml")
     monkeypatch.setattr(module, "settings", configured)
     api = _api()
     graph = api.KnowledgeGraph.model_validate(_graph_payload())
     api.validate_graph(module.get_domain_definition(), graph)
-    configured.KNOWLEDGE_DOMAIN_FILE = "gustobot/config/domains/recipes.json"
+    configured.KNOWLEDGE_DOMAIN_FILE = "gustobot/config/domains/recipes.yaml"
     with pytest.raises(ValueError, match="Unknown entity type"):
         api.validate_graph(module.get_domain_definition(), graph)
 
 
 def test_domain_cache_uses_resolved_path_and_does_not_share_mutable_models(monkeypatch, tmp_path):
     module = importlib.import_module("gustobot.config.domain")
-    first = tmp_path / "first.json"
-    second = tmp_path / "second.json"
-    first.write_text(json.dumps(_definition_payload()), encoding="utf-8")
-    second.write_text(json.dumps({**_definition_payload(), "id": "other"}), encoding="utf-8")
+    first = tmp_path / "first.yaml"
+    second = tmp_path / "second.yaml"
+    first.write_text(yaml.safe_dump(_definition_payload()), encoding="utf-8")
+    second.write_text(yaml.safe_dump({**_definition_payload(), "id": "other"}), encoding="utf-8")
     configured = SimpleNamespace(KNOWLEDGE_DOMAIN_FILE=str(first))
     monkeypatch.setattr(module, "settings", configured)
     loaded = module.get_domain_definition()
@@ -324,10 +304,10 @@ def test_domain_cache_uses_resolved_path_and_does_not_share_mutable_models(monke
     assert module.get_domain_definition().id == "other"
 
 
-@pytest.mark.parametrize("invalid", ["{invalid json}", '{"id": "incomplete"}'])
+@pytest.mark.parametrize("invalid", ["classes: [unterminated", "id: incomplete"])
 def test_invalid_domain_configuration_is_visible(monkeypatch, tmp_path, invalid):
     module = importlib.import_module("gustobot.config.domain")
-    path = tmp_path / "invalid.json"
+    path = tmp_path / "invalid.yaml"
     path.write_text(invalid, encoding="utf-8")
     monkeypatch.setattr(module, "settings", SimpleNamespace(KNOWLEDGE_DOMAIN_FILE=str(path)))
     with pytest.raises(ValueError):
@@ -336,7 +316,7 @@ def test_invalid_domain_configuration_is_visible(monkeypatch, tmp_path, invalid)
 
 def test_missing_domain_configuration_is_visible(monkeypatch, tmp_path):
     module = importlib.import_module("gustobot.config.domain")
-    path = tmp_path / "missing.json"
+    path = tmp_path / "missing.yaml"
     monkeypatch.setattr(module, "settings", SimpleNamespace(KNOWLEDGE_DOMAIN_FILE=str(path)))
     with pytest.raises(FileNotFoundError):
         module.get_domain_definition()
@@ -346,8 +326,8 @@ def test_loaded_domain_rejects_unknown_definition_references(monkeypatch, tmp_pa
     module = importlib.import_module("gustobot.config.domain")
     payload = _definition_payload()
     payload["relation_types"]["HAS_COMPONENT"]["target_types"] = ["Unknown"]
-    path = tmp_path / "unknown-type.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    path = tmp_path / "unknown-type.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     monkeypatch.setattr(module, "settings", SimpleNamespace(KNOWLEDGE_DOMAIN_FILE=str(path)))
     with pytest.raises(ValueError, match="Unknown entity type"):
         module.get_domain_definition()

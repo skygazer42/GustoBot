@@ -1,7 +1,7 @@
 [project]
 name = "gustobot"
 version = "0.1.2"
-description = "智能菜谱客服系统 - Multi-Agent架构"
+description = "本体约束的统一知识问答与菜谱服务"
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
@@ -18,7 +18,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.black]
@@ -40,8 +40,7 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 explicit_package_bases = true
-mypy_path = ["kb_ingest"]
-files = ["gustobot", "kb_ingest", "scripts", "tests", "run.py", "start_chatbot.py"]
+files = ["gustobot", "scripts", "migrations", "eval", "tests", "run.py", "start_chatbot.py"]
 
 # pytest is a test runner boundary; the locally installed version uses newer
 # Python syntax than this project's supported Python 3.10 source target.
@@ -59,16 +58,21 @@ follow_imports = "skip"
 # supported versions. First-party adapters and their consumers remain checked.
 [[tool.mypy.overrides]]
 module = [
-    "lightrag", "lightrag.*", "regex",
-    "pandas", "pandas.*", "tqdm", "tqdm.*",
+    "regex",
+    "tqdm", "tqdm.*",
     "jose", "jose.*", "cohere",
     "pymilvus", "pymilvus.*", "aiofiles", "requests", "requests.*",
-    "psycopg2", "pgvector.*", "yaml",
+    "yaml", "owlrl", "owlrl.*", "pyshacl", "pyshacl.*",
 ]
 ignore_missing_imports = true
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["gustobot*", "migrations*", "scripts*", "eval*"]
+
+[tool.setuptools.package-data]
+"gustobot.config" = ["domains/*.yaml", "mappings/*.yaml", "ontologies/*.ttl"]
+"eval.knowledge" = ["*.json", "*.jsonl", "README.md"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

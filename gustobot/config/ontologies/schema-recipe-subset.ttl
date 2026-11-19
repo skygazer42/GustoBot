@@ -1,0 +1,27 @@
+@prefix schema: <https://schema.org/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+<urn:gustobot:schema-recipe-subset> a owl:Ontology ;
+    owl:versionInfo "30.1" ;
+    rdfs:comment "Minimal RDFS declarations extracted from Schema.org 30.1; this is a bounded subset, not the complete ontology." .
+schema:Thing a rdfs:Class .
+schema:CreativeWork a rdfs:Class ; rdfs:subClassOf schema:Thing .
+schema:HowTo a rdfs:Class ; rdfs:subClassOf schema:CreativeWork .
+schema:Recipe a rdfs:Class ; rdfs:subClassOf schema:HowTo .
+schema:Intangible a rdfs:Class ; rdfs:subClassOf schema:Thing .
+schema:ListItem a rdfs:Class ; rdfs:subClassOf schema:Intangible .
+schema:ItemList a rdfs:Class ; rdfs:subClassOf schema:Intangible .
+schema:HowToStep a rdfs:Class ; rdfs:subClassOf schema:CreativeWork, schema:ItemList, schema:ListItem .
+schema:HowToItem a rdfs:Class ; rdfs:subClassOf schema:ListItem .
+schema:HowToSupply a rdfs:Class ; rdfs:subClassOf schema:HowToItem .
+schema:StructuredValue a rdfs:Class ; rdfs:subClassOf schema:Intangible .
+schema:QuantitativeValue a rdfs:Class ; rdfs:subClassOf schema:StructuredValue .
+schema:position a rdf:Property .
+schema:text a rdf:Property .
+schema:recipeInstructions a rdf:Property .
+schema:supply a rdf:Property .
+schema:requiredQuantity a rdf:Property .
+schema:recipeCuisine a rdf:Property .
+schema:cookingMethod a rdf:Property .

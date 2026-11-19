@@ -1,0 +1,885 @@
+{
+  "sources": [
+    {
+      "id": "fixture:source:edge-01",
+      "text": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-01.txt"
+    },
+    {
+      "id": "fixture:source:edge-02",
+      "text": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-02.txt"
+    },
+    {
+      "id": "fixture:source:edge-03",
+      "text": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-03.txt"
+    },
+    {
+      "id": "fixture:source:edge-04",
+      "text": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-04.txt"
+    },
+    {
+      "id": "fixture:source:edge-05",
+      "text": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-05.txt"
+    },
+    {
+      "id": "fixture:source:edge-06",
+      "text": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-06.txt"
+    },
+    {
+      "id": "fixture:source:edge-07",
+      "text": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-07.txt"
+    },
+    {
+      "id": "fixture:source:edge-08",
+      "text": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。",
+      "uri": "controlled://knowledge-eval/edge-08.txt"
+    }
+  ],
+  "entities": [
+    {
+      "id": "fixture:recipe:edge-01",
+      "type": "RecipeVariant",
+      "name": "区间糖水",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-01",
+        "cook_time": "半小时"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-01",
+      "type": "Dish",
+      "name": "区间糖水",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-01",
+      "type": "CookingStep",
+      "name": "区间糖水步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-01:0",
+      "type": "Ingredient",
+      "name": "白糖",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-02",
+      "type": "RecipeVariant",
+      "name": "定性豆腐",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-02",
+        "cook_time": "数天"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-02",
+      "type": "Dish",
+      "name": "定性豆腐",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-02",
+      "type": "CookingStep",
+      "name": "定性豆腐步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-02:0",
+      "type": "Ingredient",
+      "name": "豆腐",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-03",
+      "type": "RecipeVariant",
+      "name": "分次糖水",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-03",
+        "cook_time": "10分钟"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-03",
+      "type": "Dish",
+      "name": "分次糖水",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-03",
+      "type": "CookingStep",
+      "name": "分次糖水步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-03:0",
+      "type": "Ingredient",
+      "name": "白糖",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-03:1",
+      "type": "Ingredient",
+      "name": "白糖",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-04",
+      "type": "RecipeVariant",
+      "name": "勺量面糊",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-04",
+        "cook_time": "十分钟"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-04",
+      "type": "Dish",
+      "name": "勺量面糊",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-04",
+      "type": "CookingStep",
+      "name": "勺量面糊步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-04:0",
+      "type": "Ingredient",
+      "name": "面粉",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-05",
+      "type": "RecipeVariant",
+      "name": "毫克糖水",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-05",
+        "cook_time": "PT30M"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-05",
+      "type": "Dish",
+      "name": "毫克糖水",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-05",
+      "type": "CookingStep",
+      "name": "毫克糖水步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-05:0",
+      "type": "Ingredient",
+      "name": "红糖",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-06",
+      "type": "RecipeVariant",
+      "name": "体积清汤",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-06",
+        "cook_time": "1小时20分钟"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-06",
+      "type": "Dish",
+      "name": "体积清汤",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-06",
+      "type": "CookingStep",
+      "name": "体积清汤步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-06:0",
+      "type": "Ingredient",
+      "name": "水",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-07",
+      "type": "RecipeVariant",
+      "name": "多糖混合水",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-07",
+        "cook_time": "20分钟"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-07",
+      "type": "Dish",
+      "name": "多糖混合水",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-07",
+      "type": "CookingStep",
+      "name": "多糖混合水步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-07:0",
+      "type": "Ingredient",
+      "name": "白糖",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-07:1",
+      "type": "Ingredient",
+      "name": "红糖",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:recipe:edge-08",
+      "type": "RecipeVariant",
+      "name": "缺时蒸饼",
+      "aliases": [],
+      "properties": {
+        "source_record_id": "edge-08"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:dish:edge-08",
+      "type": "Dish",
+      "name": "缺时蒸饼",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step:edge-08",
+      "type": "CookingStep",
+      "name": "缺时蒸饼步骤",
+      "properties": {
+        "order": 1,
+        "instruction": "备齐上述全部记录的投料后按样例处理并装盘。"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:ingredient:edge-08:0",
+      "type": "Ingredient",
+      "name": "面粉",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "fixture:variant:edge-01",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-01",
+      "target_id": "fixture:dish:edge-01",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-01",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-01",
+      "target_id": "fixture:step:edge-01",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-01:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-01",
+      "target_id": "fixture:ingredient:edge-01:0",
+      "properties": {
+        "amount_text": "10-20g"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-01",
+          "quote": "作者编写的完整受控边界样例：区间糖水。白糖第1次投料10-20g。来源只报耗时半小时，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-02",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-02",
+      "target_id": "fixture:dish:edge-02",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-02",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-02",
+      "target_id": "fixture:step:edge-02",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-02:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-02",
+      "target_id": "fixture:ingredient:edge-02:0",
+      "properties": {
+        "amount_text": "适量"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-02",
+          "quote": "作者编写的完整受控边界样例：定性豆腐。豆腐第1次投料适量。来源只报耗时数天，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-03",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-03",
+      "target_id": "fixture:dish:edge-03",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-03",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-03",
+      "target_id": "fixture:step:edge-03",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-03:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-03",
+      "target_id": "fixture:ingredient:edge-03:0",
+      "properties": {
+        "amount_text": "3g"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-03:1",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-03",
+      "target_id": "fixture:ingredient:edge-03:1",
+      "properties": {
+        "amount_text": "2g"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-03",
+          "quote": "作者编写的完整受控边界样例：分次糖水。白糖第1次投料3g，白糖第2次投料2g。来源只报耗时10分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-04",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-04",
+      "target_id": "fixture:dish:edge-04",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-04",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-04",
+      "target_id": "fixture:step:edge-04",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-04:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-04",
+      "target_id": "fixture:ingredient:edge-04:0",
+      "properties": {
+        "amount_text": "1勺"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-04",
+          "quote": "作者编写的完整受控边界样例：勺量面糊。面粉第1次投料1勺。来源只报耗时十分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-05",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-05",
+      "target_id": "fixture:dish:edge-05",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-05",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-05",
+      "target_id": "fixture:step:edge-05",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-05:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-05",
+      "target_id": "fixture:ingredient:edge-05:0",
+      "properties": {
+        "amount_text": "1000mg"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-05",
+          "quote": "作者编写的完整受控边界样例：毫克糖水。红糖第1次投料1000mg。来源只报耗时PT30M，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-06",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-06",
+      "target_id": "fixture:dish:edge-06",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-06",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-06",
+      "target_id": "fixture:step:edge-06",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-06:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-06",
+      "target_id": "fixture:ingredient:edge-06:0",
+      "properties": {
+        "amount_text": "0.5L"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-06",
+          "quote": "作者编写的完整受控边界样例：体积清汤。水第1次投料0.5L。来源只报耗时1小时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-07",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-07",
+      "target_id": "fixture:dish:edge-07",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-07",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-07",
+      "target_id": "fixture:step:edge-07",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-07:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-07",
+      "target_id": "fixture:ingredient:edge-07:0",
+      "properties": {
+        "amount_text": "3g"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-07:1",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-07",
+      "target_id": "fixture:ingredient:edge-07:1",
+      "properties": {
+        "amount_text": "4g"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-07",
+          "quote": "作者编写的完整受控边界样例：多糖混合水。白糖第1次投料3g，红糖第2次投料4g。来源只报耗时20分钟，未区分准备、烹饪或总时间。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:variant:edge-08",
+      "type": "VARIANT_OF",
+      "source_id": "fixture:recipe:edge-08",
+      "target_id": "fixture:dish:edge-08",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:step-use:edge-08",
+      "type": "HAS_STEP",
+      "source_id": "fixture:recipe:edge-08",
+      "target_id": "fixture:step:edge-08",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    },
+    {
+      "id": "fixture:use:edge-08:0",
+      "type": "HAS_MAIN_INGREDIENT",
+      "source_id": "fixture:recipe:edge-08",
+      "target_id": "fixture:ingredient:edge-08:0",
+      "properties": {
+        "amount_text": "120g"
+      },
+      "evidence": [
+        {
+          "source_id": "fixture:source:edge-08",
+          "quote": "作者编写的完整受控边界样例：缺时蒸饼。面粉第1次投料120g。来源未记录耗时。步骤：备齐上述全部记录的投料后按样例处理并装盘。未记录的值保持未知，不等于零。"
+        }
+      ]
+    }
+  ]
+}

@@ -1,104 +1,100 @@
-"""Domain-neutral KB prompts and fallback answers using real graph execution."""
+"""The unified document path keeps domain scope and sources without a nested router."""
 
-import importlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import AIMessage
-from langchain_core.runnables import RunnableLambda
+
+from gustobot.application.services.knowledge_query import KnowledgeQueryService
+from gustobot.domain.knowledge import DomainDefinition
 
 
-@pytest.fixture
-def kb_module(monkeypatch):
-    module = importlib.import_module("gustobot.application.agents.kb_tools.workflow")
-    monkeypatch.setattr(
-        module,
-        "settings",
-        SimpleNamespace(
-            KB_TOP_K=2,
-            KB_SIMILARITY_THRESHOLD=0.0,
-            KB_ENABLE_EXTERNAL_SEARCH=False,
-            INGEST_SERVICE_URL=None,
-            KB_EXTERNAL_SEARCH_URL=None,
-            KB_EXTERNAL_SEARCH_TIMEOUT=5,
-        ),
+def build_service(*, documents=(), plan=None, answer="设备资料"):
+    domain = DomainDefinition.model_validate(
+        {
+            "id": "equipment-test",
+            "name": "设备维护",
+            "description": "设备资料",
+            "entity_types": {"Equipment": {"description": "设备", "properties": {}}},
+            "relation_types": {},
+            "document_scope": '设备手册 {"source": "manual"}',
+        }
     )
-    return module
-
-
-def _build_workflow(module, *, scope=None, decision="proceed", documents=(), answer="设备资料"):
-    prompts = {}
-
-    class Model:
-        def with_structured_output(self, schema, *, method):
-            def invoke(prompt):
-                prompts[schema.__name__] = prompt.to_messages()[0].content
-                if schema is module.KBGuardrailsDecision:
-                    return schema(decision=decision)
-                return schema(route="local", rationale="设备资料查询", tools=["milvus"])
-
-            return RunnableLambda(invoke)
-
-        async def ainvoke(self, messages):
-            prompts["final"] = messages[0].content
-            return AIMessage(content=answer)
-
-    service = SimpleNamespace(
-        reranker=SimpleNamespace(enabled=False),
-        search=AsyncMock(return_value=list(documents)),
+    planner = AsyncMock(return_value={"documents": True} if plan is None else plan)
+    generation = AsyncMock(return_value=AIMessage(content=answer))
+    model = SimpleNamespace(
+        with_structured_output=lambda *args, **kwargs: SimpleNamespace(ainvoke=planner),
+        ainvoke=generation,
     )
-    workflow = module.create_kb_multi_tool_workflow(Model(), service, scope_description=scope)
-    return workflow, service, prompts
+    search = AsyncMock(return_value=list(documents))
+    graph = SimpleNamespace(resolve_entities=AsyncMock(), query=AsyncMock())
+    service = KnowledgeQueryService(
+        domain, graph_store=graph, documents=SimpleNamespace(search=search), model=model
+    )
+    return service, planner, generation, search, graph
+
+
+def document():
+    return {
+        "id": "chunk-1",
+        "content": "泵包含阀门。",
+        "score": 0.9,
+        "metadata": {"source_id": "manual", "uri": "manual.pdf", "source_version": "v1"},
+    }
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scope", [None, '设备手册与维护信息 {"source": "manual"}'])
-async def test_kb_scope_reaches_each_prompt_without_recipe_restrictions(kb_module, scope):
-    workflow, service, prompts = _build_workflow(
-        kb_module,
-        scope=scope,
-        documents=[{"content": "泵含阀门", "source": "manual.pdf"}],
+async def test_domain_scope_and_original_sources_reach_the_single_document_path():
+    service, planner, generation, search, graph = build_service(documents=[document()])
+    result = await service.answer("泵的手册中有哪些说明？")
+    assert result.message == "设备资料"
+    assert result.sources[0]["source"] == "manual.pdf"
+    assert result.metadata["model_calls"] == 2
+    catalog = json.loads(planner.await_args.args[0][0].content.rsplit("\n", 1)[-1])
+    assert catalog["ontology"]["document_scope"] == service.domain.document_scope
+    assert "泵包含阀门" in generation.await_args.args[0][1].content
+    assert "菜谱" not in generation.await_args.args[0][0].content
+    search.assert_awaited_once()
+    graph.query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_clarification_returns_without_search_or_generation():
+    service, planner, generation, search, graph = build_service(
+        plan={"decision": "clarify", "message": "请补充设备型号。"}
     )
-    result = await workflow.ainvoke({"question": "泵含哪些部件？", "history": []})
-
-    assert result["answer"] == "设备资料"
-    assert result["sources"][0]["source"] == "manual.pdf"
-    assert set(prompts) == {"KBGuardrailsDecision", "KBRouteDecision", "final"}
-    for prompt in prompts.values():
-        assert "菜谱" not in prompt
-        assert "川菜" not in prompt
-        if scope is not None:
-            assert scope in prompt
-    service.search.assert_awaited_once()
+    result = await service.answer("应该怎么维护它？")
+    assert result.route == "clarification"
+    assert result.message == "请补充设备型号。"
+    assert result.sources == []
+    assert result.metadata["model_calls"] == 1
+    planner.assert_awaited_once()
+    generation.assert_not_awaited()
+    search.assert_not_awaited()
+    graph.query.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_kb_rejection_is_neutral_and_does_not_search(kb_module):
-    workflow, service, _ = _build_workflow(kb_module, decision="end", scope="设备手册")
-    result = await workflow.ainvoke({"question": "不相关问题", "history": []})
-    assert "支持范围" in result["answer"]
-    assert "菜谱" not in result["answer"]
-    assert result["sources"] == []
-    service.search.assert_not_awaited()
+async def test_empty_document_retrieval_reports_no_results_without_generation():
+    service, planner, generation, search, graph = build_service()
+    result = await service.answer("泵的手册写了什么？")
+    assert result.metadata["status"] == "no_results"
+    assert result.sources == []
+    assert "菜谱" not in result.message
+    planner.assert_awaited_once()
+    search.assert_awaited_once()
+    graph.query.assert_not_awaited()
+    generation.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_kb_no_results_answer_is_domain_neutral(kb_module):
-    workflow, _, prompts = _build_workflow(kb_module)
-    result = await workflow.ainvoke({"question": "泵含哪些部件？", "history": []})
-    assert "未找到" in result["answer"]
-    assert "菜谱" not in result["answer"]
-    assert result["sources"] == []
-    assert "final" not in prompts
-
-
-@pytest.mark.asyncio
-async def test_kb_empty_generation_answer_is_domain_neutral(kb_module):
-    workflow, _, _ = _build_workflow(
-        kb_module, documents=[{"content": "泵含阀门", "source": "manual.pdf"}], answer=""
-    )
-    result = await workflow.ainvoke({"question": "泵含哪些部件？", "history": []})
-    assert "无法生成可靠" in result["answer"]
-    assert "菜谱" not in result["answer"]
-    assert result["sources"][0]["source"] == "manual.pdf"
+async def test_empty_generation_stays_a_visible_failure():
+    service, planner, generation, search, graph = build_service(documents=[document()], answer="")
+    with pytest.raises(ValueError, match="no text"):
+        await service.answer("泵的手册写了什么？")
+    search.assert_awaited_once()
+    generation.assert_awaited_once()
+    planner.assert_awaited_once()
+    graph.query.assert_not_awaited()

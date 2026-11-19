@@ -11,7 +11,7 @@
         <h2 id="story-title">从「今天吃什么」，<br />到「原来这样做」。</h2>
         <p>做饭时，我们需要的有时是一份清楚的做法，有时只是一个小小的确认：鸡蛋什么时候盛出，番茄要炒到多软，手边少了一样食材又该怎么办。</p>
         <p>陶陶 · 餐桌手记，是 GustoBot 的食谱阅读与 AI 对话界面。食材、步骤和提问放在一起，让你读得明白，也能随时接着问。</p>
-        <a class="info-text-link" href="?" @click="emit('navigate', $event)">翻开今天的食谱<UiIcon name="arrow" /></a>
+        <a class="about-primary-link" href="?" @click="emit('navigate', $event)">翻开今天的食谱<UiIcon name="arrow" /></a>
       </section>
       <aside class="about-letter" aria-label="陶陶的餐桌手记">
         <UiIcon class="about-bot" name="bot" />
@@ -70,15 +70,28 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
 }
 
 .about-story > p {
+  max-width: 64ch;
   margin: 0 0 18px;
   color: var(--muted);
-  font-size: 15px;
-  line-height: 2.05;
+  font-size: 16px;
+  line-height: 1.9;
 }
 
-.about-story > .info-text-link {
-  margin-top: 8px;
+.about-primary-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  margin-top: 12px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  color: var(--surface);
+  background: var(--clay);
+  font-size: 15px;
+  text-decoration: none;
+  transition: background-color var(--duration) var(--ease);
 }
+.about-primary-link:hover { background: var(--clay-hover); }
 
 .about-letter {
   padding: 28px 30px 24px;
@@ -199,10 +212,18 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
 
 .about-project-links {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 12px;
 }
+
+.about-project-links .info-text-link {
+  padding: 7px 14px;
+  border: 1px solid var(--control-line);
+  border-radius: 24px;
+  text-decoration: none;
+}
+.about-project-links .info-text-link:hover { background: var(--wash); }
 
 @media (max-width: 760px) {
   .about-story-layout {
@@ -261,8 +282,7 @@ const emit = defineEmits<{ (event: "navigate", eventObject: MouseEvent): void }>
   }
 
   .about-project-links {
-    flex-direction: row;
-    gap: 24px;
+    gap: 12px;
   }
 }
 </style>

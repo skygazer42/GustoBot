@@ -3,7 +3,7 @@ Database model tracking end users.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,16 +23,16 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, server_default=func.now()
     )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, server_default=func.now(), onupdate=func.now()
     )
-    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="active")
+    last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True, default="active")
 
-    conversations: Mapped[List["Conversation"]] = relationship(
+    conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation",
         back_populates="user",
         cascade="all, delete-orphan",

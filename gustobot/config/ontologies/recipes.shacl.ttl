@@ -1,0 +1,116 @@
+@prefix r: <https://gustobot.org/ontology/recipes#> .
+@prefix b: <https://gustobot.org/ontology/binding#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Only these nativeOwner/nativeField annotations define physical property contracts.
+r:QuantityComparisonProjectionShape a sh:NodeShape ; sh:targetClass r:Quantity ;
+    sh:property [ sh:path r:comparisonMinTick ; sh:datatype xsd:long ; sh:maxCount 1 ; sh:minInclusive 0 ; sh:maxInclusive 9223372036854775807 ; sh:lessThanOrEquals r:comparisonMaxTick ],
+        [ sh:path r:comparisonMaxTick ; sh:datatype xsd:long ; sh:maxCount 1 ; sh:minInclusive 0 ; sh:maxInclusive 9223372036854775807 ],
+        [ sh:path r:comparisonStatus ; sh:datatype xsd:string ; sh:maxCount 1 ],
+        [ sh:path r:projectionVersion ; sh:datatype xsd:string ; sh:maxCount 1 ] .
+r:ExplicitDurationFieldsShape a sh:NodeShape ; sh:targetClass r:RecipeVariant ;
+    sh:property [ b:nativeOwner "RecipeVariant" ; b:nativeField "prep_duration" ; sh:path r:prep_duration ; sh:datatype xsd:string ; sh:maxCount 1 ; sh:minLength 1 ],
+        [ b:nativeOwner "RecipeVariant" ; b:nativeField "cook_duration" ; sh:path r:cook_duration ; sh:datatype xsd:string ; sh:maxCount 1 ; sh:minLength 1 ],
+        [ b:nativeOwner "RecipeVariant" ; b:nativeField "total_duration" ; sh:path r:total_duration ; sh:datatype xsd:string ; sh:maxCount 1 ; sh:minLength 1 ] .
+r:InputRecipeShape a sh:NodeShape ; sh:targetClass r:RecipeVariant ;
+    sh:property [ sh:path r:VARIANT_OF ; sh:class r:Dish ; sh:minCount 1 ; sh:maxCount 1 ],
+        [ b:nativeOwner "RecipeVariant" ; b:nativeField "cook_time" ; sh:path r:cook_time ; sh:datatype xsd:string ; sh:maxCount 1 ; sh:minLength 1 ; sh:description "来源记载的原始耗时，保持时间口径。" ],
+        [ b:nativeOwner "RecipeVariant" ; b:nativeField "instructions" ; sh:path r:instructions ; sh:datatype xsd:string ; sh:maxCount 1 ;
+          b:externalReference [ b:source "schema" ; b:uri schema:recipeInstructions ; b:kind "text_projection" ] ],
+        [ b:nativeOwner "RecipeVariant" ; b:nativeField "source_record_id" ; sh:path r:source_record_id ; sh:datatype xsd:string ; sh:maxCount 1 ],
+        [ sh:path r:evidence ; sh:minCount 1 ; sh:node r:EvidenceShape ] ;
+    sh:sparql r:UniqueStepOrderConstraint .
+
+r:InputStepShape a sh:NodeShape ; sh:targetClass r:CookingStep ;
+    sh:property [ b:nativeOwner "CookingStep" ; b:nativeField "order" ; sh:path r:order ; sh:datatype xsd:integer ; sh:minCount 1 ; sh:maxCount 1 ; sh:minInclusive 1 ;
+          b:externalReference [ b:source "schema" ; b:uri schema:position ; b:kind "restricted_value" ] ],
+        [ b:nativeOwner "CookingStep" ; b:nativeField "instruction" ; sh:path r:instruction ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ; sh:minLength 1 ;
+          b:externalReference [ b:source "schema" ; b:uri schema:text ; b:kind "value_projection" ] ],
+        [ sh:path r:evidence ; sh:minCount 1 ; sh:node r:EvidenceShape ] .
+
+r:InputNutritionShape a sh:NodeShape ; sh:targetClass r:NutritionProfile ;
+    sh:property [ b:nativeOwner "NutritionProfile" ; b:nativeField "description" ; sh:path r:description ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] .
+
+r:NativeRecipeEdgesShape a sh:NodeShape ; sh:targetClass r:RecipeVariant ;
+    sh:property [ sh:path r:HAS_MAIN_INGREDIENT ; sh:class r:Ingredient ],
+        [ sh:path r:HAS_AUX_INGREDIENT ; sh:class r:Ingredient ],
+        [ sh:path r:HAS_STEP ; sh:class r:CookingStep ],
+        [ sh:path r:HAS_FLAVOR ; sh:class r:Flavor ],
+        [ sh:path r:USES_METHOD ; sh:class r:CookingMethod ],
+        [ sh:path r:BELONGS_TO_TYPE ; sh:class r:DishType ],
+        [ sh:path r:BELONGS_TO_CUISINE ; sh:class r:CuisineStyle ] .
+r:NativeIngredientEdgesShape a sh:NodeShape ; sh:targetClass r:Ingredient ;
+    sh:property [ sh:path r:HAS_NUTRITION_PROFILE ; sh:class r:NutritionProfile ],
+        [ sh:path r:HAS_HEALTH_BENEFIT ; sh:class r:HealthBenefit ] .
+
+# A native edge's properties live on the stable use/relation IRI.
+r:IngredientEdgeShape a sh:NodeShape ; sh:targetClass r:IngredientUse ;
+    sh:property [ b:nativeOwner "HAS_MAIN_INGREDIENT", "HAS_AUX_INGREDIENT" ; b:nativeField "amount_text" ; sh:path r:rawText ; sh:datatype xsd:string ; sh:maxCount 1 ;
+          b:externalReference [ b:source "schema" ; b:uri schema:requiredQuantity ; b:kind "relationship_reification" ] ],
+        [ b:nativeOwner "HAS_MAIN_INGREDIENT", "HAS_AUX_INGREDIENT" ; b:nativeField "unit" ; sh:path r:unitText ; sh:datatype xsd:string ; sh:maxCount 1 ],
+        [ b:nativeOwner "HAS_MAIN_INGREDIENT", "HAS_AUX_INGREDIENT" ; b:nativeField "role" ; sh:path r:role ; sh:datatype xsd:string ; sh:maxCount 1 ] .
+r:StepEdgeShape a sh:NodeShape ; sh:targetClass r:StepUse ;
+    sh:property [ b:nativeOwner "HAS_STEP" ; b:nativeField "order" ; sh:path r:order ; sh:datatype xsd:integer ; sh:minCount 1 ; sh:maxCount 1 ; sh:minInclusive 1 ] .
+
+r:InputIngredientUseShape a sh:NodeShape ; sh:targetClass r:IngredientUse ;
+    sh:property [ sh:path r:inRecipe ; sh:minCount 1 ; sh:maxCount 1 ; sh:class r:RecipeVariant ],
+        [ sh:path r:ingredient ; sh:minCount 1 ; sh:maxCount 1 ; sh:class r:Ingredient ],
+        [ sh:path r:quantity ; sh:maxCount 1 ; sh:class r:Quantity ; sh:node r:QuantityShape ],
+        [ sh:path r:role ; sh:maxCount 1 ; sh:datatype xsd:string ],
+        [ sh:path r:evidence ; sh:minCount 1 ; sh:node r:EvidenceShape ] .
+
+r:QuantityShape a sh:NodeShape ; sh:targetClass r:Quantity ;
+    sh:or (r:NumericQuantityShape r:RangeQuantityShape r:QualitativeQuantityShape) .
+r:NumericQuantityShape a sh:NodeShape ; sh:targetClass r:NumericQuantity ;
+    sh:class r:NumericQuantity ;
+    sh:property [ sh:path r:value ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minInclusive 0 ],
+        [ sh:path r:rawText ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ],
+        [ sh:path r:unit ; sh:maxCount 1 ; sh:class r:Unit ],
+        [ sh:path r:unitText ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+r:RangeQuantityShape a sh:NodeShape ; sh:targetClass r:RangeQuantity ;
+    sh:class r:RangeQuantity ;
+    sh:property [ sh:path r:minValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minInclusive 0 ; sh:lessThanOrEquals r:maxValue ],
+        [ sh:path r:maxValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minInclusive 0 ],
+        [ sh:path r:rawText ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ],
+        [ sh:path r:unit ; sh:maxCount 1 ; sh:class r:Unit ],
+        [ sh:path r:unitText ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+r:QualitativeQuantityShape a sh:NodeShape ; sh:targetClass r:QualitativeQuantity ;
+    sh:class r:QualitativeQuantity ;
+    sh:property [ sh:path r:rawText ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ],
+        [ sh:path r:value ; sh:maxCount 0 ], [ sh:path r:minValue ; sh:maxCount 0 ], [ sh:path r:maxValue ; sh:maxCount 0 ] .
+
+r:EvidenceShape a sh:NodeShape ; sh:targetClass r:Evidence ;
+    sh:property [ sh:path r:sourceId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ],
+        [ sh:path r:quote ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
+
+# Question shapes intentionally have no targetClass: the runtime supplies selected focus nodes.
+r:IngredientQuantityAnswerShape a sh:NodeShape ; sh:class r:IngredientUse ;
+    sh:property [ sh:path r:inRecipe ; sh:minCount 1 ; sh:maxCount 1 ; sh:class r:RecipeVariant ],
+        [ sh:path r:ingredient ; sh:minCount 1 ; sh:maxCount 1 ; sh:class r:Ingredient ],
+        [ sh:path r:quantity ; sh:minCount 1 ; sh:maxCount 1 ; sh:node r:QuantityShape ],
+        [ sh:path r:evidence ; sh:minCount 1 ; sh:node r:EvidenceShape ] .
+r:StepsAnswerShape a sh:NodeShape ; sh:class r:CookingStep ; sh:node r:InputStepShape .
+r:ReportedTimeAnswerShape a sh:NodeShape ; sh:class r:RecipeVariant ;
+    sh:property [ sh:path r:cook_time ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ],
+        [ sh:path r:evidence ; sh:minCount 1 ; sh:node r:EvidenceShape ] .
+r:ClassificationAnswerShape a sh:NodeShape ;
+    sh:property [ sh:path r:evidence ; sh:minCount 1 ; sh:node r:EvidenceShape ] .
+
+# Only this bounded SELECT template is accepted by the compiler.
+r:UniqueStepOrderConstraint a sh:SPARQLConstraint ;
+    b:kind "unique_relation_property" ; b:ruleId "step-order-unique-per-variant" ;
+    b:relation r:HAS_STEP ; b:field "order" ;
+    sh:message "Step order must be unique within one recipe variant." ;
+    sh:select """
+PREFIX r: <https://gustobot.org/ontology/recipes#>
+SELECT $this ?order WHERE {
+  $this r:HAS_STEP ?left, ?right .
+  ?left r:order ?order .
+  ?right r:order ?order .
+  FILTER (?left != ?right)
+}
+""" .

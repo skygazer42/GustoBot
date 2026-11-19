@@ -1,0 +1,4 @@
+# Local executable OWL/RDFS and SHACL resources.
+format: rdf
+ontology: ../ontologies/recipes.ttl
+shapes: ../ontologies/recipes.shacl.ttl

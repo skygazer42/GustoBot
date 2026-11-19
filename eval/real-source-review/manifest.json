@@ -1,0 +1,88 @@
+{
+  "schema_version": "knowledge-eval-fixtures-v1",
+  "dataset_id": "recipes-real-source-draft-2026-11-17",
+  "frozen_at": "2026-11-17",
+  "holdout_count": 240,
+  "calibration_count": 0,
+  "required_ontology_version": "2026-11-17.1",
+  "materialized_scope": {
+    "domain_id": "recipes",
+    "ontology_version": "2026-11-17.1",
+    "ontology_fingerprint": "4d10f93cc12b99c728f076cffdccc690fea7de6307b92a2b1a4fb34b82a7b56f"
+  },
+  "identity_status": "native_formal_ids_pending_manual_truth",
+  "real_source_truth": {
+    "status": "pending_human_verification",
+    "approved_cases": 0
+  },
+  "upstream": {
+    "path": "data/recipe.json",
+    "sha256": "c2c08a4947a0d8f9343dd6ac6e34e6bf6c7e118c6ec8d278d691d32d13ac7a01",
+    "record_indices": [
+      12117,
+      12186,
+      17695,
+      18878,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      17,
+      21,
+      22,
+      23,
+      24,
+      25,
+      32,
+      14,
+      15,
+      16,
+      9357,
+      1868,
+      3510,
+      13270,
+      7201,
+      18302,
+      1259,
+      14227,
+      13527,
+      13894,
+      13694,
+      4290,
+      7599,
+      15749,
+      10673,
+      11743,
+      9459,
+      6744,
+      2686,
+      4955,
+      19338,
+      3841
+    ]
+  },
+  "fixture_files": [
+    "real_sources.json"
+  ],
+  "files": {
+    "questions.jsonl": "7287911e0a058c7884ed05d886f7dbca18e563b8e88dbef28cc7870745873023",
+    "real_sources.json": "14d31546c17d9423f3549b469061974dd2fdab46d08a41986461b33f5abc45f1",
+    "review.jsonl": "754b9bbcd4544932c8b512ccecfebbd9d85708420f5e2904140416b994883a2f"
+  },
+  "preparation": {
+    "network_calls": 0,
+    "database_writes": 0,
+    "generated_model_calls": 0,
+    "source_records": 48,
+    "human_review_completed": false,
+    "merged_fixture_formal_conforms": true
+  }
+}

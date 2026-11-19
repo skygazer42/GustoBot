@@ -1,0 +1,192 @@
+@prefix r: <https://gustobot.org/ontology/recipes#> .
+@prefix b: <https://gustobot.org/ontology/binding#> .
+@prefix schema: <https://schema.org/> .
+@prefix wtm: <http://purl.org/heals/food/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+r:Ontology a owl:Ontology ;
+    owl:versionInfo "2026-11-17.1" ; owl:imports <schema-recipe-subset.ttl> ;
+    b:id "recipes" ; b:namespace "https://gustobot.org/ontology/recipes#" ;
+    rdfs:label "菜谱知识服务" ;
+    rdfs:comment "菜品概念与具体来源做法分开建模，食材使用项绑定做法、数量和来源证据。" ;
+    b:documentScope "菜谱原文、菜品历史典故、地域饮食文化、食材和烹饪说明。" ;
+    b:interpretationNote "菜名相同不代表同一做法；多个来源版本须保留独立身份。",
+        "未记载不等于零或不含，定性用量不能伪装成精确数值。",
+        "本地糖类层次仅为明确受控词汇，不声称导入 FoodOn。" .
+
+b:SchemaVocabulary a b:Vocabulary ; b:symbol "schema" ;
+    b:namespace "https://schema.org/" ; b:version "30.1" ;
+    b:definitionUrl "https://raw.githubusercontent.com/schemaorg/schemaorg/main/data/releases/30.1/schemaorg-current-https.jsonld" ;
+    b:sha256 "0a4b8c4c910fc831ec8695196510973390906a5ee34dc6b862dfec4d21a12f74" ;
+    b:terms ("Thing" "CreativeWork" "HowTo" "Recipe" "HowToStep" "HowToSupply" "HowToItem" "ItemList" "ListItem" "Intangible" "StructuredValue" "QuantitativeValue" "position" "text" "recipeInstructions" "supply" "requiredQuantity" "recipeCuisine" "cookingMethod") .
+b:WtmReferenceVocabulary a b:Vocabulary ; b:symbol "wtm" ;
+    b:namespace "http://purl.org/heals/food/" ;
+    b:version "git-tree:e130bd2a557a0bb3df99c3a34d15412e1937cdc0" ;
+    b:definitionUrl "https://raw.githubusercontent.com/foodkg/foodkg.github.io/e130bd2a557a0bb3df99c3a34d15412e1937cdc0/ontologies/WhatToMake.rdf" ;
+    b:sha256 "30186a929d9afd3b9927e820fe2ea2835f790af012955e832c88f8131f52f809" ;
+    rdfs:comment "Reference-only alignment: WTM axioms are not imported." ;
+    b:terms ("Recipe" "Ingredient" "Flavor" "hasIngredient") .
+
+r:Dish a owl:Class ; b:nativeSymbol "Dish" ; rdfs:label "菜品" ;
+    rdfs:comment "已确认名称对应的菜品概念。" ; b:grain "一个已确认名称对应一个菜品概念。" ;
+    b:identity [ b:strategy b:CanonicalName ; b:keyFields ("name") ; b:prefix "recipe-dish:" ] .
+r:RecipeVariant a owl:Class ; rdfs:subClassOf schema:Recipe ;
+    b:nativeSymbol "RecipeVariant" ; rdfs:label "具体做法" ;
+    rdfs:comment "一份来源记录中的具体做法版本。" ; b:grain "一条来源记录的一个内容版本。" ;
+    b:identity [ b:strategy b:SourceScoped ; b:keyFields ("source_id" "name") ; b:prefix "recipe-variant:" ] ;
+    b:externalReference [ b:source "schema" ; b:uri schema:Recipe ; b:kind "local_profile" ] .
+r:Ingredient a owl:Class ; b:nativeSymbol "Ingredient" ; rdfs:label "食材" ;
+    rdfs:comment "可复用食材概念，数量属于一次食材使用项。" ; b:grain "一个已确认名称对应一种食材。" ;
+    b:identity [ b:strategy b:CanonicalName ; b:keyFields ("name") ; b:prefix "recipe-ingredient:" ] ;
+    b:externalReference [ b:source "wtm" ; b:uri wtm:Ingredient ; b:kind "related_concept" ] .
+r:CookingStep a owl:Class ; rdfs:subClassOf schema:HowToStep ;
+    b:nativeSymbol "CookingStep" ; rdfs:label "制作步骤" ;
+    rdfs:comment "一份具体做法的有序步骤。" ; b:grain "一个做法版本中的一个步骤序号。" ;
+    b:identity [ b:strategy b:ParentPosition ; b:keyFields ("parent_id" "order") ; b:prefix "recipe-step:" ] ;
+    b:externalReference [ b:source "schema" ; b:uri schema:HowToStep ; b:kind "local_profile" ] .
+r:Flavor a owl:Class ; b:nativeSymbol "Flavor" ; rdfs:label "口味" ;
+    rdfs:comment "来源记载的口味分类。" ; b:grain "一个规范口味名称。" ;
+    b:identity [ b:strategy b:CanonicalName ; b:keyFields ("name") ; b:prefix "recipe-flavor:" ] ;
+    b:externalReference [ b:source "wtm" ; b:uri wtm:Flavor ; b:kind "related_concept" ] .
+r:CookingMethod a owl:Class ; b:nativeSymbol "CookingMethod" ; rdfs:label "烹饪方法" ;
+    rdfs:comment "来源记载的烹饪工艺。" ; b:grain "一个规范工艺名称。" ;
+    b:identity [ b:strategy b:CanonicalName ; b:keyFields ("name") ; b:prefix "recipe-method:" ] .
+r:DishType a owl:Class ; b:nativeSymbol "DishType" ; rdfs:label "菜品类型" ;
+    rdfs:comment "来源记载的菜品分类。" ; b:grain "一个规范分类名称。" ;
+    b:identity [ b:strategy b:CanonicalName ; b:keyFields ("name") ; b:prefix "recipe-type:" ] .
+r:CuisineStyle a owl:Class ; b:nativeSymbol "CuisineStyle" ; rdfs:label "菜系" ;
+    rdfs:comment "来源记载的菜系归属，不从菜名猜测。" ; b:grain "一个规范菜系名称。" ;
+    b:identity [ b:strategy b:CanonicalName ; b:keyFields ("name") ; b:prefix "recipe-cuisine:" ] .
+r:NutritionProfile a owl:Class ; b:nativeSymbol "NutritionProfile" ; rdfs:label "营养资料" ;
+    rdfs:comment "有来源支持的营养描述。" ; b:grain "一个来源中的一项营养描述。" ;
+    b:identity [ b:strategy b:SourceScoped ; b:keyFields ("source_id" "name") ; b:prefix "recipe-nutrition:" ] .
+r:HealthBenefit a owl:Class ; b:nativeSymbol "HealthBenefit" ; rdfs:label "食用功效记载" ;
+    rdfs:comment "原文中的功效说法，不能视为医疗结论。" ; b:grain "一个来源中的一项功效说法。" ;
+    b:identity [ b:strategy b:SourceScoped ; b:keyFields ("source_id" "name") ; b:prefix "recipe-health:" ] .
+
+# Exact lexicalName declarations classify semantic subclasses without rewriting native types.
+r:SugarIngredient a owl:Class ; rdfs:subClassOf r:Ingredient ; rdfs:label "糖类" ;
+    b:lexicalName "糖类", "糖" .
+r:WhiteSugarIngredient a owl:Class ; rdfs:subClassOf r:SugarIngredient ;
+    rdfs:label "白糖" ; b:lexicalName "白糖", "白砂糖", "绵白糖", "砂糖" .
+r:RockSugarIngredient a owl:Class ; rdfs:subClassOf r:SugarIngredient ;
+    rdfs:label "冰糖" ; b:lexicalName "冰糖" .
+r:BrownSugarIngredient a owl:Class ; rdfs:subClassOf r:SugarIngredient ;
+    rdfs:label "红糖" ; b:lexicalName "红糖", "赤砂糖" .
+
+r:IngredientUse a owl:Class .
+r:StepUse a owl:Class .
+r:Quantity a owl:Class .
+r:NumericQuantity a owl:Class ; rdfs:subClassOf r:Quantity, schema:QuantitativeValue .
+r:RangeQuantity a owl:Class ; rdfs:subClassOf r:Quantity, schema:QuantitativeValue .
+r:QualitativeQuantity a owl:Class ; rdfs:subClassOf r:Quantity .
+r:Evidence a owl:Class .
+r:Unit a owl:Class .
+
+r:VARIANT_OF a owl:ObjectProperty ; b:nativeSymbol "VARIANT_OF" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:Dish ; rdfs:comment "做法归属菜品概念。" .
+r:HAS_MAIN_INGREDIENT a owl:ObjectProperty ; b:nativeSymbol "HAS_MAIN_INGREDIENT" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:Ingredient ; rdfs:subPropertyOf r:usesIngredient ;
+    rdfs:comment "做法中的一次主料使用记录。" ; b:reificationClass r:IngredientUse ; b:role "main" ;
+    b:externalReference [ b:source "wtm" ; b:uri wtm:hasIngredient ; b:kind "related_relation" ] .
+r:HAS_AUX_INGREDIENT a owl:ObjectProperty ; b:nativeSymbol "HAS_AUX_INGREDIENT" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:Ingredient ; rdfs:subPropertyOf r:usesIngredient ;
+    rdfs:comment "做法中的一次辅料使用记录。" ; b:reificationClass r:IngredientUse ; b:role "aux" ;
+    b:externalReference [ b:source "wtm" ; b:uri wtm:hasIngredient ; b:kind "related_relation" ] .
+r:HAS_STEP a owl:ObjectProperty ; b:nativeSymbol "HAS_STEP" ;
+    b:ownsTarget true ; b:reificationClass r:StepUse ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:CookingStep ; rdfs:comment "做法包含有序步骤。" ;
+    b:externalReference [ b:source "schema" ; b:uri schema:recipeInstructions ; b:kind "ordered_steps_projection" ] .
+r:HAS_FLAVOR a owl:ObjectProperty ; b:nativeSymbol "HAS_FLAVOR" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:Flavor ; rdfs:comment "具体做法的口味。" .
+r:USES_METHOD a owl:ObjectProperty ; b:nativeSymbol "USES_METHOD" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:CookingMethod ; rdfs:comment "具体做法的工艺。" ;
+    b:externalReference [ b:source "schema" ; b:uri schema:cookingMethod ; b:kind "target_name_projection" ] .
+r:BELONGS_TO_TYPE a owl:ObjectProperty ; b:nativeSymbol "BELONGS_TO_TYPE" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:DishType ; rdfs:comment "来源对做法的分类。" .
+r:BELONGS_TO_CUISINE a owl:ObjectProperty ; b:nativeSymbol "BELONGS_TO_CUISINE" ;
+    rdfs:domain r:RecipeVariant ; rdfs:range r:CuisineStyle ; rdfs:comment "来源记载的菜系。" ;
+    b:externalReference [ b:source "schema" ; b:uri schema:recipeCuisine ; b:kind "target_name_projection" ] .
+r:HAS_NUTRITION_PROFILE a owl:ObjectProperty ; b:nativeSymbol "HAS_NUTRITION_PROFILE" ;
+    rdfs:domain r:Ingredient ; rdfs:range r:NutritionProfile ; rdfs:comment "食材的营养资料。" .
+r:HAS_HEALTH_BENEFIT a owl:ObjectProperty ; b:nativeSymbol "HAS_HEALTH_BENEFIT" ;
+    rdfs:domain r:Ingredient ; rdfs:range r:HealthBenefit ; rdfs:comment "食材的原文功效记载。" .
+
+r:hasIngredientUse a owl:ObjectProperty ; rdfs:domain r:RecipeVariant ; rdfs:range r:IngredientUse .
+r:inRecipe a owl:ObjectProperty ; owl:inverseOf r:hasIngredientUse ; rdfs:domain r:IngredientUse ; rdfs:range r:RecipeVariant .
+r:ingredient a owl:ObjectProperty ; rdfs:domain r:IngredientUse ; rdfs:range r:Ingredient .
+r:usesIngredient a owl:ObjectProperty ; owl:propertyChainAxiom (r:hasIngredientUse r:ingredient) .
+r:quantity a owl:ObjectProperty ; rdfs:domain r:IngredientUse ; rdfs:range r:Quantity .
+r:evidence a owl:ObjectProperty ; rdfs:range r:Evidence .
+r:unit a owl:ObjectProperty ; rdfs:domain r:Quantity ; rdfs:range r:Unit .
+r:rawText a owl:DatatypeProperty .
+r:unitText a owl:DatatypeProperty .
+r:value a owl:DatatypeProperty .
+r:minValue a owl:DatatypeProperty .
+r:maxValue a owl:DatatypeProperty .
+r:dimension a owl:DatatypeProperty .
+r:scale a owl:DatatypeProperty .
+r:sourceId a owl:DatatypeProperty .
+r:quote a owl:DatatypeProperty .
+r:order a owl:DatatypeProperty ; rdfs:subPropertyOf schema:position .
+r:instruction a owl:DatatypeProperty ; rdfs:subPropertyOf schema:text .
+r:instructions a owl:DatatypeProperty .
+r:cook_time a owl:DatatypeProperty .
+r:source_record_id a owl:DatatypeProperty .
+r:description a owl:DatatypeProperty .
+r:role a owl:DatatypeProperty .
+
+r:Gram a r:Unit ; b:symbol "g" ; b:alias "克", "公克" ; r:dimension "mass" ; r:scale 1.0 .
+r:Milligram a r:Unit ; b:symbol "mg" ; b:alias "毫克" ; r:dimension "mass" ; r:scale 0.001 .
+r:Kilogram a r:Unit ; b:symbol "kg" ; b:alias "千克", "公斤" ; r:dimension "mass" ; r:scale 1000.0 .
+r:Millilitre a r:Unit ; b:symbol "ml" ; b:alias "毫升" ; r:dimension "volume" ; r:scale 1.0 .
+r:Litre a r:Unit ; b:symbol "l" ; b:alias "升" ; r:dimension "volume" ; r:scale 1000.0 .
+r:Minute a r:Unit ; b:symbol "minute" ; b:alias "分钟", "分", "min" ; r:dimension "time" ; r:scale 60.0 .
+r:Piece a r:Unit ; b:symbol "piece" ; b:alias "个", "只" ; r:dimension "count" ; r:scale 1.0 .
+r:Microgram a r:Unit ; b:symbol "ug" ; b:alias "微克", "μg" ; r:dimension "mass" ; r:scale 0.000001 .
+r:Microlitre a r:Unit ; b:symbol "ul" ; b:alias "微升", "μl" ; r:dimension "volume" ; r:scale 0.001 .
+r:Second a r:Unit ; b:symbol "second" ; b:alias "秒", "s" ; r:dimension "time" ; r:scale 1.0 .
+r:Millisecond a r:Unit ; b:symbol "ms" ; b:alias "毫秒" ; r:dimension "time" ; r:scale 0.001 .
+r:Hour a r:Unit ; b:symbol "hour" ; b:alias "小时", "h" ; r:dimension "time" ; r:scale 3600.0 .
+r:Day a r:Unit ; b:symbol "day" ; b:alias "天", "d" ; r:dimension "time" ; r:scale 86400.0 .
+
+r:MassProjection a b:NumericProjection ; b:dimension "mass" ; b:tickUnit "ug" ; b:minimum 0 ; b:maximum 9223372036854775807 ; b:projectionVersion "exact_numeric_v1" .
+r:VolumeProjection a b:NumericProjection ; b:dimension "volume" ; b:tickUnit "ul" ; b:minimum 0 ; b:maximum 9223372036854775807 ; b:projectionVersion "exact_numeric_v1" .
+r:CountProjection a b:NumericProjection ; b:dimension "count" ; b:tickUnit "piece" ; b:minimum 0 ; b:maximum 9223372036854775807 ; b:projectionVersion "exact_numeric_v1" .
+r:TimeProjection a b:NumericProjection ; b:dimension "time" ; b:tickUnit "ms" ; b:minimum 0 ; b:maximum 9223372036854775807 ; b:projectionVersion "exact_numeric_v1" .
+
+r:IngredientUsageAmountProperty a b:SemanticProperty ; b:symbol "ingredientUsageAmount" ; rdfs:label "单次食材用量" ; b:alias "单项用量" ; b:anchor r:RecipeVariant ; b:relation r:usesIngredient ; b:target r:Ingredient ; b:fields ("HAS_MAIN_INGREDIENT.amount_text" "HAS_AUX_INGREDIENT.amount_text") ; b:answerShape r:IngredientQuantityAnswerShape .
+r:IngredientTotalAmountProperty a b:SemanticProperty ; b:symbol "ingredientTotalAmount" ; rdfs:label "每份做法食材合计" ; b:alias "食材总用量" ; b:anchor r:RecipeVariant ; b:relation r:usesIngredient ; b:target r:Ingredient ; b:fields ("HAS_MAIN_INGREDIENT.amount_text" "HAS_AUX_INGREDIENT.amount_text") ; b:answerShape r:IngredientQuantityAnswerShape .
+r:ReportedDurationProperty a b:SemanticProperty ; b:symbol "reportedDuration" ; rdfs:label "来源所报时长" ; b:alias "时长条件" ; b:anchor r:RecipeVariant ; b:fields ("RecipeVariant.cook_time" "RecipeVariant.prep_duration" "RecipeVariant.cook_duration" "RecipeVariant.total_duration") ; b:answerShape r:ClassificationAnswerShape .
+r:prep_duration a owl:DatatypeProperty .
+r:cook_duration a owl:DatatypeProperty .
+r:total_duration a owl:DatatypeProperty .
+r:comparisonStatus a owl:DatatypeProperty .
+r:projectionVersion a owl:DatatypeProperty .
+r:comparisonMinTick a owl:DatatypeProperty .
+r:comparisonMaxTick a owl:DatatypeProperty .
+
+r:IngredientQuantityProperty a b:SemanticProperty ; b:symbol "ingredientQuantity" ;
+    rdfs:label "食材用量" ; b:alias "用量", "投料量", "原料", "主料", "辅料" ;
+    b:anchor r:RecipeVariant ; b:relation r:usesIngredient ;
+    b:fields ("HAS_MAIN_INGREDIENT.amount_text" "HAS_AUX_INGREDIENT.amount_text" "HAS_MAIN_INGREDIENT.unit" "HAS_AUX_INGREDIENT.unit") ;
+    b:target r:Ingredient ; b:answerShape r:IngredientQuantityAnswerShape .
+r:StepsProperty a b:SemanticProperty ; b:symbol "steps" ; rdfs:label "步骤" ; b:alias "做法", "制作步骤" ;
+    b:anchor r:RecipeVariant ; b:relation r:HAS_STEP ; b:target r:CookingStep ;
+    b:fields ("CookingStep.order" "CookingStep.instruction" "HAS_STEP.order") ; b:answerShape r:StepsAnswerShape .
+r:ReportedTimeProperty a b:SemanticProperty ; b:symbol "reportedTime" ; rdfs:label "耗时" ;
+    b:alias "烹饪时间", "制作时间", "多久" ; b:anchor r:RecipeVariant ;
+    b:fields ("RecipeVariant.cook_time") ; b:answerShape r:ReportedTimeAnswerShape .
+r:FlavorProperty a b:SemanticProperty ; b:symbol "flavor" ; rdfs:label "口味" ; b:alias "味道" ;
+    b:anchor r:RecipeVariant ; b:relation r:HAS_FLAVOR ; b:target r:Flavor ; b:fields () ; b:answerShape r:ClassificationAnswerShape .
+r:CuisineProperty a b:SemanticProperty ; b:symbol "cuisine" ; rdfs:label "菜系" ;
+    b:anchor r:RecipeVariant ; b:relation r:BELONGS_TO_CUISINE ; b:target r:CuisineStyle ; b:fields () ; b:answerShape r:ClassificationAnswerShape .
+r:MethodProperty a b:SemanticProperty ; b:symbol "method" ; rdfs:label "烹饪方法" ; b:alias "工艺" ;
+    b:anchor r:RecipeVariant ; b:relation r:USES_METHOD ; b:target r:CookingMethod ; b:fields () ; b:answerShape r:ClassificationAnswerShape .
+r:DishTypeProperty a b:SemanticProperty ; b:symbol "dishType" ; rdfs:label "类型" ; b:alias "分类" ;
+    b:anchor r:RecipeVariant ; b:relation r:BELONGS_TO_TYPE ; b:target r:DishType ; b:fields () ; b:answerShape r:ClassificationAnswerShape .
+r:VariantProperty a b:SemanticProperty ; b:symbol "variant" ; rdfs:label "做法版本" ; b:alias "菜谱", "菜品", "菜名" ;
+    b:anchor r:RecipeVariant ; b:relation r:VARIANT_OF ; b:target r:Dish ; b:fields () ; b:answerShape r:ClassificationAnswerShape .

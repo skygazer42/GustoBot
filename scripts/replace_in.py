@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,7 +21,7 @@ def detect_container(path: str) -> str:
             return "json" if ch == "[" else "jsonl"
 
 
-def parse_replace(spec: str) -> Tuple[str, str]:
+def parse_replace(spec: str) -> tuple[str, str]:
     # format: old=>new
     if "=>" not in spec:
         raise ValueError(f"--replace 参数格式应为 old=>new, 但收到: {spec}")
@@ -31,7 +29,7 @@ def parse_replace(spec: str) -> Tuple[str, str]:
     return old, new
 
 
-def apply_rules(val: str, rules: List[Tuple[str, str]]) -> str:
+def apply_rules(val: str, rules: list[tuple[str, str]]) -> str:
     out = val
     for old, new in rules:
         out = out.replace(old, new)

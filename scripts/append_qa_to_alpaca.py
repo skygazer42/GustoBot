@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,7 +12,7 @@ if __package__ in (None, ""):
 from scripts.dataset_io import read_any
 
 
-def qa_to_alpaca(obj: Dict[str, Any]) -> Dict[str, str]:
+def qa_to_alpaca(obj: dict[str, Any]) -> dict[str, str]:
     question = obj["src"]
     answer = obj["tgt"]
     if not isinstance(question, str) or not isinstance(answer, str):

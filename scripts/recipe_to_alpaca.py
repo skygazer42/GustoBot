@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-import json
 import argparse
+import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,8 +12,8 @@ if __package__ in (None, ""):
 from scripts.dataset_io import read_any
 
 
-def is_recipe(record: Dict[str, Any]) -> bool:
-    field_names = {k.lower() for k in record.keys()}
+def is_recipe(record: dict[str, Any]) -> bool:
+    field_names = {k.lower() for k in record}
     return ("recipeingredient" in field_names) or ("recipeinstructions" in field_names)
 
 
@@ -27,7 +26,7 @@ def build_instruction(keywords, name=None) -> str:
     return f"如何制作『{name}』？" if name else "这道菜需要哪些配料并如何制作？"
 
 
-def to_lines(value: Any) -> List[str]:
+def to_lines(value: Any) -> list[str]:
     """把列表/标量转成行列表；对嵌套列表用 '、' 拼接"""
     if value is None:
         return []
@@ -71,7 +70,8 @@ def main() -> None:
             instruction = build_instruction(
                 record.get("keywords"), record.get("name") or record.get("dish")
             )
-            input_text = str(record.get("description") or "")
+            description = record.get("description")
+            input_text = "" if description is None else str(description)
             output_text = build_output(
                 record.get("recipeIngredient", record.get("ingredients")),
                 record.get("recipeInstructions", record.get("steps")),

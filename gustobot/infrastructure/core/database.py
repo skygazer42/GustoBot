@@ -2,29 +2,31 @@
 Database configuration helpers and session utilities.
 """
 
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
-from importlib import import_module
-from typing import Dict, Generator, Iterator
 
 from loguru import logger
 from sqlalchemy import create_engine
+from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from gustobot.config import settings
 
 _DEFAULT_LOG_ECHO = bool(settings.DEBUG)
 
-_connect_args: Dict[str, bool] = {}
-if settings.DATABASE_URL.startswith("sqlite"):
-    _connect_args = {"check_same_thread": False}
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    echo=_DEFAULT_LOG_ECHO,
-    future=True,
-    pool_pre_ping=True,
-    connect_args=_connect_args,
-)
+def create_database_engine(url: str | URL, *, echo: bool = False) -> Engine:
+    """Create a lazy application connection pool for the supported MySQL driver."""
+    database_url = make_url(url)
+    if database_url.drivername != "mysql+pymysql":
+        raise ValueError("Application database requires a mysql+pymysql connection URL")
+    database_url = database_url.update_query_dict({"charset": "utf8mb4"})
+    return create_engine(
+        database_url, echo=echo, future=True, pool_pre_ping=True, hide_parameters=True
+    )
+
+
+engine = create_database_engine(settings.DATABASE_URL, echo=_DEFAULT_LOG_ECHO)
 
 SessionLocal = sessionmaker(
     bind=engine,
@@ -43,13 +45,18 @@ def init_db(*, create_all: bool = False) -> None:
     """
     Initialize the database engine.
 
-    If `create_all` is True the metadata for all models is created.
+    ``create_all=True`` explicitly applies the versioned schema migrations.
+    Importing this module and calling ``init_db()`` never connects or migrates.
     """
     if create_all:
-        # Lazy import to avoid circular dependencies during startup.
-        import_module("gustobot.infrastructure.persistence.db.models")
+        migrate_database(engine)
 
-        Base.metadata.create_all(bind=engine)
+
+def migrate_database(database_engine: Engine) -> list[str]:
+    """Apply pending forward migrations and return their revision identifiers."""
+    from migrations import migrate_database as apply_migrations
+
+    return apply_migrations(database_engine)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -71,28 +78,39 @@ def session_scope(*, commit: bool = True) -> Iterator[Session]:
         if commit:
             session.commit()
     except BaseException:
-        _rollback_after_failure(session)
         try:
-            session.close()
-        except Exception:
-            logger.exception("Close failed while handling a database operation error")
+            rollback_session(session)
+        finally:
+            try:
+                session.close()
+            # Cleanup errors must not replace the original transaction failure.
+            except Exception:  # noqa: BLE001
+                logger.exception("Close failed while handling a database operation error")
         raise
     else:
         session.close()
 
 
-def _rollback_after_failure(session: Session) -> None:
-    """Rollback at the transaction owner without replacing its active error."""
+def rollback_session(session: Session) -> None:
+    """Keep the operation error visible; attempt invalidation if rollback fails."""
     try:
         session.rollback()
-    except Exception:
+    # Cleanup errors must not replace the original transaction failure.
+    except Exception:  # noqa: BLE001
         logger.exception("Rollback failed while handling a database operation error")
+        try:
+            session.invalidate()
+        # This session is not known to be reusable; its request owner will still close it.
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Connection invalidation failed while handling a database operation error"
+            )
 
 
 def commit_session(session: Session) -> None:
-    """Commit a CRUD-owned transaction and leave a failed session reusable."""
+    """Commit a CRUD-owned transaction without hiding failed commit or cleanup."""
     try:
         session.commit()
     except BaseException:
-        _rollback_after_failure(session)
+        rollback_session(session)
         raise

@@ -1,0 +1,103 @@
+# 经源码核查的外部术语复用对照；供建模评审和适配使用。
+# 本文件不作为 KNOWLEDGE_DOMAIN_FILE，不声明 OWL 等价，也不自动导入实例。
+id: gustobot-recipes-reference-alignment
+checked_on: '2026-11-16'
+runtime_domain: gustobot/config/domains/recipes.yaml
+adoption:
+  status: implemented_local_profile
+  active_references: 14
+  runtime_sources: [schema, wtm]
+  pending_local_refs: [RecipeVariant.cook_time, HAS_FLAVOR]
+  candidate_source: foodon
+  reference_only_source: recipekg
+
+sources:
+  schema:
+    namespace: https://schema.org/
+    release: '30.1'
+    released_on: '2026-09-16'
+    definition_url: https://raw.githubusercontent.com/schemaorg/schemaorg/main/data/releases/30.1/schemaorg-current-https.jsonld
+    sha256: 0a4b8c4c910fc831ec8695196510973390906a5ee34dc6b862dfec4d21a12f74
+  wtm:
+    namespace: http://purl.org/heals/food/
+    git_tree_sha: e130bd2a557a0bb3df99c3a34d15412e1937cdc0
+    definition_url: https://raw.githubusercontent.com/foodkg/foodkg.github.io/e130bd2a557a0bb3df99c3a34d15412e1937cdc0/ontologies/WhatToMake.rdf
+    sha256: 30186a929d9afd3b9927e820fe2ea2835f790af012955e832c88f8131f52f809
+  foodon:
+    namespace: http://purl.obolibrary.org/obo/FOODON_
+    documentation_url: https://foodon.org/
+    release_entry: http://purl.obolibrary.org/obo/foodon.owl
+    adoption: 按食材逐项核对术语并固定版本；本轮不指定未经确认的类 ID。
+  recipekg:
+    namespace: http://purl.org/recipeKG.owl#
+    git_tree_sha: 053a7934539368bcfdd0f0a362465ae5e703a0e7
+    definition_url: https://raw.githubusercontent.com/IDIASLab/RecipeKG/053a7934539368bcfdd0f0a362465ae5e703a0e7/Ontology/recipekg.owl
+    serialization: turtle
+    sha256: 1c38b8e8c7cc20d1242d1db1af46c3d9e1652d44ac6d9931c17b676389e34642
+
+alignments:
+  - local_ref: RecipeVariant
+    external_uri: https://schema.org/Recipe
+    mapping: local_profile
+    extension: 具体来源及内容版本的身份。
+  - local_ref: CookingStep
+    external_uri: https://schema.org/HowToStep
+    mapping: local_profile
+    extension: 一份做法内的步骤身份与顺序唯一性。
+  - local_ref: CookingStep.order
+    external_uri: https://schema.org/position
+    mapping: restricted_value
+    extension: 本地仅允许正整数。
+  - local_ref: CookingStep.instruction
+    external_uri: https://schema.org/text
+    mapping: value_projection
+  - local_ref: RecipeVariant.instructions
+    external_uri: https://schema.org/recipeInstructions
+    mapping: text_projection
+  - local_ref: HAS_STEP
+    external_uri: https://schema.org/recipeInstructions
+    mapping: ordered_steps_projection
+  - local_ref: HAS_MAIN_INGREDIENT
+    external_uri: http://purl.org/heals/food/hasIngredient
+    mapping: related_relation
+    extension: 主料角色、原始用量与每次投料的关系身份。
+  - local_ref: HAS_AUX_INGREDIENT
+    external_uri: http://purl.org/heals/food/hasIngredient
+    mapping: related_relation
+    extension: 辅料角色、原始用量与每次投料的关系身份。
+  - local_refs: [HAS_MAIN_INGREDIENT.amount_text, HAS_AUX_INGREDIENT.amount_text]
+    external_uri: https://schema.org/requiredQuantity
+    mapping: relationship_reification
+    path: [https://schema.org/supply, https://schema.org/HowToSupply, https://schema.org/requiredQuantity]
+    condition: 每条使用关系生成独立供应物表达，数量不能移到共享食材概念上。
+  - local_ref: RecipeVariant.cook_time
+    external_candidates: [https://schema.org/cookTime, https://schema.org/totalTime]
+    mapping: unresolved_source_meaning
+    condition: 明确烹饪时间与总耗时口径后才映射；保留原始文字，不推测时长。
+  - local_ref: BELONGS_TO_CUISINE
+    external_uri: https://schema.org/recipeCuisine
+    mapping: target_name_projection
+  - local_ref: USES_METHOD
+    external_uri: https://schema.org/cookingMethod
+    mapping: target_name_projection
+  - local_ref: Ingredient
+    external_uri: http://purl.org/heals/food/Ingredient
+    mapping: related_concept
+    condition: 核对可复用食材概念与具体使用项的粒度。
+  - local_ref: Flavor
+    external_uri: http://purl.org/heals/food/Flavor
+    mapping: related_concept
+  - local_ref: HAS_FLAVOR
+    external_uri: http://purl.org/heals/food/hasFlavor
+    mapping: unresolved_subject_grain
+    condition: 外部 scopeNote 为 ingredient property，本地为具体做法口味；需要业务裁决，不自动等价。
+
+local_extensions:
+  - Dish 与 RecipeVariant 的概念/版本区分及 VARIANT_OF。
+  - 主料/辅料角色与多次投料的稳定身份。
+  - 来源 ID、原文引文、版本、未知值语义与证据完整性。
+  - 中文别名及词义裁决；未记载食材不作为不含的证明。
+
+excluded_direct_mappings:
+  - external_uri: http://purl.org/recipeKG.owl#hasAmount
+    reason: 当前源码 domain=NutrientData，不能直接映射食材投料量。

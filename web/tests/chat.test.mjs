@@ -1,33 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { loadTypeScript } from "./load-typescript.mjs";
 
 const require = createRequire(import.meta.url);
-const ts = require("typescript");
 const vue = require("vue");
-
-function loadTypeScript(relativePath, imports = {}) {
-  const path = fileURLToPath(new URL(relativePath, import.meta.url));
-  const source = readFileSync(path, "utf8").replaceAll(
-    "import.meta.env",
-    "({ VITE_API_BASE_URL: '' })"
-  );
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2020,
-      module: ts.ModuleKind.CommonJS,
-      esModuleInterop: true
-    },
-    fileName: path
-  });
-  const module = { exports: {} };
-  const loadImport = (name) => imports[name] ?? require(name);
-  const execute = new Function("require", "module", "exports", "HTMLInputElement", compiled.outputText);
-  execute(loadImport, module, module.exports, FileInput);
-  return module.exports;
-}
 
 class FileInput {
   constructor(file) {
@@ -37,6 +14,7 @@ class FileInput {
 }
 
 const chat = loadTypeScript("../src/lib/chat.ts");
+const recipeData = loadTypeScript("../src/data/recipe.ts", { "../assets/tomato-eggs.jpg": "photo.jpg" });
 
 function createChat(recipeContext = "") {
   const requests = [];
@@ -56,7 +34,7 @@ function createChat(recipeContext = "") {
     axios,
     vue,
     "../lib/chat": chat
-  });
+  }, { HTMLInputElement: FileInput });
   const scope = vue.effectScope();
   const result = scope.run(() => useChat(recipeContext));
   return { ...result, requests, stop: () => scope.stop() };
@@ -75,6 +53,74 @@ function selectFile(name = "菜谱.txt") {
   const input = new FileInput(file);
   return { target: input };
 }
+
+test("serving quantities scale explicit numbers and preserve qualitative amounts", () => {
+  assert.equal(recipeData.scaleQuantity("3", 3, 2), "4.5");
+  assert.equal(recipeData.scaleQuantity("0", 4, 2), "0");
+  for (const quantity of ["适量", "少许", "1–2", ""]) {
+    assert.equal(recipeData.scaleQuantity(quantity, 4, 2), quantity);
+  }
+  const context = recipeData.buildRecipeContext(4);
+  assert.match(context, /原份量2人份，当前调整为4人份/);
+  assert.match(context, /番茄4个、鸡蛋6个/);
+  assert.match(context, /不估算用量/);
+});
+
+test("suggestions exclude sent questions but remain available after a failed send", () => {
+  const prompts = ["少油一点怎么做？", "只有一个鸡蛋呢？"];
+  const messages = [
+    { id: "sent", role: "user", delivery: "sent", content: " 少油一点怎么做? " },
+    { id: "failed", role: "user", delivery: "failed", content: "只有一个鸡蛋呢？" }
+  ];
+  assert.deepEqual(chat.availablePrompts(prompts, messages), ["只有一个鸡蛋呢？"]);
+  assert.deepEqual(chat.availablePrompts(prompts, [{ ...messages[0], delivery: "pending" }]), prompts);
+});
+
+test("clarification renders only actual recipe choices and keeps their order", () => {
+  const parsed = chat.parseChatResponse({
+    ...response(), route: "clarification",
+    metadata: { choices: [
+      { id: "variant-a", name: "番茄炒蛋", summary: { cook_time: "十分钟" } },
+      { id: "variant-b", name: "番茄炒蛋", summary: {} }
+    ] }
+  });
+  assert.deepEqual(parsed.message.clarificationOptions, [
+    { label: "1. 番茄炒蛋 · 十分钟", question: "第 1 份" },
+    { label: "2. 番茄炒蛋", question: "第 2 份" }
+  ]);
+  assert.doesNotMatch(parsed.message.content, /variant-a|variant-b/);
+  assert.throws(() => chat.parseChatResponse({ ...response(), route: "clarification", metadata: { choices: [{ name: "缺少标识" }] } }));
+});
+
+test("unsupported preferences stay honest without exposing slot debugging text", () => {
+  const parsed = chat.parseChatResponse({
+    ...response(), route: "clarification",
+    metadata: { plan: { unsupported_conditions: ["少油（低油用量偏好）"] } }
+  });
+  assert.match(parsed.message.content, /少油/);
+  assert.match(parsed.message.content, /资料还不足以确认/);
+  assert.doesNotMatch(parsed.message.content, /低油用量偏好|不粘锅|水炒/);
+  assert.deepEqual(parsed.message.clarificationOptions, []);
+});
+
+test("each submission resolves the current serving context without rewriting existing messages", async () => {
+  let servings = 2;
+  const client = createChat(() => recipeData.buildRecipeContext(servings));
+  client.state.userInput = "用量是什么？";
+  const first = client.sendMessage();
+  assert.match(client.requests[0].body.message, /当前调整为2人份/);
+  client.requests[0].resolve(response());
+  await first;
+  servings = 4;
+  client.state.userInput = "现在呢？";
+  const second = client.sendMessage();
+  assert.match(client.requests[1].body.message, /当前调整为4人份/);
+  assert.match(client.requests[1].body.message, /鸡蛋6个/);
+  assert.equal(client.state.messages[0].content, "用量是什么？");
+  client.requests[1].resolve(response());
+  await second;
+  client.stop();
+});
 
 test("chat response preserves real sources and optional route fields", () => {
   const sources = [{ backend: "postgres", title: "食谱", url: "https://example.com/recipe" }];

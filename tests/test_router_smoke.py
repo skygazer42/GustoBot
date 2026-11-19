@@ -13,16 +13,15 @@
 import asyncio
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import httpx
-
 
 BASE_URL = os.getenv("GUSTOBOT_BASE_URL", "http://localhost:8000").rstrip("/")
 CHAT_ENDPOINT = f"{BASE_URL}/api/v1/chat/"
 
 # 定义测试用例
-TEST_CASES: List[Dict[str, Any]] = [
+TEST_CASES: list[dict[str, Any]] = [
     {
         "question": "你好",
         "expected_route": "general-query",
@@ -30,40 +29,44 @@ TEST_CASES: List[Dict[str, Any]] = [
     },
     {
         "question": "我想做菜",
-        "expected_route": "additional-query",
-        "description": "缺少关键信息，应提示补充信息",
+        "expected_route": "knowledge-query",
+        "description": "统一知识问答负责澄清缺少的信息",
     },
     {
         "question": "宫保鸡丁的历史典故是什么",
-        "expected_route": "kb-query",
+        "expected_route": "knowledge-query",
         "description": "知识库查询（允许无命中时 sources 为空）",
     },
     {
         "question": "小炒肉需要哪些食材？",
-        "expected_route": "graphrag-query",
-        "description": "多工具 GraphRAG 查询，应触发自定义工具回答",
-        "must_contain": "###",
+        "expected_route": "knowledge-query",
+        "description": "统一知识问答查询食材，答案以现有记录为准",
     },
     {
         "question": "数据库里有多少道菜",
-        "expected_route": "text2sql-query",
-        "description": "结构化统计问题，应生成 Text2SQL 查询",
-        "must_contain": "total_recipes",
+        "expected_route": "knowledge-query",
+        "description": "统一知识问答处理统计范围",
     },
     {
         "question": "生成一张红烧肉的图片",
-        "expected_route": "image-query",
-        "description": "图片生成请求，应调用 image-query 路由",
+        "expected_route": "image-generation",
+        "action": "generate_image",
+        "description": "图片生成由显式动作触发",
     },
 ]
 
 
-async def invoke_chat(client: httpx.AsyncClient, message: str, idx: int) -> Dict[str, Any]:
+async def invoke_chat(
+    client: httpx.AsyncClient, message: str, idx: int, *, action: str = "knowledge"
+) -> dict[str, Any]:
     """调用后端 Chat 接口。"""
+    from gustobot.interfaces.http.v1.chat import ChatResponse
+
     payload = {
         "message": message,
         "session_id": f"router_smoke_{idx}",
         "stream": False,
+        "action": action,
     }
     try:
         resp = await client.post(
@@ -74,24 +77,24 @@ async def invoke_chat(client: httpx.AsyncClient, message: str, idx: int) -> Dict
     except httpx.HTTPError as exc:
         return {"status": 0, "payload": payload, "error": f"http_error: {exc}"}
 
-    result: Dict[str, Any] = {"status": resp.status_code, "payload": payload}
+    result: dict[str, Any] = {"status": resp.status_code, "payload": payload}
     if resp.status_code != 200:
         result["error"] = resp.text
         return result
 
     try:
-        result["data"] = resp.json()
-    except Exception as exc:  # pragma: no cover - 仅为安全输出
+        result["data"] = ChatResponse.model_validate_json(resp.content).model_dump(mode="json")
+    except ValueError as exc:
         result["error"] = f"JSON decode failed: {exc}"
     return result
 
 
-def evaluate_case(case: Dict[str, Any], resp: Dict[str, Any]) -> Dict[str, Any]:
+def evaluate_case(case: dict[str, Any], resp: dict[str, Any]) -> dict[str, Any]:
     """根据预期路由校验结果。"""
-    outcome: Dict[str, Any] = {
+    outcome: dict[str, Any] = {
         "question": case["question"],
         "expected_route": case["expected_route"],
-        "description": case.get("description", ""),
+        "description": case["description"],
         "passed": False,
         "details": "",
     }
@@ -101,7 +104,7 @@ def evaluate_case(case: Dict[str, Any], resp: Dict[str, Any]) -> Dict[str, Any]:
         return outcome
 
     data = resp["data"]
-    actual_route = data.get("route") or data.get("router", {}).get("type")
+    actual_route = data["route"]
     outcome["actual_route"] = actual_route
 
     if actual_route != case["expected_route"]:
@@ -127,7 +130,7 @@ def evaluate_case(case: Dict[str, Any], resp: Dict[str, Any]) -> Dict[str, Any]:
     return outcome
 
 
-def summarize(results: List[Dict[str, Any]]) -> None:
+def summarize(results: list[dict[str, Any]]) -> None:
     """输出汇总结果。"""
     total = len(results)
     passed = sum(1 for item in results if item["passed"])
@@ -154,7 +157,11 @@ async def main() -> int:
     async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
         responses = []
         for idx, case in enumerate(TEST_CASES):
-            responses.append(await invoke_chat(client, case["question"], idx))
+            responses.append(
+                await invoke_chat(
+                    client, case["question"], idx, action=case.get("action", "knowledge")
+                )
+            )
 
     results = [evaluate_case(case, resp) for case, resp in zip(TEST_CASES, responses)]
     summarize(results)
@@ -162,6 +169,9 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     try:
         exit_code = asyncio.run(main())
     except KeyboardInterrupt:  # pragma: no cover - 手动中断

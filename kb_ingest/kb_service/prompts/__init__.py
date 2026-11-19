@@ -1,1 +1,0 @@
-"""Prompt templates management."""

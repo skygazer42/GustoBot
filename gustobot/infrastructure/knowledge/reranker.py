@@ -1,12 +1,24 @@
 """Reranker integration supporting multiple providers."""
 
 import asyncio
-import httpx
-from typing import Any, Dict, List
+import math
+from time import perf_counter
+from traceback import extract_tb
+from typing import Any
 
+import httpx
 from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field
 
 from gustobot.config import settings
+from gustobot.infrastructure.knowledge.request_telemetry import record_provider_event
+
+
+class _RerankResult(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+    index: int = Field(ge=0)
+    relevance_score: float | None = Field(default=None, allow_inf_nan=False)
+    score: float | None = Field(default=None, allow_inf_nan=False)
 
 
 class Reranker:
@@ -15,6 +27,7 @@ class Reranker:
     def __init__(self) -> None:
         self.enabled = settings.RERANK_ENABLED
         self.provider = settings.RERANK_PROVIDER.lower()
+        self.api_format = settings.RERANK_API_FORMAT
         self.base_url = settings.RERANK_BASE_URL
         self.endpoint = settings.RERANK_ENDPOINT
         self.model = settings.RERANK_MODEL
@@ -28,6 +41,8 @@ class Reranker:
 
         if self.top_n <= 0:
             raise ValueError("RERANK_TOP_N must be positive")
+        if not math.isfinite(self.timeout) or self.timeout <= 0:
+            raise ValueError("RERANK_TIMEOUT must be finite and positive")
         if not self.model.strip():
             raise ValueError("RERANK_MODEL must not be empty")
 
@@ -37,22 +52,30 @@ class Reranker:
             return
 
         logger.info(
-            "Reranker initialized: provider={}, model={}, base_url={}",
+            "Reranker initialized: provider={}, model={}",
             self.provider,
             self.model,
-            self.base_url,
         )
 
     async def rerank(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
+        documents: list[dict[str, Any]],
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Rerank documents based on relevance to query."""
-        if not self.enabled or not documents:
+        if type(top_k) is not int or top_k < 0:
+            raise ValueError("Reranker top_k must be a nonnegative integer")
+        if not self.enabled or not documents or top_k == 0:
             return documents[:top_k]
 
+        record_provider_event(
+            "rerank",
+            logical_calls=1,
+            texts=len(documents) + 1,
+            input_characters=len(query) + sum(len(doc["content"]) for doc in documents),
+        )
+        started = perf_counter()
         try:
             if self.provider == "custom":
                 ranked = await self._custom_rerank(query, documents, top_k)
@@ -63,26 +86,45 @@ class Reranker:
             elif self.provider == "voyage":
                 ranked = await self._voyage_rerank(query, documents, top_k)
             else:
-                logger.warning(f"Unsupported reranker provider: {self.provider}")
+                logger.warning("Unsupported reranker provider: {}", self.provider)
                 return documents[:top_k]
 
             if ranked:
                 return ranked
-        except Exception as exc:
-            logger.exception("Reranker failed: {}", exc)
+        except Exception as exc:  # noqa: BLE001
+            # Provider exception text and frame locals can contain credentials.
+            stack = " -> ".join(
+                f"{frame.filename}:{frame.lineno} ({frame.name})"
+                for frame in extract_tb(exc.__traceback__)
+            )
+            logger.error(
+                "Reranker provider {} failed ({}), stack={}",
+                self.provider,
+                type(exc).__name__,
+                stack,
+            )
+        finally:
+            record_provider_event("rerank", elapsed_seconds=perf_counter() - started)
 
         return documents[:top_k]
+
+    @staticmethod
+    def _http_attempt(request: httpx.Request) -> None:
+        record_provider_event("rerank", http_attempts=1)
+
+    @staticmethod
+    async def _async_http_attempt(request: httpx.Request) -> None:
+        record_provider_event("rerank", http_attempts=1)
 
     async def _custom_rerank(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
+        documents: list[dict[str, Any]],
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Custom reranker API (e.g., BGE reranker)."""
         if not self.base_url:
-            logger.error("Custom reranker requires RERANK_BASE_URL")
-            return documents[:top_k]
+            raise ValueError("Custom reranker requires RERANK_BASE_URL")
 
         # 准备文档内容
         texts = [doc["content"] for doc in documents]
@@ -94,27 +136,35 @@ class Reranker:
             "Content-Type": "application/json",
         }
 
-        # DashScope API 格式
-        payload = {
-            "model": self.model,
-            "input": {
+        if self.api_format == "standard":
+            payload = {
+                "model": self.model,
                 "query": query,
                 "documents": texts,
-            },
-            "parameters": {
-                "return_documents": True,
-                "top_n": min(self.top_n, len(documents)),
-            },
-        }
+                "top_n": min(self.top_n, len(documents), top_k),
+                "return_documents": False,
+            }
+        else:
+            payload = {
+                "model": self.model,
+                "input": {"query": query, "documents": texts},
+                "parameters": {
+                    "return_documents": True,
+                    "top_n": min(self.top_n, len(documents)),
+                },
+            }
 
-        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            trust_env=False,
+            event_hooks={"request": [self._async_http_attempt]},
+        ) as client:
+            record_provider_event("rerank", provider_batches=1)
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
-        # 解析响应 (DashScope 格式: output.results)
-        output = data.get("output", {})
-        results = output.get("results", [])
+        results = data["results"] if self.api_format == "standard" else data["output"]["results"]
 
         if not results:
             logger.warning("Custom reranker returned no results")
@@ -125,9 +175,9 @@ class Reranker:
     async def _jina_rerank(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
+        documents: list[dict[str, Any]],
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Jina AI reranker."""
         texts = [doc["content"] for doc in documents]
 
@@ -144,20 +194,25 @@ class Reranker:
             "top_n": min(self.top_n, len(documents)),
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            trust_env=False,
+            event_hooks={"request": [self._async_http_attempt]},
+        ) as client:
+            record_provider_event("rerank", provider_batches=1)
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
-        results = data.get("results", [])
+        results = data["results"]
         return self._process_rerank_results(results, documents, top_k)
 
     async def _voyage_rerank(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
+        documents: list[dict[str, Any]],
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Voyage AI reranker."""
         texts = [doc["content"] for doc in documents]
 
@@ -174,35 +229,47 @@ class Reranker:
             "top_k": min(self.top_n, len(documents)),
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            trust_env=False,
+            event_hooks={"request": [self._async_http_attempt]},
+        ) as client:
+            record_provider_event("rerank", provider_batches=1)
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
-        results = data.get("data", [])
+        results = data["data"]
         return self._process_rerank_results(results, documents, top_k)
 
     def _cohere_rerank(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
+        documents: list[dict[str, Any]],
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Cohere reranker (synchronous)."""
         try:
             from cohere import Client as CohereClient
         except ImportError as exc:
             raise RuntimeError("cohere package not installed") from exc
 
-        client = CohereClient(self.api_key)
         texts = [doc["content"] for doc in documents]
 
-        response = client.rerank(
-            query=query,
-            documents=texts,
-            top_n=min(self.top_n, len(documents)),
-            model=self.model,
-        )
+        with httpx.Client(
+            timeout=self.timeout, trust_env=False, event_hooks={"request": [self._http_attempt]}
+        ) as transport:
+            client = CohereClient(
+                token=self.api_key, timeout=self.timeout, httpx_client=transport, max_retries=0
+            )
+            record_provider_event("rerank", provider_batches=1)
+            response = client.rerank(
+                query=query,
+                documents=texts,
+                top_n=min(self.top_n, len(documents)),
+                model=self.model,
+                request_options={"max_retries": 0, "timeout": self.timeout},
+            )
 
         results = [
             {"index": r.index, "relevance_score": r.relevance_score} for r in response.results
@@ -210,28 +277,30 @@ class Reranker:
 
         return self._process_rerank_results(results, documents, top_k)
 
+    @staticmethod
     def _process_rerank_results(
-        self,
-        results: List[Dict[str, Any]],
-        documents: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
+        documents: list[dict[str, Any]],
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Process reranker results into reordered document list."""
         reranked = []
         ranked_indices = set()
 
         for item in results:
-            idx = item.get("index")
-            score = item.get("relevance_score")
+            result = _RerankResult.model_validate(item)
+            idx = result.index
+            if idx >= len(documents) or idx in ranked_indices:
+                raise ValueError("Reranker returned an invalid or duplicate document index")
+            score = result.relevance_score
             if score is None:
-                score = item.get("score")
-
-            if idx is not None and 0 <= idx < len(documents):
-                doc = dict(documents[idx])
-                if score is not None:
-                    doc["rerank_score"] = float(score)
-                reranked.append(doc)
-                ranked_indices.add(idx)
+                score = result.score
+            if score is None:
+                raise ValueError("Reranker result requires a relevance score")
+            doc = dict(documents[idx])
+            doc["rerank_score"] = score
+            reranked.append(doc)
+            ranked_indices.add(idx)
 
         # 添加未被重排的文档
         for index, doc in enumerate(documents):

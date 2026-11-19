@@ -231,6 +231,7 @@ web/.next/
 web/out/
 web/.nuxt/
 web/.cache/
+web/.e2e/
 web/.vuepress/dist/
 web/.temp/
 web/.docusaurus/
@@ -269,12 +270,18 @@ milvus/
 data/chroma/
 data/milvus/
 data/vector_store/
+data/lightrag/
+data/neo4j/
+data/tiktoken_cache/
+data/.kb_*_ingested
+neo4j_plugins/
 
 # 爬虫相关
 proxies.txt
 cookies.json
 *.html
 !web/index.html
+!web/admin.html
 screenshots/
 downloads/
 crawled_data/

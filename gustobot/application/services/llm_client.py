@@ -3,15 +3,19 @@ Lightweight wrapper for OpenAI-compatible chat completions.
 """
 
 import json
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from loguru import logger
 from openai import AsyncOpenAI, BadRequestError
 from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
-from openai.types.shared_params.response_format_json_object import ResponseFormatJSONObject
+from openai.types.shared_params.response_format_json_object import (
+    ResponseFormatJSONObject,
+)
+
 from gustobot.config import settings
 
-ChatMessage = Dict[str, str]
+ChatMessage = dict[str, str]
 
 
 class LLMClient:
@@ -20,9 +24,9 @@ class LLMClient:
     def __init__(
         self,
         *,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
         temperature: float = 0.7,
     ) -> None:
         self.api_key = settings.OPENAI_API_KEY if api_key is None else api_key
@@ -34,7 +38,7 @@ class LLMClient:
             raise ValueError("base_url must be a URL or None for the SDK default")
         self.default_temperature = temperature
 
-        self._client: Optional[AsyncOpenAI] = None
+        self._client: AsyncOpenAI | None = None
         if self.api_key:
             self._client = AsyncOpenAI(
                 api_key=self.api_key,
@@ -50,11 +54,11 @@ class LLMClient:
 
     @staticmethod
     def _format_messages(
-        system_prompt: Optional[str],
+        system_prompt: str | None,
         user_message: str,
-        context: Optional[Sequence[ChatMessage]] = None,
-    ) -> List[ChatCompletionMessageParam]:
-        messages: List[ChatCompletionMessageParam] = []
+        context: Sequence[ChatMessage] | None = None,
+    ) -> list[ChatCompletionMessageParam]:
+        messages: list[ChatCompletionMessageParam] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
@@ -75,28 +79,32 @@ class LLMClient:
         *,
         messages: Sequence[ChatCompletionMessageParam],
         temperature: float,
-        response_format: Optional[ResponseFormatJSONObject] = None,
+        response_format: ResponseFormatJSONObject | None = None,
     ) -> ChatCompletion:
         """Call the chat completion endpoint."""
         client = self._ensure_client()
         if response_format is None:
             return await client.chat.completions.create(
-                model=self.model, messages=list(messages), temperature=temperature
+                model=self.model,
+                messages=list(messages),
+                temperature=temperature,
+                extra_body=settings.LLM_EXTRA_BODY,
             )
         return await client.chat.completions.create(
             model=self.model,
             messages=list(messages),
             temperature=temperature,
             response_format=response_format,
+            extra_body=settings.LLM_EXTRA_BODY,
         )
 
     async def chat(
         self,
         *,
-        system_prompt: Optional[str],
+        system_prompt: str | None,
         user_message: str,
-        context: Optional[Sequence[ChatMessage]] = None,
-        temperature: Optional[float] = None,
+        context: Sequence[ChatMessage] | None = None,
+        temperature: float | None = None,
     ) -> str:
         """Return the assistant message content."""
         messages = self._format_messages(system_prompt, user_message, context)
@@ -112,11 +120,11 @@ class LLMClient:
     async def chat_json(
         self,
         *,
-        system_prompt: Optional[str],
+        system_prompt: str | None,
         user_message: str,
-        context: Optional[Sequence[ChatMessage]] = None,
+        context: Sequence[ChatMessage] | None = None,
         temperature: float = 0.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Request a JSON object response and parse it."""
         messages = self._format_messages(system_prompt, user_message, context)
         try:
@@ -140,7 +148,8 @@ class LLMClient:
             raise ValueError("LLM response contains no JSON content")
         payload = json.loads(content)
         if not isinstance(payload, dict):
-            raise ValueError("LLM JSON response must be an object")
+            # Malformed model responses retain the adapter ValueError contract.
+            raise ValueError("LLM JSON response must be an object")  # noqa: TRY004
         return payload
 
     async def close(self) -> None:

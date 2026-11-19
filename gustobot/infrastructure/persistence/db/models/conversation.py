@@ -1,9 +1,10 @@
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from gustobot.infrastructure.core.database import Base
 
 if TYPE_CHECKING:
@@ -26,21 +27,21 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[Optional[int]] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(100), nullable=False)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, server_default=func.now()
     )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, server_default=func.now(), onupdate=func.now()
     )
-    status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="ongoing")
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True, default="ongoing")
     dialogue_type: Mapped[DialogueType] = mapped_column(Enum(DialogueType), nullable=False)
 
     user: Mapped[Optional["User"]] = relationship("User", back_populates="conversations")
-    messages: Mapped[List["Message"]] = relationship(
+    messages: Mapped[list["Message"]] = relationship(
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",

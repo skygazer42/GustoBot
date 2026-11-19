@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "Bundler",
+    "types": ["node"]
+  },
+  "include": ["e2e.config.ts", "tests/**/*.e2e.ts"]
+}

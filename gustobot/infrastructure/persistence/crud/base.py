@@ -2,7 +2,7 @@
 Base CRUD class with generic database operations.
 """
 
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
+from typing import Any, Generic, TypeVar
 
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
@@ -23,15 +23,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     inherited by specific model CRUD classes.
     """
 
-    def __init__(self, model: Type[ModelType]):
+    def __init__(self, model: type[ModelType]):
         """Initialize with a SQLAlchemy model class."""
         self.model = model
 
-    def get(self, db: Session, id: Union[int, str]) -> Optional[ModelType]:
+    def get(self, db: Session, id: int | str) -> ModelType | None:
         """Get a single record by ID."""
         return db.get(self.model, id)
 
-    def get_multi(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[ModelType]:
+    def get_multi(self, db: Session, *, skip: int = 0, limit: int = 100) -> list[ModelType]:
         """Get multiple records with pagination."""
         return db.query(self.model).offset(skip).limit(limit).all()
 
@@ -45,7 +45,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return db_obj
 
     def update(
-        self, db: Session, *, db_obj: ModelType, obj_in: Union[UpdateSchemaType, Dict[str, Any]]
+        self, db: Session, *, db_obj: ModelType, obj_in: UpdateSchemaType | dict[str, Any]
     ) -> ModelType:
         """Update an existing record."""
         if isinstance(obj_in, dict):
@@ -62,7 +62,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         db.refresh(db_obj)
         return db_obj
 
-    def delete(self, db: Session, *, id: Union[int, str]) -> Optional[ModelType]:
+    def delete(self, db: Session, *, id: int | str) -> ModelType | None:
         """Delete a record by ID."""
         record = db.get(self.model, id)
         if record is None:

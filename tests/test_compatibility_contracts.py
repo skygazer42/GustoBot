@@ -8,7 +8,6 @@ even as internals evolve.
 
 import sys
 from pathlib import Path
-from typing import Set, Tuple
 
 from fastapi import FastAPI
 from starlette.routing import Route
@@ -18,8 +17,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def _collect_route_methods(app: FastAPI) -> Set[Tuple[str, str]]:
-    methods: Set[Tuple[str, str]] = set()
+def _collect_route_methods(app: FastAPI) -> set[tuple[str, str]]:
+    methods: set[tuple[str, str]] = set()
     for route in app.routes:
         if not isinstance(route, Route) or route.methods is None:
             continue

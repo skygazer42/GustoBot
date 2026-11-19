@@ -4,7 +4,7 @@
       <label class="ingredient-check">
         <input type="checkbox" :checked="checkedIds.includes(ingredient.id)" @change="toggleIngredient(ingredient.id, $event)" />
         <span class="ingredient-name">{{ ingredient.name }}</span>
-        <span class="amount">{{ ingredient.quantity }}<small>{{ ingredient.unit }}</small></span>
+        <span class="amount">{{ scaleQuantity(ingredient.quantity, servings) }}<small>{{ ingredient.unit }}</small></span>
       </label>
       <InlineQuestion v-if="showQuestions" :question="ingredient.question" @ask="emit('ask', $event)" />
     </div>
@@ -12,10 +12,10 @@
 </template>
 
 <script setup lang="ts">
-import { recipe } from "../data/recipe";
+import { recipe, scaleQuantity } from "../data/recipe";
 import InlineQuestion from "./InlineQuestion.vue";
 
-const props = withDefaults(defineProps<{ checkedIds: readonly string[]; showQuestions?: boolean }>(), { showQuestions: true });
+const props = withDefaults(defineProps<{ checkedIds: readonly string[]; servings: number; showQuestions?: boolean }>(), { showQuestions: true });
 const emit = defineEmits<{
   (event: "update:checkedIds", ids: string[]): void;
   (event: "ask", question: string): void;

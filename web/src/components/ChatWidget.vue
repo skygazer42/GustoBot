@@ -1,5 +1,5 @@
 <template>
-  <section id="chat-panel" class="chat-panel" :class="variant === 'widget' ? 'widget-panel' : 'workspace-panel'" aria-label="陶陶对话">
+  <section id="chat-panel" class="chat-panel" :class="[variant === 'widget' ? 'widget-panel' : 'workspace-panel', { 'is-compact': isCompact }]" aria-label="陶陶对话">
     <header v-if="variant === 'widget'" class="widget-header">
       <span class="bot-seal"><UiIcon name="bot" /></span>
       <div><h2 class="widget-name">陶陶</h2><p class="widget-subtitle">陪你把这一餐做好</p></div>
@@ -8,6 +8,9 @@
         <button type="button" class="minimize-button" aria-label="收起对话，保留草稿" title="收起对话 · Esc" @click="emit('close')"><UiIcon name="down" />收起</button>
       </div>
     </header>
+    <div v-if="variant === 'widget'" class="recipe-context-bar" role="group" aria-label="当前食谱">
+      <img :src="recipe.photo" alt="" /><strong>{{ recipe.title }}</strong><span>当前食谱 · {{ servings }} 人份</span>
+    </div>
     <div
       ref="history"
       class="conversation-history"
@@ -30,6 +33,9 @@
         <article v-else class="assistant-message" :data-message-id="message.id">
           <p class="assistant-label"><UiIcon name="bot" />陶陶</p>
           <div class="answer-copy"><template v-for="(part, index) in linkify(message.content)" :key="index"><a v-if="part.href" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><template v-else>{{ part.text }}</template></template></div>
+          <div v-if="message.clarificationOptions?.length" class="clarification-options" aria-label="选择具体做法">
+            <button v-for="option in message.clarificationOptions" :key="option.question" type="button" :disabled="state.isTyping || state.isUploading || message.id !== state.messages[state.messages.length - 1]?.id" @click="emit('ask', option.question)">{{ option.label }}</button>
+          </div>
           <details v-if="message.sources?.length" class="message-sources" @toggle="syncHistoryCue">
             <summary>参考来源 · {{ message.sources.length }}</summary>
             <ul>
@@ -42,10 +48,6 @@
         </article>
       </template>
       <p v-if="state.isTyping" class="typing-status" role="status"><span class="spinner" aria-hidden="true"></span>陶陶正在想一想…</p>
-      <div v-if="variant === 'widget'" class="active-recipe" role="group" :aria-label="`当前浏览中的食谱：${recipe.title}`">
-        <img :src="recipe.photo" alt="" />
-        <div><h3>{{ recipe.title }}</h3><span class="active-badge"><UiIcon name="check" />当前浏览中</span><p class="active-recipe-meta">{{ recipe.minutes }} 分钟 · {{ recipe.servings }} 人份</p></div>
-      </div>
     </div>
     <ChatComposer
       ref="composer"
@@ -56,6 +58,7 @@
       :upload-status="state.uploadStatus"
       :error="state.error"
       :has-conversation="state.messages.length > 0 || state.sessionId.length > 0"
+      :followups="followups"
       @update-draft="emit('update-draft', $event)"
       @submit="emit('submit')"
       @ask="emit('ask', $event)"
@@ -68,14 +71,16 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { recipe } from "../data/recipe";
-import { formatSource, getSourceUrl, linkify } from "../lib/chat";
+import { availablePrompts, formatSource, getSourceUrl, linkify } from "../lib/chat";
 import type { ChatState } from "../lib/chat";
 import ChatComposer from "./ChatComposer.vue";
 import UiIcon from "./UiIcon.vue";
 
-const props = defineProps<{ variant: "widget" | "workspace"; state: Readonly<ChatState> }>();
+const props = defineProps<{ variant: "widget" | "workspace"; state: Readonly<ChatState>; servings: number }>();
+const followups = computed(() => availablePrompts(["这道菜有哪些食材？", "鸡蛋什么时候盛出？"], props.state.messages));
+const isCompact = computed(() => props.state.messages.filter((message) => message.role === "user").length <= 1);
 const emit = defineEmits<{
   (event: "close"): void;
   (event: "expand"): void;

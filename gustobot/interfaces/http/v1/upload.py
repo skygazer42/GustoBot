@@ -1,45 +1,28 @@
-"""
-文件上传处理API
-"""
+"""Managed uploads retain the frontend response without implicitly indexing content."""
 
+import asyncio
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Annotated
 
-import aiofiles
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel
 
+from gustobot.infrastructure.core.database import session_scope
+from gustobot.infrastructure.persistence.crud.knowledge import KnowledgeRepository
+
 router = APIRouter()
-
-# 创建上传目录
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-# 支持的文件类型
-ALLOWED_FILE_TYPES = {
-    ".txt",
-    ".md",
-    ".json",
-    ".csv",
-    ".log",
-    ".xlsx",
-    ".xls",
-    ".pdf",
-    ".doc",
-    ".docx",
-}
-
+UPLOAD_DIR = Path(__file__).resolve().parents[4] / "uploads"
+ALLOWED_FILE_TYPES = {".txt", ".md", ".markdown", ".json", ".csv", ".log", ".pdf", ".docx"}
 ALLOWED_IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
-
-# 最大文件大小 (50MB)
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 
 class UploadResponse(BaseModel):
     success: bool
+    asset_id: str
     filename: str
     original_name: str
     size: int
@@ -62,7 +45,7 @@ class DeleteUploadResponse(BaseModel):
     message: str
 
 
-def _validate_filename(filename: Optional[str]) -> str:
+def _validate_filename(filename: str | None) -> str:
     if (
         not filename
         or filename in {".", ".."}
@@ -79,156 +62,116 @@ def _uploaded_path(directory: Path, filename: str) -> Path:
     return path
 
 
-@router.post("/file", response_model=FileUploadResponse)
-async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
-    """上传文件（txt, excel, pdf等）"""
-
-    # 检查文件类型
-    original_name = _validate_filename(file.filename)
-    file_ext = Path(original_name).suffix.lower()
-    if file_ext not in ALLOWED_FILE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件类型。支持的类型: {', '.join(ALLOWED_FILE_TYPES)}",
-        )
-
+def _save_new_asset(directory, asset_id, original_name, content, file_type):
+    directory.mkdir(parents=True, exist_ok=True)
+    filename = f"{asset_id}_{original_name}"
+    path = _uploaded_path(directory, filename)
+    created = False
     try:
-        # 生成唯一文件名
-        file_id = str(uuid.uuid4())
-        filename = f"{file_id}_{original_name}"
-        file_path = _uploaded_path(UPLOAD_DIR, filename)
-
-        # 保存文件
-        content = await file.read(MAX_FILE_SIZE + 1)
-        file_size = len(content)
-
-        if file_size > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"文件太大，最大支持 {MAX_FILE_SIZE // (1024*1024)}MB",
+        with path.open("xb") as stream:
+            created = True
+            stream.write(content)
+        with session_scope() as session:
+            KnowledgeRepository(session).register_asset(
+                id=asset_id,
+                original_name=original_name,
+                path=str(path),
+                file_type=file_type,
+                size=len(content),
             )
+        return path
+    except BaseException:
+        if created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Could not remove the newly failed upload {}", asset_id)
+        raise
 
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
 
-        logger.info(f"文件上传成功: {filename} ({file_size} bytes)")
-
-        return FileUploadResponse(
-            success=True,
-            file_id=file_id,
-            filename=filename,
-            original_name=original_name,
-            size=file_size,
-            file_path=str(file_path),
-            file_url=f"/api/v1/upload/files/{filename}",
-            file_type=file_ext,
+async def _receive_upload(file: UploadFile, directory: Path, allowed_types: set[str]):
+    original_name = _validate_filename(file.filename)
+    file_type = Path(original_name).suffix.lower()
+    if file_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="不支持的文件类型。支持的类型: " + ", ".join(sorted(allowed_types)),
         )
-
+    content = await file.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413, detail=f"文件太大，最大支持 {MAX_FILE_SIZE // (1024 * 1024)}MB"
+        )
+    asset_id = str(uuid.uuid4())
+    try:
+        path = await asyncio.to_thread(
+            _save_new_asset, directory, asset_id, original_name, content, file_type
+        )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception("文件上传失败")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"文件上传失败: {str(e)}"
-        ) from e
+    except Exception as error:
+        logger.exception("Upload registration failed for {}", asset_id)
+        raise HTTPException(status_code=503, detail="上传未完成，请检查文件存储与数据库") from error
+    return {
+        "success": True,
+        "asset_id": asset_id,
+        "filename": path.name,
+        "original_name": original_name,
+        "size": len(content),
+        "file_path": str(path),
+        "file_type": file_type,
+    }
+
+
+@router.post("/file", response_model=FileUploadResponse)
+async def upload_file(file: Annotated[UploadFile, File()]) -> FileUploadResponse:
+    payload = await _receive_upload(file, UPLOAD_DIR, ALLOWED_FILE_TYPES)
+    return FileUploadResponse(
+        **payload,
+        file_id=payload["asset_id"],
+        file_url=f"/api/v1/upload/files/{payload['filename']}",
+    )
 
 
 @router.post("/image", response_model=ImageUploadResponse)
-async def upload_image(image: UploadFile = File(...)) -> ImageUploadResponse:
-    """上传图片文件"""
-
-    # 检查文件类型
-    original_name = _validate_filename(image.filename)
-    file_ext = Path(original_name).suffix.lower()
-    if file_ext not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的图片类型。支持的类型: {', '.join(ALLOWED_IMAGE_TYPES)}",
-        )
-
-    try:
-        # 生成唯一文件名
-        image_id = str(uuid.uuid4())
-        filename = f"{image_id}_{original_name}"
-
-        # 创建图片目录
-        image_dir = UPLOAD_DIR / "images"
-        image_dir.mkdir(exist_ok=True)
-
-        file_path = _uploaded_path(image_dir, filename)
-
-        # 保存图片
-        content = await image.read(MAX_FILE_SIZE + 1)
-        file_size = len(content)
-
-        if file_size > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"图片太大，最大支持 {MAX_FILE_SIZE // (1024*1024)}MB",
-            )
-
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
-
-        logger.info(f"图片上传成功: {filename} ({file_size} bytes)")
-
-        return ImageUploadResponse(
-            success=True,
-            image_id=image_id,
-            filename=filename,
-            original_name=original_name,
-            size=file_size,
-            file_path=str(file_path),
-            image_url=f"/api/v1/upload/images/{filename}",
-            file_type=file_ext,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("图片上传失败")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"图片上传失败: {str(e)}"
-        ) from e
+async def upload_image(image: Annotated[UploadFile, File()]) -> ImageUploadResponse:
+    payload = await _receive_upload(image, UPLOAD_DIR / "images", ALLOWED_IMAGE_TYPES)
+    return ImageUploadResponse(
+        **payload,
+        image_id=payload["asset_id"],
+        image_url=f"/api/v1/upload/images/{payload['filename']}",
+    )
 
 
 @router.get("/files/{filename}")
 def get_uploaded_file(filename: str):
-    """获取上传的文件"""
-    file_path = _uploaded_path(UPLOAD_DIR, filename)
-    if not file_path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件不存在")
-
-    return FileResponse(file_path)
+    path = _uploaded_path(UPLOAD_DIR, filename)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(path)
 
 
 @router.get("/images/{filename}")
 def get_uploaded_image(filename: str):
-    """获取上传的图片"""
-    file_path = _uploaded_path(UPLOAD_DIR / "images", filename)
-    if not file_path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片不存在")
-
-    return FileResponse(file_path)
+    path = _uploaded_path(UPLOAD_DIR / "images", filename)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    return FileResponse(path)
 
 
 @router.delete("/{file_id}", response_model=DeleteUploadResponse)
 def delete_uploaded_file(file_id: str):
-    """删除上传的文件"""
     try:
         uuid.UUID(file_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="文件ID无效") from exc
-    # 查找文件
-    for file_path in UPLOAD_DIR.rglob(f"{file_id}_*"):
-        if not file_path.is_file() or not file_path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="文件ID无效") from error
+    for path in UPLOAD_DIR.rglob(f"{file_id}_*"):
+        if not path.is_file() or not path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
             continue
         try:
-            file_path.unlink()
-            logger.info(f"文件删除成功: {file_path}")
+            path.unlink()
             return DeleteUploadResponse(success=True, message="文件删除成功")
-        except OSError as exc:
-            logger.exception("文件删除失败")
-            raise HTTPException(status_code=500, detail="文件删除失败") from exc
-
+        except OSError as error:
+            logger.exception("Upload deletion failed")
+            raise HTTPException(status_code=500, detail="文件删除失败") from error
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件不存在")

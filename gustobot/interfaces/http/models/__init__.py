@@ -5,7 +5,6 @@ This package consolidates what used to live under ``gustobot.schemas`` so that t
 name makes their purpose (API-facing contracts) explicit.
 """
 
-from .chat import ChatRequest, ChatResponse
 from .chat_history import (
     ConversationHistoryListResponse,
     ConversationHistoryResponse,
@@ -14,42 +13,43 @@ from .chat_history import (
     RestoreConversationHistoryResponse,
     SaveConversationHistoryRequest,
 )
-from .chat_message import (
+from .session import (
     ChatMessageBase,
     ChatMessageCreate,
     ChatMessageResponse,
     ChatMessageUpdate,
+    ChatSessionBase,
+    ChatSessionCreate,
+    ChatSessionResponse,
     ChatSessionSnapshotBase,
     ChatSessionSnapshotCreate,
     ChatSessionSnapshotResponse,
+    ChatSessionUpdate,
 )
-from .chat_session import ChatSessionBase, ChatSessionCreate, ChatSessionResponse, ChatSessionUpdate
 from .user import Token, UserBase, UserCreate, UserLogin, UserResponse, UserUpdate
 
 __all__ = [
-    "ChatRequest",
-    "ChatResponse",
     "ChatMessageBase",
     "ChatMessageCreate",
-    "ChatMessageUpdate",
     "ChatMessageResponse",
+    "ChatMessageUpdate",
+    "ChatSessionBase",
+    "ChatSessionCreate",
+    "ChatSessionResponse",
     "ChatSessionSnapshotBase",
     "ChatSessionSnapshotCreate",
     "ChatSessionSnapshotResponse",
+    "ChatSessionUpdate",
+    "ConversationHistoryListResponse",
+    "ConversationHistoryResponse",
     "ConversationHistorySnapshotCreate",
     "ConversationHistorySnapshotResponse",
-    "ConversationHistoryResponse",
-    "ConversationHistoryListResponse",
     "RestoreConversationHistoryResponse",
     "SaveConversationHistoryRequest",
-    "ChatSessionBase",
-    "ChatSessionCreate",
-    "ChatSessionUpdate",
-    "ChatSessionResponse",
+    "Token",
     "UserBase",
     "UserCreate",
-    "UserUpdate",
-    "UserResponse",
     "UserLogin",
-    "Token",
+    "UserResponse",
+    "UserUpdate",
 ]

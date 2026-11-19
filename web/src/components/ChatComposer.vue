@@ -1,6 +1,6 @@
 <template>
   <form class="composer" :class="variant === 'widget' ? 'widget-form' : 'workspace-form'" @submit.prevent="emit('submit')">
-    <div class="followups" aria-label="接着问问">
+    <div v-if="followups.length" class="followups" aria-label="接着问问">
       <button v-for="question in followups" :key="question" type="button" @click="emit('ask', question)">{{ question }}</button>
     </div>
     <div v-if="fileName" class="attachment-chip">
@@ -33,7 +33,6 @@
       <button v-if="hasConversation" class="new-session" type="button" @click="emit('reset')"><UiIcon name="new" />新对话</button>
     </div>
     <p v-if="uploadStatus" class="upload-feedback" role="status">{{ uploadStatus }}</p>
-    <p class="input-guide">Enter 发送 · Shift + Enter 换行</p>
     <p v-if="error" id="chat-error" class="message-status" role="status" aria-live="polite">{{ error }}</p>
   </form>
 </template>
@@ -50,6 +49,7 @@ const props = defineProps<{
   uploadStatus: string;
   error: string;
   hasConversation: boolean;
+  followups: readonly string[];
 }>();
 const emit = defineEmits<{
   (event: "update-draft", value: string): void;
@@ -61,7 +61,6 @@ const emit = defineEmits<{
   (event: "resize"): void;
 }>();
 const input = ref<HTMLTextAreaElement | null>(null);
-const followups = ["少油一点怎么做？", "只有一个鸡蛋呢？"];
 let resizeObserver: ResizeObserver | undefined;
 
 function resizeInput(): void {

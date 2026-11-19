@@ -1,5 +1,6 @@
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable
+from typing import Any
 
 from openai.types.chat import ChatCompletionToolParam
 from openai.types.shared_params import FunctionDefinition
@@ -11,7 +12,7 @@ class ToolSpec:
 
     name: str
     description: str
-    parameters: Dict[str, object] = field(default_factory=dict)
+    parameters: dict[str, object] = field(default_factory=dict)
 
     def as_openai_function(self) -> FunctionDefinition:
         """
@@ -37,8 +38,8 @@ class ToolRegistry:
     """Keep track of tool specifications and factories."""
 
     def __init__(self) -> None:
-        self._specs: Dict[str, ToolSpec] = {}
-        self._factories: Dict[str, Callable[[], Any]] = {}
+        self._specs: dict[str, ToolSpec] = {}
+        self._factories: dict[str, Callable[[], Any]] = {}
 
     def register(self, spec: ToolSpec, factory: Callable[[], Any]) -> None:
         self._specs[spec.name] = spec

@@ -9,24 +9,23 @@
         <a v-for="page in pages" :key="page.id" :href="page.href" :aria-current="mode === page.id ? 'page' : undefined" @click="handlePageLink">{{ page.label }}</a>
       </nav>
       <div class="header-right">
-        <button v-if="mode === 'workspace'" type="button" class="return-link" @click="returnToRecipe"><UiIcon name="back" />回到食谱</button>
         <span class="avatar" aria-label="我的厨房">我</span>
       </div>
     </header>
-    <LandingPage v-if="mode === 'reading'" v-model:checked-ids="checkedIds" @ask="askQuestion" />
+    <LandingPage v-if="mode === 'reading'" v-model:checked-ids="checkedIds" v-model:servings="servings" v-model:active-step="activeStep" @ask="askQuestion" />
     <TechnologyPage v-else-if="mode === 'technology'" @navigate="handlePageLink" />
     <AboutPage v-else-if="mode === 'about'" @navigate="handlePageLink" />
     <div v-show="mode === 'reading' || mode === 'workspace'" class="workspace-layout" :class="{ 'is-reading': mode === 'reading' }" :role="mode === 'workspace' ? 'main' : undefined">
       <section class="workspace-conversation" :aria-labelledby="mode === 'workspace' ? 'conversation-title' : undefined">
         <header v-if="mode === 'workspace'" class="conversation-heading">
-          <div><p class="eyebrow">餐桌对话<span class="mobile-recipe-name"> · {{ recipe.title }}</span></p><h1 id="conversation-title" tabindex="-1">把火候，聊明白。</h1></div>
-          <span class="conversation-topic">{{ recipe.title }}<br />接着这道菜聊</span>
+          <div><h1 id="conversation-title" tabindex="-1">餐桌对话</h1><p class="mobile-recipe-name">当前食谱 · {{ recipe.title }}</p></div>
         </header>
         <ChatWidget
           v-show="mode === 'workspace' || isChatOpen"
           ref="chatWidget"
           :variant="mode === 'workspace' ? 'workspace' : 'widget'"
           :state="state"
+          :servings="servings"
           @close="closeChat"
           @expand="openWorkspace"
           @update-draft="updateDraft"
@@ -37,7 +36,7 @@
           @reset="resetSession"
         />
       </section>
-      <aside v-if="mode === 'workspace'" class="workspace-aside" aria-label="当前食谱"><RecipeNote v-model:checked-ids="checkedIds" @return="returnToRecipe" /></aside>
+      <aside v-if="mode === 'workspace'" class="workspace-aside" aria-label="当前食谱"><RecipeNote v-model:checked-ids="checkedIds" :servings="servings" @return="returnToRecipe" /></aside>
     </div>
     <div v-if="mode === 'reading' && !isChatOpen" class="launcher-wrap">
       <div v-if="!hintDismissed" class="launcher-hint">
@@ -58,9 +57,10 @@ import RecipeNote from "./components/RecipeNote.vue";
 import TechnologyPage from "./components/TechnologyPage.vue";
 import UiIcon from "./components/UiIcon.vue";
 import { useChat } from "./composables/useChat";
-import { recipe, recipeContext } from "./data/recipe";
+import { recipe, buildRecipeContext } from "./data/recipe";
 
-const { state, sendMessage, addQuestion, resetSession, onFileSelected, removeAttachment } = useChat(recipeContext);
+const servings = ref<number>(recipe.servings);
+const { state, sendMessage, addQuestion, resetSession, onFileSelected, removeAttachment } = useChat(() => buildRecipeContext(servings.value));
 const pages = [
   { id: "reading", label: "餐桌手记", href: "?", titleId: "recipe-title" },
   { id: "workspace", label: "餐桌对话", href: "?page=workspace", titleId: "conversation-title" },
@@ -70,8 +70,9 @@ const pages = [
 type Page = typeof pages[number]["id"];
 const mode = ref<Page>(readPage(window.location.search));
 const currentPage = computed(() => pages.find((page) => page.id === mode.value) ?? pages[0]);
-const isChatOpen = ref(window.matchMedia("(min-width: 768px)").matches);
+const isChatOpen = ref(false);
 const checkedIds = ref<string[]>([]);
+const activeStep = ref("");
 const hintDismissed = ref(false);
 const hasDraft = computed(() => Boolean(state.userInput.trim() || state.attachedFileName));
 const chatWidget = ref<InstanceType<typeof ChatWidget> | null>(null);
@@ -148,6 +149,7 @@ async function openWorkspace(): Promise<void> {
 }
 
 async function returnToRecipe(): Promise<void> {
+  isChatOpen.value = false;
   await navigate("reading");
 }
 

@@ -35,8 +35,17 @@ export const recipe = {
   ]
 } as const;
 
-export const recipeContext = [
-  `${recipe.title}，${recipe.minutes}分钟，${recipe.servings}人份。`,
-  `食材：${recipe.ingredients.map((ingredient) => ingredient.name + ingredient.quantity + ingredient.unit).join("、")}，另备少许食用油、盐，葱花可选。`,
-  ...recipe.steps.map((step, index) => `${index + 1}. ${step.summary}`)
-].join("\n");
+export function scaleQuantity(quantity: string, servings: number, baseServings: number = recipe.servings): string {
+  const amount = Number(quantity);
+  return quantity.trim() && Number.isFinite(amount)
+    ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(amount * servings / baseServings)
+    : quantity;
+}
+
+export function buildRecipeContext(servings: number): string {
+  return [
+    `${recipe.title}，来源标注${recipe.minutes}分钟，原份量${recipe.servings}人份，当前调整为${servings}人份。`,
+    `食材按份量等比例换算：${recipe.ingredients.map((ingredient) => ingredient.name + scaleQuantity(ingredient.quantity, servings) + ingredient.unit).join("、")}。少许食用油、盐和可选葱花保持原记录，不估算用量。`,
+    ...recipe.steps.map((step, index) => `${index + 1}. ${step.summary}`)
+  ].join("\n");
+}

@@ -1,0 +1,34 @@
+# 物理字段绑定，不是本体概念，也不是 SQL/Cypher 查询模板。
+ontology_id: recipes
+record_fields:
+  source_uri: [source_uri, url, uri]
+  source_record_id: [id, recipe_id]
+  cook_time: [耗时, cook_time, time]
+  prep_duration: [准备时长, prep_time]
+  cook_duration: [烹饪时长, cooking_time]
+  total_duration: [总时长, total_time]
+  instructions: [做法, instructions, steps]
+ingredient_fields:
+  name: [name, ingredient, 名称, 食材]
+  amount: [amount, quantity, 用量]
+  unit: [unit, 单位]
+ingredients:
+  - source_fields: [主食材, 主料, main_ingredients, ingredients]
+    relation: HAS_MAIN_INGREDIENT
+    role: main
+  - source_fields: [辅料, aux_ingredients]
+    relation: HAS_AUX_INGREDIENT
+    role: aux
+classifications:
+  - source_fields: [口味, flavors]
+    entity_type: Flavor
+    relation: HAS_FLAVOR
+  - source_fields: [工艺, methods]
+    entity_type: CookingMethod
+    relation: USES_METHOD
+  - source_fields: [类型, dish_types, category]
+    entity_type: DishType
+    relation: BELONGS_TO_TYPE
+  - source_fields: [菜系, cuisine_styles, cuisine]
+    entity_type: CuisineStyle
+    relation: BELONGS_TO_CUISINE

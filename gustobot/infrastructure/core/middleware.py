@@ -2,6 +2,7 @@ import time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from gustobot.infrastructure.core.logger import get_logger
 
 logger = get_logger(service="http")

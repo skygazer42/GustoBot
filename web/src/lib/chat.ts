@@ -17,6 +17,7 @@ export interface ChatMessage {
   route?: string | null;
   routeLogic?: string | null;
   sources?: ChatSource[];
+  clarificationOptions?: { label: string; question: string }[];
 }
 
 export interface ChatState {
@@ -100,17 +101,46 @@ export function parseChatResponse(value: unknown): ChatResult {
     throw new Error("来源响应无效");
   }
 
+  const options: { label: string; question: string }[] = [];
+  const metadata = isRecord(value.metadata) ? value.metadata : undefined;
+  let displayMessage = message;
+  if (route === "clarification" && Array.isArray(metadata?.choices)) {
+    metadata.choices.forEach((choice, index) => {
+      if (!isRecord(choice) || typeof choice.id !== "string" || typeof choice.name !== "string") {
+        throw new Error("做法候选响应无效");
+      }
+      const time = isRecord(choice.summary) && typeof choice.summary.cook_time === "string" ? choice.summary.cook_time : "";
+      options.push({ label: `${index + 1}. ${choice.name}${time ? ` · ${time}` : ""}`, question: `第 ${index + 1} 份` });
+    });
+    if (options.length > 0) {
+      displayMessage = "找到几份同名做法，先选定一份，我们再接着聊。";
+    }
+  } else if (route === "clarification" && isRecord(metadata?.plan) && Array.isArray(metadata.plan.unsupported_conditions)) {
+    const conditions = metadata.plan.unsupported_conditions;
+    if (conditions.length > 0 && conditions.every((condition) => typeof condition === "string")) {
+      const names = conditions.map((condition: string) => condition.replace(/\s*[（(][^）)]*[）)]\s*/g, "").trim()).filter(Boolean);
+      displayMessage = `关于“${names.join("、")}”，现有资料还不足以确认。可以先核对这份做法已有的用量或步骤，也可以补充资料后继续问。`;
+    }
+  }
+
   return {
     sessionId,
     message: {
       id: createMessageId(),
       role: "assistant",
-      content: message,
+      content: displayMessage,
       route: route ?? null,
       routeLogic: routeLogic ?? null,
-      sources: sources ?? []
+      sources: sources ?? [],
+      clarificationOptions: options
     }
   };
+}
+
+export function availablePrompts(prompts: readonly string[], messages: readonly ChatMessage[]): string[] {
+  const asked = new Set(messages.filter((message) => message.role === "user" && message.delivery === "sent")
+    .map((message) => message.content.trim().replace(/[？?。！!]+$/, "")));
+  return prompts.filter((prompt) => !asked.has(prompt.trim().replace(/[？?。！!]+$/, "")));
 }
 
 export function linkify(text: string): MessagePart[] {

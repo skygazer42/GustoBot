@@ -9,7 +9,6 @@ that the HTTP API accepts.
 import sys
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -20,7 +19,9 @@ def test_scripts_import_recipes_cli_exists() -> None:
 
 
 def test_recipe_json_entry_to_recipe_basic_mapping() -> None:
-    from gustobot.infrastructure.knowledge.recipe_import import recipe_json_entry_to_recipe
+    from gustobot.infrastructure.knowledge.recipe_import import (
+        recipe_json_entry_to_recipe,
+    )
 
     entry = {
         "主食材": [["香肠", "2根"], ["菜干", "200g"]],

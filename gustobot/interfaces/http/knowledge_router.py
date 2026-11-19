@@ -1,189 +1,167 @@
-"""
-Legacy vector knowledge base CRUD API endpoints.
-"""
+"""Explicit document indexing, deterministic recipe imports and knowledge questions."""
 
-import uuid
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from loguru import logger
-from pydantic import BaseModel, Field
-from starlette.concurrency import run_in_threadpool
-from gustobot.infrastructure.core.resources import close_on_exit
+from pydantic import BaseModel, ConfigDict, Field
+
+from gustobot.application.services.knowledge_ingestion import (
+    DocumentIngestionRequest,
+    IngestionFailed,
+    IngestionJobStatus,
+    IngestionReceipt,
+    KnowledgeIngestionService,
+)
+from gustobot.application.services.knowledge_query import (
+    KnowledgeAnswer,
+    KnowledgeQueryService,
+)
+from gustobot.application.services.knowledge_runtime import (
+    get_document_service,
+    get_graph_store,
+    get_query_service,
+)
+from gustobot.config.domain import get_domain_definition
+from gustobot.infrastructure.knowledge.semantic_runtime import SemanticValidationError
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 
-# Vector store models ---------------------------------------------------------
-class RecipeModel(BaseModel):
-    """Recipe payload stored in the vector knowledge base."""
+class RecipeIngestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    id: Optional[str] = Field(None, description="Recipe identifier")
-    name: str = Field(..., description="Recipe name")
-    category: Optional[str] = Field(None, description="Category")
-    difficulty: Optional[str] = Field(None, description="Difficulty level")
-    time: Optional[str] = Field(None, description="Cooking time")
-    ingredients: Optional[List[str]] = Field(None, description="Ingredient list")
-    steps: Optional[List[str]] = Field(None, description="Preparation steps")
-    tips: Optional[str] = Field(None, description="Cooking tips")
-    nutrition: Optional[Dict[str, Any]] = Field(None, description="Nutrition facts")
+    name: str = Field(min_length=1)
+    record: dict[str, Any]
 
 
-class SearchRequest(BaseModel):
-    """Vector store search request."""
+class KnowledgeQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    query: str = Field(..., description="Query text")
-    top_k: Optional[int] = Field(5, ge=1, le=20, description="Number of results to return")
-
-
-class SearchResponse(BaseModel):
-    """Vector store search response."""
-
-    results: List[Dict[str, Any]] = Field(..., description="Matched documents")
-    count: int = Field(..., description="Result count")
+    question: str = Field(min_length=1, max_length=5000)
 
 
-class KnowledgeOperationResponse(BaseModel):
+class SourceWithdrawalResponse(BaseModel):
+    domain_id: str
+    source_id: str
     status: str
-    message: str
+    versions: int
 
 
-class RecipeAddedResponse(KnowledgeOperationResponse):
-    recipe_id: str
+def get_ingestion_service() -> KnowledgeIngestionService:
+    return KnowledgeIngestionService(
+        get_domain_definition(),
+        documents=get_document_service,
+        graph_store=get_graph_store,
+    )
 
 
-class RecipeBatchStatistics(BaseModel):
-    success: int
-    error: int
-    total: int
+def _failure(error: IngestionFailed, completed=None):
+    detail = {
+        "message": str(error),
+        "receipt": error.receipt.model_dump(mode="json"),
+    }
+    if completed is not None:
+        detail["completed"] = [receipt.model_dump(mode="json") for receipt in completed]
+    return HTTPException(status_code=503, detail=detail)
 
 
-class RecipeBatchResponse(KnowledgeOperationResponse):
-    statistics: RecipeBatchStatistics
-
-
-class KnowledgeStatsResponse(BaseModel):
-    status: str
-    data: Dict[str, Any]
-
-
-# Dependency helpers ----------------------------------------------------------
-async def get_knowledge_service():
-    """Return the vector knowledge base service."""
-    from gustobot.infrastructure.knowledge import KnowledgeService
-
-    service = await run_in_threadpool(KnowledgeService)
-    async with close_on_exit(service.close):
-        yield service
-
-
-# Vector store CRUD -----------------------------------------------------------
-@router.post("/recipes", response_model=RecipeAddedResponse, status_code=201)
-async def add_recipe(
-    recipe: RecipeModel,
-    service=Depends(get_knowledge_service),
-) -> Dict[str, Any]:
-    """Add a single recipe to the vector knowledge base."""
+@router.post("/documents", response_model=IngestionReceipt, status_code=201)
+async def ingest_document(
+    request: DocumentIngestionRequest,
+    service: Annotated[KnowledgeIngestionService, Depends(get_ingestion_service)],
+):
     try:
-        if not recipe.id:
-            recipe.id = f"recipe_{uuid.uuid4().hex[:8]}"
-
-        success = await service.add_recipe(recipe_id=recipe.id, recipe_data=recipe.model_dump())
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to add recipe")
-
-        return {"status": "success", "message": "Recipe added", "recipe_id": recipe.id}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception(f"Error adding recipe: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        return await service.ingest_document(request)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except IngestionFailed as error:
+        raise _failure(error) from error
 
 
-@router.post("/recipes/batch", response_model=RecipeBatchResponse, status_code=201)
-async def add_recipes_batch(
-    recipes: List[RecipeModel],
-    service=Depends(get_knowledge_service),
-) -> Dict[str, Any]:
-    """Add recipes in batch."""
+@router.post("/recipes", response_model=IngestionReceipt, status_code=201)
+async def ingest_recipe(
+    request: RecipeIngestionRequest,
+    service: Annotated[KnowledgeIngestionService, Depends(get_ingestion_service)],
+):
     try:
-        for recipe in recipes:
-            if not recipe.id:
-                recipe.id = f"recipe_{uuid.uuid4().hex[:8]}"
+        return await service.ingest_recipe(request.name, request.record)
+    except SemanticValidationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(error),
+                "semantic_report": error.report.model_dump(mode="json"),
+            },
+        ) from error
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except IngestionFailed as error:
+        raise _failure(error) from error
 
-        result = await service.add_recipes_batch([recipe.model_dump() for recipe in recipes])
-        return {
-            "status": "success",
-            "message": f"Inserted {result['success']} recipes",
-            "statistics": result,
-        }
-    except Exception as exc:
-        logger.exception(f"Error in batch add: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.post("/recipes/batch", response_model=list[IngestionReceipt], status_code=201)
+async def ingest_recipes_batch(
+    requests: list[RecipeIngestionRequest],
+    service: Annotated[KnowledgeIngestionService, Depends(get_ingestion_service)],
+):
+    completed = []
+    for request in requests:
+        try:
+            completed.append(await service.ingest_recipe(request.name, request.record))
+        except SemanticValidationError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": str(error),
+                    "semantic_report": error.report.model_dump(mode="json"),
+                    "completed": [receipt.model_dump(mode="json") for receipt in completed],
+                },
+            ) from error
+        except (ValueError, TypeError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": str(error),
+                    "completed": [receipt.model_dump(mode="json") for receipt in completed],
+                },
+            ) from error
+        except IngestionFailed as error:
+            raise _failure(error, completed) from error
+    return completed
 
 
-@router.post("/search", response_model=SearchResponse)
-async def search_knowledge(
-    request: SearchRequest,
-    service=Depends(get_knowledge_service),
-) -> SearchResponse:
-    """Search the vector knowledge base."""
+@router.post("/query", response_model=KnowledgeAnswer)
+async def query_knowledge(
+    request: KnowledgeQueryRequest,
+    service: Annotated[KnowledgeQueryService, Depends(get_query_service)],
+):
     try:
-        results = await service.search(query=request.query, top_k=request.top_k)
-        return SearchResponse(results=results, count=len(results))
-    except Exception as exc:
-        logger.exception(f"Search error: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        return await service.answer(request.question)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@router.delete("/recipes/{recipe_id}", response_model=KnowledgeOperationResponse)
-async def delete_recipe(
-    recipe_id: str,
-    service=Depends(get_knowledge_service),
-) -> Dict[str, Any]:
-    """Delete a recipe."""
+@router.get("/jobs/{job_id}", response_model=IngestionJobStatus)
+async def read_job(
+    job_id: str,
+    service: Annotated[KnowledgeIngestionService, Depends(get_ingestion_service)],
+):
+    job = await service.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Ingestion job not found")
+    return job
+
+
+@router.delete("/sources/{source_id:path}", response_model=SourceWithdrawalResponse)
+async def withdraw_source(
+    source_id: str,
+    service: Annotated[KnowledgeIngestionService, Depends(get_ingestion_service)],
+):
     try:
-        success = await service.delete_recipe(recipe_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Recipe not found or deletion failed")
-
-        return {"status": "success", "message": f"Recipe {recipe_id} deleted"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception(f"Delete error: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/stats", response_model=KnowledgeStatsResponse)
-async def get_stats(
-    service=Depends(get_knowledge_service),
-) -> Dict[str, Any]:
-    """Return vector store statistics."""
-    try:
-        stats = await service.get_stats()
-        return {"status": "success", "data": stats}
-    except Exception as exc:
-        logger.exception(f"Stats error: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.delete("/clear", response_model=KnowledgeOperationResponse)
-async def clear_knowledge_base(
-    confirm: bool = False,
-    service=Depends(get_knowledge_service),
-) -> Dict[str, Any]:
-    """Clear the vector store (dangerous operation)."""
-    if not confirm:
-        raise HTTPException(status_code=400, detail="confirm=true is required to clear the store")
-
-    try:
-        success = await service.clear()
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to clear the store")
-        return {"status": "success", "message": "Knowledge base cleared"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception(f"Clear error: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        return await service.withdraw_source(source_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error

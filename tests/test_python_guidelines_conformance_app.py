@@ -3,8 +3,8 @@
 import asyncio
 from types import SimpleNamespace
 
-import httpx
 import anyio
+import httpx
 import pytest
 
 from gustobot import main
@@ -14,17 +14,17 @@ from gustobot import main
 async def test_shutdown_does_not_allocate_unused_services(monkeypatch):
     released = []
 
-    async def close_lightrag():
-        released.append("lightrag")
+    async def close_knowledge():
+        released.append("knowledge")
 
-    monkeypatch.setattr(main, "cleanup_lightrag_service", close_lightrag)
+    monkeypatch.setattr(main, "cleanup_runtime", close_knowledge)
     monkeypatch.setattr(
         main, "engine", SimpleNamespace(dispose=lambda: released.append("database"))
     )
 
     await main.shutdown_event()
 
-    assert released == ["lightrag", "database"]
+    assert released == ["knowledge", "database"]
 
 
 @pytest.mark.asyncio
@@ -32,11 +32,11 @@ async def test_shutdown_releases_other_owners_and_exposes_cleanup_failure(monkey
     released = []
     original = RuntimeError("index close failed")
 
-    async def close_lightrag():
-        released.append("lightrag")
+    async def close_knowledge():
+        released.append("knowledge")
         raise original
 
-    monkeypatch.setattr(main, "cleanup_lightrag_service", close_lightrag)
+    monkeypatch.setattr(main, "cleanup_runtime", close_knowledge)
     monkeypatch.setattr(
         main, "engine", SimpleNamespace(dispose=lambda: released.append("database"))
     )
@@ -45,7 +45,7 @@ async def test_shutdown_releases_other_owners_and_exposes_cleanup_failure(monkey
         await main.shutdown_event()
 
     assert failure.value.__cause__ is original
-    assert released == ["lightrag", "database"]
+    assert released == ["knowledge", "database"]
 
 
 @pytest.mark.asyncio
@@ -76,7 +76,7 @@ async def test_shutdown_propagates_cancellation_after_releasing_other_owners(mon
     async def cancelled_cleanup():
         raise asyncio.CancelledError("shutdown cancelled")
 
-    monkeypatch.setattr(main, "cleanup_lightrag_service", cancelled_cleanup)
+    monkeypatch.setattr(main, "cleanup_runtime", cancelled_cleanup)
     monkeypatch.setattr(
         main, "engine", SimpleNamespace(dispose=lambda: released.append("database"))
     )
@@ -92,7 +92,7 @@ async def test_shutdown_reports_cooperative_cleanup_timeout_and_releases_pool(mo
     async def hanging_cleanup():
         await anyio.sleep_forever()
 
-    monkeypatch.setattr(main, "cleanup_lightrag_service", hanging_cleanup)
+    monkeypatch.setattr(main, "cleanup_runtime", hanging_cleanup)
     monkeypatch.setattr(main, "RESOURCE_CLEANUP_TIMEOUT", 0.01)
     monkeypatch.setattr(
         main, "engine", SimpleNamespace(dispose=lambda: released.append("database"))

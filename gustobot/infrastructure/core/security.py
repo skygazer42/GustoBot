@@ -1,13 +1,14 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from jose import jwt
+
 from fastapi.security import OAuth2PasswordBearer
+from jose import jwt
+
 from gustobot.config import settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     if not settings.SECRET_KEY:
         raise ValueError("SECRET_KEY must be configured before signing access tokens")
     to_encode = data.copy()

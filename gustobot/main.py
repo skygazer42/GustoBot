@@ -5,7 +5,7 @@ GustoBot FastAPI application entry point.
 import asyncio
 import os
 from importlib import import_module
-from typing import Union
+from pathlib import Path
 
 import anyio
 import uvicorn
@@ -17,12 +17,17 @@ from loguru import logger
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from gustobot.application.services.lightrag_service import cleanup_lightrag_service
+from gustobot.application.services.knowledge_runtime import cleanup_runtime
 from gustobot.config import settings
 from gustobot.config.domain import get_domain_definition
 from gustobot.infrastructure.core import configure_logging
-from gustobot.infrastructure.core.database import Base, engine
-from gustobot.interfaces.http import lightrag_router, ontology_router
+from gustobot.infrastructure.core.database import engine
+from gustobot.interfaces.http import (
+    knowledge_admin_router,
+    knowledge_router,
+    ontology_admin_router,
+    ontology_router,
+)
 from gustobot.interfaces.http.v1 import api_router as api_v1_router
 
 # Configure logging before app creation
@@ -64,15 +69,15 @@ application.add_middleware(
 )
 
 # Routers --------------------------------------------------------------------
-for router_module in get_domain_definition().http_router_modules:
-    application.include_router(import_module(router_module).router, prefix=settings.API_V1_PREFIX)
-application.include_router(lightrag_router.router, prefix=settings.API_V1_PREFIX)
+application.include_router(knowledge_router.router, prefix=settings.API_V1_PREFIX)
 application.include_router(ontology_router.router, prefix=settings.API_V1_PREFIX)
+application.include_router(knowledge_admin_router.router, prefix=settings.API_V1_PREFIX)
+application.include_router(ontology_admin_router.router, prefix=settings.API_V1_PREFIX)
 application.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)
 
 # Static files ---------------------------------------------------------------
 # 创建上传目录
-uploads_dir = os.path.join(os.path.dirname(__file__), "..", "..", "uploads")
+uploads_dir = str(Path(__file__).resolve().parent.parent / "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
 
 # 挂载静态文件
@@ -115,30 +120,35 @@ async def startup_event() -> None:
     logger.info("Debug mode: {}", settings.DEBUG)
     logger.info("API docs available at http://{}:{}/docs", settings.HOST, settings.PORT)
 
-    # Auto-create database tables on startup
     import_module("gustobot.infrastructure.persistence.db.models")
+    await run_in_threadpool(verify_database_schema)
+    logger.info("MySQL schema and domain {} are ready", get_domain_definition().id)
 
-    logger.info("Creating database tables if not exist...")
-    await run_in_threadpool(Base.metadata.create_all, bind=engine)
-    logger.info("Database tables ready")
+
+def verify_database_schema() -> None:
+    from migrations import check_database_schema
+
+    check_database_schema(engine)
 
 
 @application.on_event("shutdown")
 async def shutdown_event() -> None:
     logger.info("Shutting down {}", settings.APP_NAME)
-    failures: list[Union[Exception, asyncio.CancelledError]] = []
+    failures: list[Exception | asyncio.CancelledError] = []
 
     try:
         with anyio.fail_after(RESOURCE_CLEANUP_TIMEOUT, shield=True):
-            await cleanup_lightrag_service()
-    except (Exception, asyncio.CancelledError) as exc:
+            await cleanup_runtime()
+    # Shutdown attempts every cleanup and then propagates the collected failure.
+    except (Exception, asyncio.CancelledError) as exc:  # noqa: BLE001
         failures.append(exc)
-        logger.exception("Failed to clean up LightRAG service")
+        logger.exception("Failed to clean up knowledge clients")
 
     try:
         with anyio.fail_after(RESOURCE_CLEANUP_TIMEOUT, shield=True):
             await run_in_threadpool(engine.dispose)
-    except (Exception, asyncio.CancelledError) as exc:
+    # Shutdown attempts every cleanup and then propagates the collected failure.
+    except (Exception, asyncio.CancelledError) as exc:  # noqa: BLE001
         failures.append(exc)
         logger.exception("Failed to dispose the database pool")
 

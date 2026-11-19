@@ -5,13 +5,18 @@ This module must stay pure (no Milvus/LLM calls) so it can be tested offline.
 """
 
 import re
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 _STEP_NUMBER_SPLIT_RE = re.compile(r"\s*\d+\s*[:：]\s*")
 
 
-def _normalize_ingredient_pairs(value: Any) -> List[str]:
+def _ingredient_text(value: object) -> str:
+    if type(value) not in (str, int, float):
+        raise ValueError("Recipe ingredient text must be a string or number")
+    return str(value).strip()
+
+
+def _normalize_ingredient_pairs(value: Any) -> list[str]:
     """
     Normalize common ingredient shapes into a list of human-readable strings.
 
@@ -24,12 +29,12 @@ def _normalize_ingredient_pairs(value: Any) -> List[str]:
     if value is None:
         return []
 
-    ingredients: List[str] = []
+    ingredients: list[str] = []
 
     if isinstance(value, dict):
         for name, amount in value.items():
-            name_str = str(name).strip()
-            amount_str = str(amount).strip() if amount is not None else ""
+            name_str = _ingredient_text(name)
+            amount_str = _ingredient_text(amount) if amount is not None else ""
             if not name_str:
                 continue
             ingredients.append(f"{name_str} {amount_str}".strip())
@@ -42,27 +47,29 @@ def _normalize_ingredient_pairs(value: Any) -> List[str]:
             if isinstance(item, (list, tuple)):
                 if not item:
                     continue
-                name = str(item[0]).strip()
-                amount = str(item[1]).strip() if len(item) > 1 and item[1] is not None else ""
+                name = _ingredient_text(item[0])
+                amount = _ingredient_text(item[1]) if len(item) > 1 and item[1] is not None else ""
                 if name:
                     ingredients.append(f"{name} {amount}".strip())
                 continue
-            item_str = str(item).strip()
+            item_str = _ingredient_text(item)
             if item_str:
                 ingredients.append(item_str)
         return ingredients
 
-    value_str = str(value).strip()
+    value_str = _ingredient_text(value)
     return [value_str] if value_str else []
 
 
-def split_steps(text: Optional[str]) -> List[str]:
+def split_steps(text: str | None) -> list[str]:
     """Split a single '做法' string into a list of steps."""
 
-    if not text:
+    if text is None:
         return []
+    if not isinstance(text, str):
+        raise TypeError("Recipe instructions must be text")
 
-    normalized = str(text).strip().replace("\r\n", "\n").replace("\r", "\n")
+    normalized = text.strip().replace("\r\n", "\n").replace("\r", "\n")
     if not normalized:
         return []
 
@@ -78,7 +85,7 @@ def split_steps(text: Optional[str]) -> List[str]:
     return parts
 
 
-def recipe_json_entry_to_recipe(name: str, entry: Dict[str, Any]) -> Dict[str, Any]:
+def recipe_json_entry_to_recipe(name: str, entry: dict[str, Any]) -> dict[str, Any]:
     """
     Map one entry from data/recipe.json into the KB API recipe payload.
 
@@ -91,7 +98,7 @@ def recipe_json_entry_to_recipe(name: str, entry: Dict[str, Any]) -> Dict[str, A
 
     steps = split_steps(entry.get("做法"))
 
-    tips_parts: List[str] = []
+    tips_parts: list[str] = []
     taste = entry.get("口味")
     if taste:
         tips_parts.append(f"口味：{taste}")
@@ -100,7 +107,7 @@ def recipe_json_entry_to_recipe(name: str, entry: Dict[str, Any]) -> Dict[str, A
         tips_parts.append(f"工艺：{craft}")
     tips = "；".join(tips_parts) if tips_parts else None
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "name": name,
         "category": entry.get("类型"),
         "time": entry.get("耗时"),

@@ -1,75 +1,60 @@
 <div align="center">
-  <img
-    src="./docs/assets/gustobot-logo.png"
-    alt="GustoBot Logo"
-    width="360"
-  />
-  
-  <h3>智能菜谱客服</h3>
-  <p>领域可配置的知识问答系统，内置菜谱示例</p>
-
-  ![Python](https://img.shields.io/badge/Python-3.10-blue?style=flat&logo=python)
-  ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)
-  ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=ffffff)
-  ![LangGraph](https://img.shields.io/badge/LangGraph-Flow-green?style=flat&logo=databricks)
-  ![GraphRAG](https://img.shields.io/badge/GraphRAG-KG-blueviolet?style=flat)
-  ![Agent](https://img.shields.io/badge/Agent-System-orange?style=flat)
-  ![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg?style=flat)
+  <img src="./docs/assets/gustobot-logo.png" alt="GustoBot Logo" width="360" />
+  <h3>领域可配置的知识问答系统</h3>
+  <p>可执行 OWL / SHACL · Neo4j 事实 · Milvus 原文 · MySQL 应用状态</p>
 </div>
 
+## 当前架构
 
-## 项目简介
+阅读源码可先看[项目代码导航](docs/PROJECT_STRUCTURE.md)：其中列出当前入口、问答阶段、存储边界、统一入库和维护命令。
 
-GustoBot 是一个领域可配置的知识问答系统。菜谱是内置示例，也可以通过领域 JSON 和自己的资料切换到设备、产品或其他业务领域。
+GustoBot 默认菜谱领域加载版本化 OWL/RDFS 模型和 SHACL 形状，执行类型展开、身份绑定、数量求值和证据校验。当前正式模型为 `2026-11-17.1`，支持按明确口径筛选用量、合计用量和时长。名称、全文和概念／实体向量提供候选，候选必须回读真实对象后才能进入问题计划。结构化菜谱直接映射为事实；普通文档可显式抽取并校验事实。设备与通用领域保留各自的 YAML 契约。
 
-文档问答、关系问答和本体查询统一复用一个 LightRAG 服务及当前领域索引。业务代码不再生成或维护 Cypher，也不再装配独立 Neo4j 问答链路。LangChain 使用 1.x，LightRAG 固定为 `lightrag-hku==1.4.9.8`。
-
-## 当前流程
+| 组件 | 职责 |
+| --- | --- |
+| Neo4j | 有方向的事实、关系用量、来源与引文，执行受控过滤和完整范围计数 |
+| Milvus | 独立的原文集合与概念／实体候选集合；候选按模型、embedding 指纹和 generation 隔离 |
+| MySQL | HTTP 会话、上传资产、来源发布与任务，以及候选 generation、租约、发布指针和校准策略 |
+| OWL/RDFS + SHACL | 菜谱语义、身份与查询绑定、类型展开及实际图形状校验；YAML 仅加载和来源映射 |
 
 ```mermaid
-flowchart TD
-    D[领域 JSON] --> R[通用聊天路由]
-    U[用户问题] --> R
-    R -->|文档问答 naive| L[共享 LightRAG]
-    R -->|关系问答 hybrid| L
-    Q[本体自然语言查询] --> L
-    T[来源文本] --> I[标准文档入库]
-    F[人工或模型抽取的事实] --> V[本体类型与原文引证校验]
-    D --> V
-    V -->|显式入库| S[按来源序列化事实及原文]
-    S --> I
-    I --> X[当前领域的文档、向量及检索图]
-    L <--> X
-    L --> A[答案与检索上下文]
-    R -->|显式启用| SQL[独立 SQL 统计]
+flowchart LR
+    S[结构化菜谱] --> M[确定映射与证据校验]
+    D[原文资料] --> E[显式事实抽取与校验]
+    M --> G[Neo4j 事实]
+    E --> G
+    D --> V[分块与 embedding]
+    V --> K[Milvus 原文]
+    O[正式模型与形状] --> M
+    O --> E
+    O --> P[业务属性计划与受控编译]
+    U[问题与上下文] --> P
+    P --> G
+    P --> K
+    G --> C[语义求值与答案形状校验]
+    O --> C
+    C --> A[带来源及推导依据的回答]
+    K --> A
 ```
 
-领域定义约束输入事实的实体、关系、属性和原文引证。已校验事实按来源转为文档，再由 LightRAG 抽取合并到统一索引；抽取与校验接口本身不自动入库。检索图用于回答关系问题，不提供精确有向路径或强类型图数据库保证。
+问题计划表达对象、业务属性及条件，关系和字段由正式模型编译。常见确定问题可以省去规划模型调用；OWL-RL、SHACL 和单位计算不调用 LLM。具体支持范围、模型版本与显式再导入见[领域服务](docs/DOMAIN_KNOWLEDGE.md)。
 
-| 能力 | 实现与边界 |
-| --- | --- |
-| 文档与关系问答 | 共享 LightRAG，按检索模式选择文档或图上下文 |
-| 领域配置 | 实体/关系定义、路由关键词、回答范围、独立索引目录 |
-| 本体输入校验 | 校验属性、关系端点和逐字引文，保留来源原文与 URI |
-| SQL 统计 | 默认关闭，显式配置领域开关及 SQL_DATABASE_URL；schema 来自 SQL 数据库 |
-| 对话管理 | SQLite 默认会话持久化及 LangGraph 上下文 |
-| 图片与文件 | 按需使用视觉/图像模型；LightRAG 支持文本文件上传 |
-| 旧文档 KB | 显式选择 legacy_kb 后保留 pgvector/Milvus 链路 |
+## 启动
 
-完整接口契约、流程图和迁移边界见 [领域知识服务](docs/DOMAIN_KNOWLEDGE.md)。
-
-## 快速开始
-
-需要 Python 3.10–3.13；前端使用 Node.js/npm，也可仅运行后端。
+需要 Docker Compose；本地 Python 支持 3.10–3.13。先复制示例配置，填写 MySQL、Neo4j 密码，以及需要使用的模型服务凭据：
 
 ```powershell
 Copy-Item .env.example .env
-# 编辑 .env，配置实际 LLM 和 Embedding 服务
-python -m pip install -r requirements.txt
-python -m uvicorn gustobot.main:application --reload
+docker compose --env-file .env config --quiet
+docker compose --env-file .env --profile setup build backend migrate
+docker compose --env-file .env up -d mysql neo4j milvus
+docker compose --env-file .env --profile setup run --rm migrate
+docker compose --env-file .env up -d backend
 ```
 
-另一个终端启动前端：
+默认服务为后端、MySQL、Neo4j 和 Milvus。MySQL 迁移必须显式执行；后端入口只运行 `scripts/migrate_database.py --check`，schema 缺失或版本不匹配会阻止启动。镜像构建和应用启动不调用模型、不自动导入资料。Redis 属于 `cache` 可选 profile。
+
+访问 [API 文档](http://localhost:8000/docs)。前端单独启动：
 
 ```powershell
 Set-Location web
@@ -77,57 +62,44 @@ npm install
 npm run dev
 ```
 
-访问后端 [API 文档](http://localhost:8000/docs)，前端地址以 Vite 输出为准。
+前端地址以 Vite 输出为准。Python 本地运行、端口和模型配置见 [快速启动](docs/QUICK_START.md)。
 
-容器启动：
+### 知识管理后台
+
+开发服务运行后，打开 [知识管理](http://localhost:5174/admin.html)。后台使用实际来源数据，支持文档上传、粘贴文本、结构化菜谱 JSON 导入、来源与任务核对、图谱候选抽取及校验、问答测试。操作说明见[后台使用指南](docs/ADMIN_GUIDE.md)。
+
+后台沿用当前本地单人匿名服务方式，尚未配置管理员登录；对外部署前需要补充管理接口的认证与授权。
+
+## 显式导入
+
+以下操作由使用者选择执行。菜谱事实导入不需要模型重新抽取：
 
 ```powershell
-docker compose up --build
+docker compose --env-file .env exec backend python scripts/import_knowledge.py recipes --path data/recipe.json --limit 10
 ```
 
-默认只启动 backend，使用 SQLite 和本地 LightRAG 索引。已有 `.env` 中的数据库连接不会被覆盖。MySQL、旧 KB 和 Redis 分别通过 `sql`、`legacy-kb`、`legacy-cache` profiles 显式启用；profile 不会自动切换领域配置。
+原文入库需要已配置的 embedding 服务：
 
-切换领域时设置 `KNOWLEDGE_DOMAIN_FILE=gustobot/config/domains/equipment.json` 后重启后端。首次导入资料需要可用的模型与向量服务，不会自动迁移旧 Neo4j 数据。
+```powershell
+docker compose --env-file .env exec backend python scripts/import_knowledge.py documents --path data/kb/data.txt
+```
 
-更多操作见 [快速启动指南](docs/QUICK_START.md)。
+上传附件与长期知识入库是独立操作。事实校验、抽取和图查询接口见 [领域知识服务](docs/DOMAIN_KNOWLEDGE.md)，持久卷和升级步骤见 [部署](docs/DEPLOYMENT.md)。
 
-## 内置数据来源
+## 候选索引与发布
 
-菜谱主数据来自 [OpenKG RecipeGraph](http://openkg.cn/dataset/recipegraph)。历史饮食文本与 8 条 pgvector 示例缺少可核验的上游出处，仅适合演示。数据血缘、用途和许可说明见 [数据来源与血缘](docs/DATA_SOURCES.md)。旧索引和图谱文件是派生产物，不能代替原始资料出处。
+语义候选默认 `SEMANTIC_LINKING_MODE=off`。配置明确的 `SEMANTIC_EMBEDDING_REVISION` 后，先审计当前图范围，再构建和核对候选：
 
----
+```powershell
+docker compose --env-file .env exec backend python scripts/build_semantic_index.py bootstrap --audit
+docker compose --env-file .env exec backend python scripts/build_semantic_index.py build --kind all --batch-size 64
+docker compose --env-file .env exec backend python scripts/build_semantic_index.py status --kind all
+```
 
-## 许可证
+旧事实的范围建立、显式发布、校准、`shadow`／`on` 切换和恢复顺序见 [候选索引运行手册](docs/RUNBOOK_SEMANTIC_INDEX.md)。`semantic-indexer` 是 `semantic` profile 下的可选 worker；它的健康检查只证明进程存活，索引就绪以发布状态和当前图修订为准。
 
-本项目采用 [Apache License 2.0](LICENSE) 许可证。
+## 数据与迁移
 
----
+当前主链使用正式本体、Neo4j、Milvus 和 MySQL；旧 LightRAG 索引／缓存、独立 Text2SQL／pgvector 服务、未使用的插件和构建副本已清理。原始菜谱、食材、原文资料及已有 Docker 卷保留；旧 SQL 样例仅作为历史资料归档，旧操作指南集中在 `docs/archive/legacy/`。模型／数据迁移前需要停写并保存一致快照；本地文件清单可用 `scripts/verify_knowledge_snapshot.py` 核验，实际数据库恢复仍需独立演练。
 
-## 致谢
-
-- [FastAPI](https://fastapi.tiangolo.com/) - 现代化的Python Web框架
-- [LangChain](https://python.langchain.com/) - LLM应用开发框架
-- [Milvus](https://milvus.io/) - 企业级开源向量数据库
-- [Cohere Rerank](https://cohere.com/rerank) / [Jina AI](https://jina.ai/) / [Voyage AI](https://www.voyageai.com/) - 二阶段重排序API服务
-- [Vue](https://vuejs.org/) - 用户界面库
-
----
-
-## 联系方式
-
-- 项目主页: https://github.com/skygazer42/GustoBot
-- 问题反馈: https://github.com/skygazer42/GustoBot/issues
-- 邮箱: 207829897@qq.com
-
- 
----
-
-<div align="center">
-
-**GustoBot** - 让AI成为您的私人厨房客服
-
-Made with Love by GustoBot Team
-
-[回到顶部](#gustobot)
-
-</div>
+内置菜谱来自 [OpenKG RecipeGraph](http://openkg.cn/dataset/recipegraph)。历史饮食文本的来源与许可边界见 [数据来源与血缘](docs/DATA_SOURCES.md)。本项目采用 [Apache License 2.0](LICENSE)。

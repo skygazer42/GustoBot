@@ -12,7 +12,7 @@ const MAX_MESSAGE_LENGTH = 4000;
 const API_MESSAGE_LIMIT = 5000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
-export function useChat(recipeContext = "") {
+export function useChat(recipeContext: string | (() => string) = "") {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
   const state = reactive<ChatState>({
     isTyping: false,
@@ -77,8 +77,9 @@ export function useChat(recipeContext = "") {
       state.error = "问题最多 4000 字，已保留原文，请缩短后再发送。";
       return;
     }
-    const requestMessage = recipeContext.trim().length > 0
-      ? `当前正在阅读的食谱：\n${recipeContext}\n\n我的问题：${message}`
+    const currentRecipeContext = typeof recipeContext === "function" ? recipeContext() : recipeContext;
+    const requestMessage = currentRecipeContext.trim().length > 0
+      ? `当前正在阅读的食谱：\n${currentRecipeContext}\n\n我的问题：${message}`
       : message;
     if (requestMessage.length > API_MESSAGE_LIMIT) {
       state.error = "问题与当前食谱内容较长，请缩短问题后再发送。";

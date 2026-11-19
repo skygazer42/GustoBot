@@ -1,0 +1,25 @@
+{
+  "schema_version": "knowledge-eval-fixtures-v1",
+  "dataset_id": "knowledge-completion-controlled-holdout-2026-11-17",
+  "frozen_at": "2026-11-17",
+  "holdout_count": 276,
+  "calibration_count": 28,
+  "required_ontology_version": "2026-11-17.1",
+  "materialized_scope": null,
+  "identity_status": "logical_fixture_ids_require_formal_materialization",
+  "real_source_truth": {
+    "status": "pending_human_verification",
+    "approved_cases": 0,
+    "reason": "No approved real-source manual truth was supplied; authored controlled sources are not real business evidence."
+  },
+  "files": {
+    "questions.jsonl": "36b8dc9739d39d0114e2276fad52732b84316f37f2a15614ea9196217e7d6466",
+    "calibration.jsonl": "71249d7b404c16240bbf0371ff81ad174c1d30e597169aac41a41e5f793707ae",
+    "controlled_sources.json": "614b9d6df6e630a3262371c77030443933df33773c55160c183a6e6e02b66afe",
+    "controlled_edge_sources.json": "8b8852ea43ba000acb10d9acdc2e9ddec76f8e33c622d7ec0929fb8fb15a2d97"
+  },
+  "fixture_files": [
+    "controlled_sources.json",
+    "controlled_edge_sources.json"
+  ]
+}

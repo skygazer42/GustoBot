@@ -1,26 +1,27 @@
-"""Validate domain facts and query the shared LightRAG knowledge index."""
+"""Extract, validate, write and query evidence-backed ontology facts."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
-from gustobot.application.services.lightrag_service import (
-    LightRAGInsertResponse,
-    LightRAGQueryResponse,
-    SearchMode,
-    get_lightrag_service,
-)
 from gustobot.application.services.ontology_service import OntologyService
-from gustobot.config import settings
 from gustobot.config.domain import get_domain_definition
 from gustobot.domain.knowledge import (
     DomainDefinition,
     KnowledgeGraph,
     SourceDocument,
     validate_graph,
+)
+from gustobot.infrastructure.knowledge.graph_store import (
+    FactQuery,
+    FactResult,
+    GraphWriteResult,
+)
+from gustobot.infrastructure.knowledge.semantic_runtime import (
+    SemanticValidationError,
+    get_semantic_runtime,
 )
 
 router = APIRouter(prefix="/ontology", tags=["Domain knowledge"])
@@ -31,13 +32,6 @@ class ExtractionRequest(BaseModel):
     sources: list[SourceDocument] = Field(min_length=1, max_length=100)
 
 
-class GraphQueryRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    question: str = Field(min_length=1)
-    mode: SearchMode = "mix"
-    top_k: int | None = Field(default=None, ge=1)
-
-
 class FactCounts(BaseModel):
     entities: int
     relations: int
@@ -45,18 +39,18 @@ class FactCounts(BaseModel):
 
 
 def get_fact_model() -> BaseChatModel:
-    if not settings.LLM_API_KEY:
+    from gustobot.application.services.knowledge_runtime import get_model
+
+    model = get_model()
+    if model is None:
         raise HTTPException(status_code=503, detail="事实抽取需要配置 LLM_API_KEY")
-    return ChatOpenAI(
-        api_key=SecretStr(settings.LLM_API_KEY),
-        base_url=settings.LLM_BASE_URL,
-        model=settings.LLM_MODEL,
-        temperature=0,
-    )
+    return model
 
 
 async def get_fact_service() -> OntologyService:
-    return OntologyService(get_domain_definition(), lightrag=get_lightrag_service())
+    from gustobot.application.services.knowledge_runtime import get_graph_store
+
+    return OntologyService(get_domain_definition(), graph_store=get_graph_store())
 
 
 @router.get("/domain")
@@ -71,6 +65,11 @@ async def extract_facts(
     service = OntologyService(get_domain_definition(), model=model)
     try:
         return await service.extract(request.sources)
+    except SemanticValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "semantic_report": exc.report.model_dump(mode="json")},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -78,7 +77,17 @@ async def extract_facts(
 @router.post("/validate")
 def validate_facts(graph: KnowledgeGraph) -> FactCounts:
     try:
-        validate_graph(get_domain_definition(), graph)
+        domain = get_domain_definition()
+        semantic = get_semantic_runtime(domain)
+        if semantic is None:
+            validate_graph(domain, graph)
+        else:
+            semantic.validate_input(graph)
+    except SemanticValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "semantic_report": exc.report.model_dump(mode="json")},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return FactCounts(
@@ -89,16 +98,24 @@ def validate_facts(graph: KnowledgeGraph) -> FactCounts:
 @router.post("/facts")
 async def insert_facts(
     graph: KnowledgeGraph, service: Annotated[OntologyService, Depends(get_fact_service)]
-) -> LightRAGInsertResponse:
+) -> GraphWriteResult:
     try:
         return await service.insert(graph)
+    except SemanticValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "semantic_report": exc.report.model_dump(mode="json")},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/query")
 async def query_facts(
-    request: GraphQueryRequest,
+    request: FactQuery,
     service: Annotated[OntologyService, Depends(get_fact_service)],
-) -> LightRAGQueryResponse:
-    return await service.query(request.question, mode=request.mode, top_k=request.top_k)
+) -> FactResult:
+    try:
+        return await service.query(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

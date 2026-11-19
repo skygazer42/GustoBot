@@ -1,9 +1,9 @@
 """Thread-created resources keep an owner through native asyncio cancellation."""
 
 import asyncio
-from contextvars import ContextVar
 import importlib
 import threading
+from contextvars import ContextVar
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 

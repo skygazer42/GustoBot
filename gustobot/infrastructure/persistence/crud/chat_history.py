@@ -2,14 +2,15 @@
 CRUD operations for conversation-level history snapshots.
 """
 
-from typing import List, Optional
-
 from sqlalchemy.orm import Session
 
 from gustobot.infrastructure.core.database import commit_session
-
-from gustobot.infrastructure.persistence.db.models.chat_history import ConversationHistorySnapshot
-from gustobot.interfaces.http.models.chat_history import ConversationHistorySnapshotCreate
+from gustobot.infrastructure.persistence.db.models.chat_history import (
+    ConversationHistorySnapshot,
+)
+from gustobot.interfaces.http.models.chat_history import (
+    ConversationHistorySnapshotCreate,
+)
 
 
 class ConversationHistoryCRUD:
@@ -32,7 +33,7 @@ class ConversationHistoryCRUD:
         db.refresh(snapshot)
         return snapshot
 
-    def get(self, db: Session, *, id: int) -> Optional[ConversationHistorySnapshot]:
+    def get(self, db: Session, *, id: int) -> ConversationHistorySnapshot | None:
         """Get a chat history snapshot by ID."""
         return (
             db.query(ConversationHistorySnapshot)
@@ -42,7 +43,7 @@ class ConversationHistoryCRUD:
 
     def get_by_conversation(
         self, db: Session, *, conversation_id: int, skip: int = 0, limit: int = 100
-    ) -> List[ConversationHistorySnapshot]:
+    ) -> list[ConversationHistorySnapshot]:
         """Get all snapshots for a conversation."""
         return (
             db.query(ConversationHistorySnapshot)
@@ -55,7 +56,7 @@ class ConversationHistoryCRUD:
 
     def get_latest_by_conversation(
         self, db: Session, *, conversation_id: int
-    ) -> Optional[ConversationHistorySnapshot]:
+    ) -> ConversationHistorySnapshot | None:
         """Get the latest snapshot for a conversation."""
         return (
             db.query(ConversationHistorySnapshot)
@@ -64,7 +65,7 @@ class ConversationHistoryCRUD:
             .first()
         )
 
-    def delete(self, db: Session, *, id: int) -> Optional[ConversationHistorySnapshot]:
+    def delete(self, db: Session, *, id: int) -> ConversationHistorySnapshot | None:
         """Delete a chat history snapshot."""
         snapshot = self.get(db, id=id)
         if snapshot is None:

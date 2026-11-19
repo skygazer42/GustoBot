@@ -6,31 +6,46 @@
 
 import asyncio
 import json
+import os
 from datetime import datetime
 
 import httpx
+import pytest
+
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.skipif(
+        os.environ.get("GUSTOBOT_RUN_INTEGRATION_TESTS") != "1",
+        reason="Running backend/provider diagnostics require explicit opt-in",
+    ),
+]
 
 # API 配置
 API_BASE_URL = "http://localhost:8000/api/v1"
 
 # 测试用例
 TEST_CASES = [
-    {"name": "问候对话", "message": "你好，我是新用户", "expected_route": "general-query"},
-    {"name": "询问做法", "message": "红烧肉怎么做？", "expected_route": "graphrag-query"},
-    {"name": "历史典故", "message": "宫保鸡丁有什么历史故事？", "expected_route": "kb-query"},
-    {"name": "统计查询", "message": "数据库里有多少道菜？", "expected_route": "text2sql-query"},
-    {"name": "模糊问题", "message": "我想学做菜", "expected_route": "additional-query"},
-    {"name": "图片生成", "message": "生成一张麻婆豆腐的图片", "expected_route": "image-query"},
+    {"name": "问候对话", "message": "你好", "expected_route": "general-query"},
     {
-        "name": "混合查询",
-        "message": "川菜有哪些特点？统计一下数量",
-        "expected_route": "text2sql-query",
+        "name": "历史原文",
+        "message": "解释已导入资料中关于宫保鸡丁的历史",
+        "expected_route": "knowledge-query",
+    },
+    {
+        "name": "统计范围",
+        "message": "统计全部已导入做法记录数",
+        "expected_route": "knowledge-query",
     },
 ]
 
 
 async def test_chat_api():
     """测试聊天 API"""
+    from pydantic import TypeAdapter
+
+    from gustobot.interfaces.http.models.session import ChatMessageResponse
+    from gustobot.interfaces.http.v1.chat import ChatResponse
+
     print("测试 GustoBot 聊天 API")
     print("=" * 60)
 
@@ -58,20 +73,19 @@ async def test_chat_api():
                     headers={"Content-Type": "application/json"},
                 )
                 if response.status_code == 200:
-                    data = response.json()
+                    data = ChatResponse.model_validate_json(response.content)
 
                     # 更新会话ID
-                    if data.get("session_id"):
-                        session_id = data["session_id"]
+                    session_id = data.session_id
 
                     # 显示结果
                     print("成功")
-                    print(f"   路由: {data.get('route', 'unknown')}")
-                    print(f"   逻辑: {str(data.get('route_logic', 'N/A'))[:50]}...")
-                    print(f"   回复: {str(data.get('message', 'N/A'))[:100]}...")
+                    print(f"   路由: {data.route}")
+                    print(f"   逻辑: {data.route_logic[:50]}...")
+                    print(f"   回复: {data.message[:100]}...")
 
                     # 检查路由
-                    if data.get("route") == test_case["expected_route"]:
+                    if data.route == test_case["expected_route"]:
                         print("   路由正确")
                     else:
                         failures.append(f"Unexpected route for {test_case['name']}")
@@ -83,9 +97,10 @@ async def test_chat_api():
                     error_text = response.text
                     print(f"   错误: {error_text[:200]}...")
 
-            except Exception as e:
+            # Report this diagnostic while preserving the remaining cases.
+            except Exception as e:  # noqa: BLE001
                 failures.append(str(e))
-                print(f"错误: {str(e)}")
+                print(f"错误: {e!s}")
 
             # 添加延迟避免请求过快
             await asyncio.sleep(1)
@@ -97,12 +112,13 @@ async def test_chat_api():
                 response = await session.get(f"{API_BASE_URL}/chat/history/{session_id}")
                 response.raise_for_status()
                 if response.status_code == 200:
-                    history = response.json()
+                    history = TypeAdapter(list[ChatMessageResponse]).validate_json(response.content)
                     print(f"历史消息数: {len(history)}")
                     for msg in history[-3:]:  # 显示最后3条
-                        sender = "用户" if msg["message_type"] == "user_query" else "助手"
-                        print(f"  {sender}: {msg['content'][:50]}...")
-            except Exception as e:
+                        sender = "用户" if msg.message_type == "user_query" else "助手"
+                        print(f"  {sender}: {msg.content[:50]}...")
+            # Report this diagnostic while preserving the remaining cases.
+            except Exception as e:  # noqa: BLE001
                 failures.append(str(e))
                 print(f"获取历史失败: {e}")
 
@@ -122,7 +138,7 @@ async def test_stream_chat():
 
     completed = False
     try:
-        async with httpx.AsyncClient(
+        async with httpx.AsyncClient(  # noqa: SIM117 - keep each test resource and asserted failure scope explicit
             timeout=httpx.Timeout(120.0, connect=10.0), trust_env=False
         ) as session:
             async with session.stream("POST", url, json={**payload, "stream": True}) as response:
@@ -174,4 +190,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     asyncio.run(main())

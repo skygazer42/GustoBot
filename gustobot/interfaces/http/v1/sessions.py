@@ -4,46 +4,40 @@ Chat session management API endpoints.
 Lightweight user ID system - group sessions by user_id without authentication.
 """
 
-from typing import Any, List, Optional
+from datetime import datetime, timezone
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from gustobot.infrastructure.core.database import get_db
-from gustobot.infrastructure.persistence.crud import (
+from gustobot.infrastructure.persistence.crud.chat import (
     chat_message,
     chat_session,
     chat_session_snapshot,
 )
-from gustobot.interfaces.http.models.chat_message import (
+from gustobot.interfaces.http.models.session import (
     ChatMessageCreate,
     ChatMessageResponse,
-    ChatSessionSnapshotCreate,
-    ChatSessionSnapshotResponse,
-)
-from gustobot.interfaces.http.models.chat_session import (
     ChatSessionCreate,
     ChatSessionResponse,
+    ChatSessionSnapshotCreate,
+    ChatSessionSnapshotResponse,
     ChatSessionUpdate,
+    SessionListQuery,
+    UserSessionCountResponse,
 )
+
+DatabaseSession = Annotated[Session, Depends(get_db)]
 
 router = APIRouter()
 
 
-class UserSessionCountResponse(BaseModel):
-    user_id: str
-    session_count: int
-
-
-@router.get("/", response_model=List[ChatSessionResponse])
+@router.get("/", response_model=list[ChatSessionResponse])
 def get_sessions(
+    query: Annotated[SessionListQuery, Depends()],
     *,
-    db: Session = Depends(get_db),
-    user_id: Optional[str] = Query(None, description="Filter by user ID (device ID, UUID, etc.)"),
-    skip: int = 0,
-    limit: int = 50,
-    active_only: bool = True,
+    db: DatabaseSession,
 ) -> Any:
     """
     Get list of chat sessions.
@@ -53,14 +47,20 @@ def get_sessions(
 
     No authentication required.
     """
-    if user_id is not None:
+    if query.user_id is not None:
         # Get sessions for specific user
         sessions = chat_session.get_by_user(
-            db, user_id=user_id, skip=skip, limit=limit, active_only=active_only
+            db,
+            user_id=query.user_id,
+            skip=query.skip,
+            limit=query.limit,
+            active_only=query.active_only,
         )
     else:
         # Get all sessions
-        sessions = chat_session.get_all(db, skip=skip, limit=limit, active_only=active_only)
+        sessions = chat_session.get_all(
+            db, skip=query.skip, limit=query.limit, active_only=query.active_only
+        )
 
     return sessions
 
@@ -68,7 +68,7 @@ def get_sessions(
 @router.post("/", response_model=ChatSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     session_in: ChatSessionCreate,
 ) -> Any:
     """
@@ -86,7 +86,7 @@ def create_session(
 @router.get("/{session_id}", response_model=ChatSessionResponse)
 def get_session(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     session_id: str,
 ) -> Any:
     """
@@ -103,7 +103,7 @@ def get_session(
 @router.patch("/{session_id}", response_model=ChatSessionResponse)
 def update_session(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     session_id: str,
     session_update: ChatSessionUpdate,
 ) -> Any:
@@ -124,7 +124,7 @@ def update_session(
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_session(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     session_id: str,
 ) -> None:
     """
@@ -145,7 +145,7 @@ def delete_session(
 )
 def add_message_to_session(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     session_id: str,
     message_in: ChatMessageCreate,
 ) -> Any:
@@ -160,12 +160,8 @@ def add_message_to_session(
     # Ensure session_id matches
     message_in.session_id = session_id
 
-    # Create message
+    session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     message = chat_message.create(db, obj_in=message_in)
-
-    # Update session activity
-    chat_session.update_activity(db, session_id=session_id)
-
     return message
 
 
@@ -176,7 +172,7 @@ def add_message_to_session(
 )
 def create_session_snapshot(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     session_id: str,
     snapshot_in: ChatSessionSnapshotCreate,
 ) -> Any:
@@ -200,7 +196,7 @@ def create_session_snapshot(
 @router.get("/user/{user_id}/count", response_model=UserSessionCountResponse)
 def get_user_session_count(
     *,
-    db: Session = Depends(get_db),
+    db: DatabaseSession,
     user_id: str,
 ) -> Any:
     """

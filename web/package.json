@@ -6,16 +6,22 @@
   "scripts": {
     "dev": "vite",
     "lint": "npm run typecheck",
-    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json && npm run typecheck:e2e",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "build": "npm run typecheck && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "e2e run"
   },
   "dependencies": {
     "axios": "^1.7.7",
     "vue": "^3.4.27"
   },
   "devDependencies": {
+    "@e2e-dev/web": "^0.16.0",
+    "@types/node": "^24.19.2",
     "@vitejs/plugin-vue": "^5.0.4",
+    "e2e": "^0.23.1",
     "sass": "^1.77.6",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",

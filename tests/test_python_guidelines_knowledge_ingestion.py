@@ -1,48 +1,19 @@
 """Offline behavior coverage for ingestion contracts and resource ownership."""
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 
-def test_database_environment_defaults_are_values(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "kb_ingest"))
-    from kb_service.core.config import DatabaseConfig
-
-    for key in (
-        "PGDATABASE",
-        "PGUSER",
-        "PGPASSWORD",
-        "PGHOST",
-        "PGPORT",
-        "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD",
-        "POSTGRES_HOST",
-        "POSTGRES_PORT",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    assert DatabaseConfig.from_env().as_dict() == {
-        "dbname": "vector_db",
-        "user": "postgres",
-        "password": "",
-        "host": "localhost",
-        "port": "5432",
-    }
-
-
 def test_embedding_empty_provider_vector_is_failure():
-    from gustobot.infrastructure.knowledge.embeddings import OpenAICompatibleEmbeddings
     from openai import OpenAI
 
-    embedder = OpenAICompatibleEmbeddings.__new__(OpenAICompatibleEmbeddings)
-    embedder.model = "test"
-    embedder.dimension = None
-    embedder.max_batch_size = 64
-    embedder.request_timeout = 1
+    from gustobot.infrastructure.knowledge.embeddings import OpenAICompatibleEmbeddings
+
+    embedder = OpenAICompatibleEmbeddings(model="test", api_key="test", request_timeout=1)
+    embedder._client.close()
     embedder._client = Mock(
         spec=OpenAI,
         embeddings=SimpleNamespace(
@@ -51,15 +22,6 @@ def test_embedding_empty_provider_vector_is_failure():
     )
     with pytest.raises(ValueError, match="empty"):
         embedder.embed_query("question")
-
-
-def test_ingestion_json_conversion_handles_numpy_arrays(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "kb_ingest"))
-    import numpy as np
-    from kb_service.services.processor import DataProcessor
-
-    processor = DataProcessor.__new__(DataProcessor)
-    assert processor._convert_for_json(np.array([0, 1])) == [0, 1]
 
 
 def test_knowledge_service_preserves_zero_overlap(monkeypatch):
@@ -115,87 +77,20 @@ def test_vector_store_search_failure_is_visible():
 
     store = VectorStore.__new__(VectorStore)
     store.metric_type = "IP"
+    store.index_type = "FLAT"
+    store.dimension = 1
+    store.embedding_model = "fixture"
+    store.timeout = 1
     store.collection = SimpleNamespace(search=Mock(side_effect=RuntimeError("offline")))
     with pytest.raises(RuntimeError, match="offline"):
-        store.search([0.0])
-
-
-def test_postgres_writer_closes_connection_and_rejects_truncated_batch(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "kb_ingest"))
-    from kb_service.services import vector_store
-    from kb_service.core.config import Config
-
-    events = []
-
-    class Cursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            events.append("cursor closed")
-
-        def execute(self, *args):
-            pass
-
-    class Connection:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            events.append("rollback" if args[0] is not None else "commit")
-
-        def cursor(self):
-            return Cursor()
-
-        def commit(self):
-            pass
-
-        def close(self):
-            events.append("connection closed")
-
-    monkeypatch.setattr(vector_store.psycopg2, "connect", lambda **kwargs: Connection())
-    monkeypatch.setattr(vector_store, "register_vector", lambda conn: None)
-    monkeypatch.setattr(vector_store.VectorStoreWriter, "_ensure_table", lambda *args: None)
-    writer = vector_store.VectorStoreWriter(
-        Config(),
-        embedding_client=Mock(
-            spec=vector_store.EmbeddingClient, dimension=1, embed_texts=lambda texts: [[0.1]]
-        ),
-    )
-    with pytest.raises(ValueError, match="count"):
-        writer.upsert(
-            [
-                {"source_table": "recipes", "source_id": "0", "rewritten_content": "first"},
-                {"source_table": "recipes", "source_id": "1", "rewritten_content": "second"},
-            ]
+        store.search(
+            [0.0],
+            domain_id="recipes",
+            ontology_version="1",
+            source_versions={"source": "v1"},
+            entity_ids=None,
+            top_k=1,
         )
-    assert events == ["cursor closed", "rollback", "connection closed"]
-
-
-def test_custom_reranker_keeps_zero_score_and_limits_results(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "kb_ingest"))
-    from kb_service.services import reranker
-    from kb_service.core.config import Config
-    import requests
-
-    response = requests.Response()
-    response.status_code = 200
-    response._content = b'{"results":[{"index":0,"relevance_score":0.0}]}'
-    monkeypatch.setattr(reranker.requests, "post", lambda *args, **kwargs: response)
-    client = reranker.RerankerClient(
-        Config(
-            rerank_timeout=1,
-            rerank_provider="custom",
-            rerank_base_url="http://test",
-            rerank_endpoint="/rerank",
-            rerank_api_key=None,
-            rerank_model=None,
-            rerank_top_n=1,
-        )
-    )
-    assert client.rerank("question", [{"id": "0", "content": "answer"}]) == [
-        {"id": "0", "score": 0.0}
-    ]
 
 
 def test_search_zero_limit_does_not_make_network_request(monkeypatch):

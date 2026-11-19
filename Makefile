@@ -2,7 +2,7 @@
 
 # 安装依赖
 install:
-	pip install -r requirements.txt
+	python -m pip install -r requirements-dev.txt
 	cd web && npm install
 
 # 开发模式运行
@@ -19,17 +19,17 @@ run-web:
 
 # 运行测试
 test:
-	pytest tests/ -v
+	python -X utf8 scripts/run_backend_tests.py
 
 # 代码检查
 lint:
-	flake8 gustobot --max-line-length=100
-	black --check gustobot
-	mypy gustobot
+	python -m ruff check gustobot scripts migrations eval tests run.py start_chatbot.py
+	python -m black --check gustobot scripts migrations eval tests run.py start_chatbot.py
+	python -m mypy
 
 # 代码格式化
 format:
-	black gustobot
+	python -m black gustobot scripts migrations eval tests run.py start_chatbot.py
 	cd web && npm run lint
 
 # 清理
@@ -39,10 +39,6 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 	rm -rf dist/ build/ *.egg-info
-
-# 初始化数据目录
-init-data:
-	mkdir -p data/chroma
 
 # Docker构建
 docker-build:

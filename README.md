@@ -50,7 +50,7 @@ docker compose --env-file .env up -d --build
 
 <p align="center">
   <a href="./docs/assets/gustobot-architecture.webp?raw=true">
-    <img src="./docs/assets/gustobot-architecture.webp" width="100%" alt="GustoBot 系统架构，包含 Vue 与 FastAPI 入口、LangGraph 问答、本体语义、资料入库及 Neo4j、Milvus、MySQL">
+    <img src="./docs/assets/gustobot-architecture.webp" width="760" alt="GustoBot 的交互入口、问答服务、知识服务和数据存储，以及贯穿各层的知识治理与部署运维">
   </a><br>
   <a href="./docs/assets/gustobot-architecture.webp?raw=true">查看高清架构图</a>
 </p>

@@ -27,9 +27,7 @@
 
 ## GustoBot 是什么
 
-GustoBot 是一个基于领域本体的知识问答系统，支持查询知识图谱和原文资料，并在回答中标注出处。
-
-仓库目前提供菜谱应用：用户可以选择一道菜，查看做法并向陶陶提问。同名菜谱按来源和版本区分，食材用量、步骤和耗时随具体做法保存。
+GustoBot 是一个基于领域本体的知识库问答系统，支持查询知识图谱和原文资料。
 
 ## 核心能力
 
@@ -45,7 +43,7 @@ GustoBot 是一个基于领域本体的知识问答系统，支持查询知识�
   </a>
 </p>
 
-文档可以只保留原文供检索。要从中提取图谱事实，需先抽取候选，再由人工核对并通过校验。[数据模型与入库](./docs/DOMAIN_KNOWLEDGE.md)
+文档可以只保留原文供检索。要从中提取图谱事实，需先抽取候选，再由人工核对并通过校验。
 
 ### 查询、计算与回答
 
@@ -59,11 +57,11 @@ GustoBot 是一个基于领域本体的知识问答系统，支持查询知识�
   </a>
 </p>
 
-明确记载的用量可按单位规则换算；“适量”等定性用量沿用原文。回答具体做法时，以选定版本的菜谱为准，相关文章补充背景。[查询规则](./docs/DOMAIN_KNOWLEDGE.md)
+明确记载的用量可按单位规则换算；“适量”等定性用量沿用原文。回答具体做法时，以选定版本的菜谱为准，相关文章补充背景。
 
 ### 知识库与对话管理
 
-后台可以查看来源原文、发布或撤回文档、删除文档记录、审核待入图的候选事实，以及查阅已保存的对话。聊天页面显示处理进度和来源。知识更新需通过入库或审核操作提交，生成的回答不会自动写回图谱。[后台使用说明](./docs/ADMIN_GUIDE.md)
+后台可以查看来源原文、发布或撤回文档、删除文档记录、审核待入图的候选事实，以及查阅已保存的对话。聊天页面显示处理进度和来源。知识更新需通过入库或审核操作提交，生成的回答不会自动写回图谱。
 
 ## 快速开始
 
@@ -88,14 +86,6 @@ Windows PowerShell 使用 `Copy-Item .env.example .env` 复制配置。编辑 `.
 docker compose --env-file .env up -d --build
 ```
 
-| 入口 | 默认地址 |
-| --- | --- |
-| 前台与陶陶对话 | <http://localhost:8000/> |
-| 知识管理后台 | <http://localhost:8000/admin.html> |
-| API 文档 | <http://localhost:8000/docs> |
-| 健康检查 | <http://localhost:8000/health> |
-
-端口可在配置中修改。菜谱目录和知识库需要分别准备，文件位置、配图和导入方式见[数据准备](./docs/DATA_SOURCES.md)及[后台使用说明](./docs/ADMIN_GUIDE.md)。
 
 ## 技术架构
 
@@ -115,13 +105,11 @@ docker compose --env-file .env up -d --build
 | 会话与发布记录 | MySQL 保存对话、来源版本、入库任务和发布状态 |
 | 模型 | LLM 负责候选抽取、必要的查询规划和回答整理；Embedding 模型生成向量 |
 
-[统一查询服务](./gustobot/application/services/knowledge_query.py) · [入库服务](./gustobot/application/services/knowledge_ingestion.py) · [语义运行时](./gustobot/infrastructure/knowledge/semantic_runtime.py) · [图稿与详细流程](./docs/ARCHITECTURE.md)
 
 ### 接入其他领域
 
 默认菜谱使用 OWL/RDFS 和 SHACL 文件，加载时执行 OWL-RL 推导。设备和通用领域提供 YAML 样板。接入新领域时，需要编写并验证本体、字段映射和查询绑定；现有查询提示及部分数值计算仍与菜谱有关。
 
-支持的本体构件和查询方式见[领域服务文档](./docs/DOMAIN_KNOWLEDGE.md)。原文质量、实体匹配和别名仍需业务核对，语义校验不用于认定文章内容是否真实。[领域配置](./gustobot/config/domains/)
 
 ## 开发文档
 

@@ -4,7 +4,7 @@
 
 <h1 align="center">GustoBot · Taotao</h1>
 
-<p align="center"><strong>Ontology-guided knowledge services</strong><br>Domain semantics · Graph and text evidence · Traceable answers</p>
+<p align="center"><strong>Question answering with domain ontologies</strong></p>
 
 <p align="center"><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
 
@@ -23,47 +23,47 @@
 
 ## What is GustoBot?
 
-GustoBot brings domain ontologies, graph facts, and source documents into one question-answering service. The ontology defines concepts, relations, and executable constraints; the graph stores specific facts, while source text preserves their context. The service uses these definitions to plan queries, retrieve evidence, and evaluate results, then cites the sources it actually used.
+GustoBot answers questions from a knowledge graph and source documents. A domain ontology defines the concepts, relationships, and rules used in queries. Answers cite the sources used.
 
-**Recipes are the current application domain.** Different preparations of the same dish retain their own versions, quantities, steps, and reported durations. Related articles can add background. Domain definitions are configurable; a new domain still needs its own model, field mappings, and query bindings.
+The included application lets users browse recipes and ask Taotao about a selected preparation. Recipes with the same name are distinguished by source and version, with ingredients, quantities, steps, and reported durations kept for each preparation.
 
 ## Features
 
-### Ontology-constrained knowledge representation
+### Domain definitions and ingestion
 
-The default recipe domain uses versioned OWL/RDFS and SHACL definitions for concepts, relations, identity, business properties, units, and evidence shapes. The runtime loads and compiles these definitions so that ingestion and query evaluation share the same domain semantics.
+The recipe ontology uses OWL/RDFS to describe concepts and relationships. SHACL checks incoming facts and the graph evidence needed to answer a question. The same definitions specify object identity, query properties, and unit rules.
 
-Graph facts retain object relationships and source quotations. Documents preserve context and are published as searchable chunks. Entity links, source identities, and versions connect these forms of evidence, allowing them to support the same answer.
+Structured records are mapped into the graph with source quotations. Articles are split into chunks and published for vector search. They can also be linked to graph objects by entity, source, and version, so an answer can use both.
 
 <p align="center">
   <a href="./docs/assets/architecture/knowledge-representation.png">
-    <img src="./docs/assets/architecture/knowledge-representation.png" width="800" alt="A domain ontology constrains graph facts, which link to source text and related articles through quotations and entity associations">
+    <img src="./docs/assets/architecture/knowledge-representation.png" width="800" alt="The relationship between the ontology, graph facts, and source documents">
   </a>
 </p>
 
-Structured records are mapped deterministically and validated before graph ingestion. Documents can be published as text vectors alone. Adding graph facts from a document requires explicit candidate extraction, human review, and validation. [Knowledge representation and ingestion contracts](./docs/DOMAIN_KNOWLEDGE.md)
+Documents can remain text-only. To add graph facts from a document, extract candidates, review them, and validate them before writing to the graph. [Data model and ingestion](./docs/DOMAIN_KNOWLEDGE.md)
 
-### Ontology-guided query planning and evaluation
+### Queries, calculations, and answers
 
-Simple questions follow deterministic paths. For more complex questions, a model selects business properties and conditions allowed by the ontology. The service resolves objects and source versions, then retrieves graph facts, current material, and related articles as needed.
+To answer a question, the service resolves the relevant objects and source versions, queries properties allowed by the ontology, and reads the selected material and relevant published documents. Simple questions follow rules; a model helps plan queries with more complex conditions.
 
-Fact evaluation for formally bound business properties applies supported ontology inference, quantity calculations, and evidence validation. Structured results can be returned directly; when a synthesis is needed, the answer is generated from the retrieved evidence. Ambiguous objects trigger clarification. Unknown values, qualitative quantities, and gaps in the source material remain explicit.
+For supported properties, code applies ontology rules to calculate values and check fact evidence. A model writes explanations from the retrieved material when needed. Ambiguous preparations or versions prompt a clarification, and missing information is reported.
 
 <p align="center">
   <a href="./docs/assets/architecture/knowledge-reasoning.png">
-    <img src="./docs/assets/architecture/knowledge-reasoning.png" width="800" alt="A question passes through query planning, joint graph and text retrieval, and rule evaluation to produce results, citations, and evidence gaps">
+    <img src="./docs/assets/architecture/knowledge-reasoning.png" width="800" alt="The path from query planning and retrieval to calculations and an answer">
   </a>
 </p>
 
-For example, a sugar quantity can be converted using declared unit rules, while an instruction such as "to taste" stays qualitative. When a particular preparation is selected, its versioned source text governs the recipe; related articles provide background. [Query and evaluation boundaries](./docs/DOMAIN_KNOWLEDGE.md)
+Recorded quantities can be converted using unit rules; descriptions such as "to taste" keep their original meaning. Answers about a preparation follow the selected recipe version, with related articles supplying background. [Query rules](./docs/DOMAIN_KNOWLEDGE.md)
 
-### Traceable publication and conversations
+### Managing knowledge and conversations
 
-The admin interface supports source inspection, document publication and withdrawal, document-record deletion, graph-candidate review, and read-only conversation history. The chat interface shows execution progress and actual citations, retaining the sources and versions used. Knowledge is published through explicit operations; generated answers do not automatically become graph facts. [Admin guide](./docs/ADMIN_GUIDE.md)
+In the admin interface, users can read source documents, publish or withdraw them, delete document records, review candidate facts, and view saved conversations. Chat shows progress and citations. Knowledge updates go through ingestion or review; generated answers are not written back to the graph automatically. [Admin guide](./docs/ADMIN_GUIDE.md)
 
 ## Quick start
 
-Install Docker and Docker Compose, then clone the repository and copy the configuration template.
+Install Docker and Docker Compose, then clone the repository and copy the configuration file.
 
 ```bash
 git clone https://github.com/skygazer42/GustoBot.git
@@ -71,14 +71,14 @@ cd GustoBot
 cp .env.example .env
 ```
 
-In Windows PowerShell, use `Copy-Item .env.example .env` to copy the template. Edit `.env` and replace the placeholders:
+In Windows PowerShell, copy the file with `Copy-Item .env.example .env`. Configure the following in `.env`:
 
 - **Chat model:** set `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
 - **Embedding model:** set `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL`. Match `EMBEDDING_DIMENSION` to the model's actual output dimension.
 - **Storage:** replace `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, and `NEO4J_PASSWORD`. Keep the MySQL application credentials in `DATABASE_URL` consistent with these settings. URL-encode reserved characters in the connection string.
 - **Admin login:** set `GUSTOBOT_ADMIN_PASSWORD` and a separate, random `SECRET_KEY` of at least 32 bytes.
 
-Chat and embedding endpoints use OpenAI-compatible APIs and can be configured separately. See the [quick-start guide](./docs/QUICK_START.md) for full configuration, local development, and data-import instructions.
+Chat and embedding models can use separate OpenAI-compatible endpoints. See the [quick-start guide](./docs/QUICK_START.md) for configuration, local development, and data import.
 
 ```bash
 docker compose --env-file .env up -d --build
@@ -91,35 +91,35 @@ docker compose --env-file .env up -d --build
 | API documentation | <http://localhost:8000/docs> |
 | Health check | <http://localhost:8000/health> |
 
-Ports depend on your configuration. Prepare the recipe catalog and the published knowledge base separately. See [data sources and preparation](./docs/DATA_SOURCES.md) and the [admin guide](./docs/ADMIN_GUIDE.md) for catalog snapshots, images, document publication, and fact ingestion.
+Ports are configurable. The recipe catalog and knowledge base are prepared separately. See [data preparation](./docs/DATA_SOURCES.md) and the [admin guide](./docs/ADMIN_GUIDE.md) for file locations, images, and import steps.
 
 ## Architecture
 
-Ingestion and question answering share one domain definition. Ingestion publishes graph facts and text chunks through their respective paths. A shared query service plans requests and retrieves evidence, then evaluates rules and produces grounded answers.
+Ingestion and queries use the same ontology. The query service reads graph facts and text from separate stores.
 
 <p align="center">
   <a href="./docs/assets/architecture/knowledge-overview.png">
-    <img src="./docs/assets/architecture/knowledge-overview.png" width="800" alt="Knowledge ingestion and queries share a domain ontology and semantic runtime, combining graph facts and source text for retrieval and evaluation">
+    <img src="./docs/assets/architecture/knowledge-overview.png" width="800" alt="Knowledge ingestion, graph and text stores, and the query service">
   </a>
 </p>
 
 [High-resolution PNG](./docs/assets/architecture/knowledge-overview.png) · [Vector SVG](./docs/assets/architecture/knowledge-overview.svg) · [Chinese version](./README.zh-CN.md#技术架构)
 
-| Responsibility | Current implementation |
+| Component | Role |
 | --- | --- |
-| Interface and requests | Vue, FastAPI, and AG-UI streaming events; LangGraph adapts ordinary chat to the shared query service |
-| Domain semantics and QA | Ontology compilation, business-property bindings, controlled queries, joint retrieval, calculations, and evidence evaluation |
-| Knowledge storage | Neo4j for facts and quotations; Milvus for published document vectors |
-| Conversations and publication | MySQL for sessions, messages, source versions, ingestion jobs, and publication state |
-| Model capabilities | LLMs for explicit candidate extraction, query planning when needed, and grounded expression; embeddings for vectorization |
+| UI and API | Vue renders the pages, FastAPI serves the API, and AG-UI streams progress and replies; LangGraph forwards ordinary chat requests |
+| Query service | Reads ontology definitions, builds controlled queries, retrieves material, and calculates and validates results |
+| Graph and text | Neo4j stores facts and quotations; Milvus stores vectors for published documents |
+| Conversation and publication records | MySQL stores conversations, source versions, ingestion jobs, and publication state |
+| Models | LLMs extract candidate facts, plan queries when needed, and write answers; embedding models produce vectors |
 
 [Shared query service](./gustobot/application/services/knowledge_query.py) · [Ingestion service](./gustobot/application/services/knowledge_ingestion.py) · [Semantic runtime](./gustobot/infrastructure/knowledge/semantic_runtime.py) · [Diagrams and detailed flows](./docs/ARCHITECTURE.md)
 
-### Domain reuse and supported semantics
+### Using other domains
 
-The default recipe domain uses the formal OWL/RDFS, OWL-RL, and SHACL execution path. The equipment and generic profiles are YAML contract examples. Adapting a new domain requires configuring and validating its semantics, mappings, and query bindings; some existing evaluation paths remain recipe-specific.
+The recipe domain loads OWL/RDFS and SHACL files and runs OWL-RL inference. Equipment and generic domains have YAML examples. Adding a domain requires an ontology, field mappings, and query bindings, along with validation. Some query prompts and numeric calculations are still recipe-specific.
 
-The runtime supports an explicit local ontology fragment and controlled queries. Source quality, entity alignment, and alias decisions still depend on source material and domain review. Inference and evidence validation do not establish the truth of every source document. [Domain profiles](./gustobot/config/domains/) · [Supported semantics](./docs/DOMAIN_KNOWLEDGE.md)
+Supported ontology constructs and query forms are listed in the [domain guide](./docs/DOMAIN_KNOWLEDGE.md). Source quality, entity matching, and aliases still need domain review; semantic checks do not establish whether an article is true. [Domain profiles](./gustobot/config/domains/)
 
 ## Documentation
 
@@ -136,4 +136,4 @@ The detailed guides below are currently in Chinese.
 
 The project code is licensed under [Apache License 2.0](./LICENSE). Third-party recipes, documents, and images retain their respective licenses. See [data sources and provenance](./docs/DATA_SOURCES.md) for details.
 
-Report issues and suggest improvements through [GitHub Issues](https://github.com/skygazer42/GustoBot/issues).
+For bugs and suggestions, open a [GitHub issue](https://github.com/skygazer42/GustoBot/issues).

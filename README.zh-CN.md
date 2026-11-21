@@ -4,7 +4,7 @@
 
 <h1 align="center">GustoBot · 陶陶</h1>
 
-<p align="center"><strong>本体驱动的知识服务</strong><br>领域语义 · 图文联合取证 · 可追溯回答</p>
+<p align="center"><strong>基于领域本体的知识问答</strong></p>
 
 <p align="center"><a href="./README.md">English</a> · <strong>简体中文</strong></p>
 
@@ -23,47 +23,47 @@
 
 ## GustoBot 是什么
 
-GustoBot 将领域本体、图谱事实和原文资料接入统一问答服务。领域本体定义概念、关系与可执行约束，图谱保存具体事实，原文保留上下文。系统按这些定义规划查询、联合取证并计算结果，回答附带实际使用的来源。
+GustoBot 是一个基于领域本体的知识问答系统，支持查询知识图谱和原文资料，并在回答中标注出处。
 
-**菜谱是当前的应用领域。** 同一道菜的不同做法保留各自版本，用量、步骤和耗时归属于具体做法；相关文章可以补充背景。领域定义可以配置，新领域仍需补齐模型、字段映射和查询绑定。
+仓库目前提供菜谱应用：用户可以选择一道菜，查看做法并向陶陶提问。同名菜谱按来源和版本区分，食材用量、步骤和耗时随具体做法保存。
 
 ## 核心能力
 
-### 本体约束的知识表示
+### 本体定义与资料入库
 
-默认菜谱使用版本化的 OWL/RDFS 与 SHACL 定义概念、关系、身份、业务属性、单位和证据形状。运行时加载并编译这些定义，让资料构建与查询求值共用领域语义。
+菜谱本体用 OWL/RDFS 描述概念与关系，用 SHACL 检查入库事实和查询所需的事实证据。对象身份、查询属性和单位规则也由这套定义管理。
 
-图事实保存对象关系和原始引文；文档保留完整语境并发布为可检索的片段。两者通过实体关联、来源身份和版本连接，可共同支持一次回答。
+结构化记录按字段映射写入图谱，保留来源引文。文章分块并发布后可参与向量检索，也可以按实体、来源和版本关联到图谱，供回答时一起查阅。
 
 <p align="center">
   <a href="./docs/assets/architecture/knowledge-representation.png">
-    <img src="./docs/assets/architecture/knowledge-representation.png" width="800" alt="领域本体约束实例事实，事实通过引文和实体关联连接原文与相关文章">
+    <img src="./docs/assets/architecture/knowledge-representation.png" width="800" alt="本体、图谱事实与来源原文的关系">
   </a>
 </p>
 
-结构化记录按来源字段确定性映射并校验后入图。文档可只发布原文向量；需要图事实时，再显式抽取候选、人工核对并校验。[知识表示与入库契约](./docs/DOMAIN_KNOWLEDGE.md)
+文档可以只保留原文供检索。要从中提取图谱事实，需先抽取候选，再由人工核对并通过校验。[数据模型与入库](./docs/DOMAIN_KNOWLEDGE.md)
 
-### 本体驱动的查询与求值
+### 查询、计算与回答
 
-简单问题走确定性路径，复杂问题由模型选择本体允许的业务属性和条件。服务解析对象与来源版本，按需联合检索图谱事实、当前资料和关联文章。
+回答时，系统会确定相关对象和来源版本，查询本体允许的图谱属性，并结合选中的资料与已发布文档。简单问题直接按规则处理；条件较复杂时，由模型生成查询计划。
 
-正式业务属性的事实求值执行支持的本体推导、数量计算与证据校验。结构化结果可以直接返回，需要综合说明时再基于证据生成回答。对象不明确时先澄清；未知值、定性数量和资料缺口按实际情况保留。
+对于已支持的属性，程序按本体规则计算结果、检查事实证据，需要归纳说明时再由模型组织回答。做法或版本有歧义时，先请用户确认；资料缺失时说明缺少哪部分。
 
 <p align="center">
   <a href="./docs/assets/architecture/knowledge-reasoning.png">
-    <img src="./docs/assets/architecture/knowledge-reasoning.png" width="800" alt="问题经过查询规划、图文联合取证与规则求值，得到结果、来源和资料缺口">
+    <img src="./docs/assets/architecture/knowledge-reasoning.png" width="800" alt="从查询规划、资料检索到计算和回答的流程">
   </a>
 </p>
 
-例如，查询糖的用量时可以按声明的单位规则换算；原文中的“适量”保持定性描述。选择某份做法后，以该版本原文为配方依据，相关文章用于补充背景。[查询与求值边界](./docs/DOMAIN_KNOWLEDGE.md)
+明确记载的用量可按单位规则换算；“适量”等定性用量沿用原文。回答具体做法时，以选定版本的菜谱为准，相关文章补充背景。[查询规则](./docs/DOMAIN_KNOWLEDGE.md)
 
-### 可追溯的知识发布与问答
+### 知识库与对话管理
 
-管理后台提供原文核对、文档发布与撤回、文档记录删除、图谱候选审核和只读对话记录。聊天界面显示执行进度及实际出处，回答保留所用来源和版本。知识发布由显式操作完成，生成答案不会自动写回图谱。[管理后台指南](./docs/ADMIN_GUIDE.md)
+后台可以查看来源原文、发布或撤回文档、删除文档记录、审核待入图的候选事实，以及查阅已保存的对话。聊天页面显示处理进度和来源。知识更新需通过入库或审核操作提交，生成的回答不会自动写回图谱。[后台使用说明](./docs/ADMIN_GUIDE.md)
 
 ## 快速开始
 
-准备 Docker 与 Docker Compose，然后克隆仓库并复制配置。
+安装 Docker 和 Docker Compose，然后克隆仓库、复制配置文件。
 
 ```bash
 git clone https://github.com/skygazer42/GustoBot.git
@@ -71,14 +71,14 @@ cd GustoBot
 cp .env.example .env
 ```
 
-Windows PowerShell 可用 `Copy-Item .env.example .env` 复制配置。编辑 `.env`，替换占位值：
+Windows PowerShell 使用 `Copy-Item .env.example .env` 复制配置。编辑 `.env`，填写以下设置：
 
 - **聊天模型**：填写 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`。
 - **向量模型**：填写 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_MODEL`，并让 `EMBEDDING_DIMENSION` 匹配实际输出维度。
 - **存储连接**：更换 `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`NEO4J_PASSWORD`，同步 `DATABASE_URL` 中的 MySQL 应用账号与密码。连接串中的保留字符需 URL 编码。
 - **后台登录**：配置 `GUSTOBOT_ADMIN_PASSWORD` 和独立随机的 `SECRET_KEY`（至少 32 字节）。
 
-聊天与向量接口采用 OpenAI-compatible 格式，可分别配置。完整配置、本地开发和资料导入方式见[快速启动指南](./docs/QUICK_START.md)。
+聊天和向量模型可分别连接 OpenAI-compatible 接口。配置、本地开发和资料导入步骤见[快速启动](./docs/QUICK_START.md)。
 
 ```bash
 docker compose --env-file .env up -d --build
@@ -91,35 +91,35 @@ docker compose --env-file .env up -d --build
 | API 文档 | <http://localhost:8000/docs> |
 | 健康检查 | <http://localhost:8000/health> |
 
-端口以实际配置为准。菜谱目录与已发布知识库分别准备：目录快照、配图、文档发布和事实导入方式见[数据来源与构建](./docs/DATA_SOURCES.md)及[管理后台指南](./docs/ADMIN_GUIDE.md)。
+端口可在配置中修改。菜谱目录和知识库需要分别准备，文件位置、配图和导入方式见[数据准备](./docs/DATA_SOURCES.md)及[后台使用说明](./docs/ADMIN_GUIDE.md)。
 
 ## 技术架构
 
-知识构建与问答使用同一领域定义。构建阶段分别发布图事实与原文片段；查询阶段由统一服务规划和取证，再执行规则求值与有据表达。
+入库和查询共用一套本体定义。图谱和原文分别存储，由同一个查询服务读取。
 
 <p align="center">
   <a href="./docs/assets/architecture/knowledge-overview-zh.png">
-    <img src="./docs/assets/architecture/knowledge-overview-zh.png" width="800" alt="中文版技术总览：知识构建和问答共享领域本体，图谱与原文汇流取证">
+    <img src="./docs/assets/architecture/knowledge-overview-zh.png" width="800" alt="知识入库、图谱与原文存储、查询服务的关系">
   </a>
 </p>
 
 [高清 PNG](./docs/assets/architecture/knowledge-overview-zh.png) · [矢量 SVG](./docs/assets/architecture/knowledge-overview-zh.svg) · [英文版](./README.md#architecture)
 
-| 职责 | 当前实现 |
+| 模块 | 作用 |
 | --- | --- |
-| 请求与界面 | Vue、FastAPI、AG-UI 流式事件；LangGraph 将普通对话适配到统一查询服务 |
-| 领域语义与问答 | 本体编译、业务属性绑定、受控查询、图文取证、规则计算和证据求值 |
-| 知识存储 | Neo4j 保存事实及引文，Milvus 保存已发布文档向量 |
-| 会话与发布 | MySQL 保存会话、消息、来源版本、入库作业与发布状态 |
-| 模型能力 | LLM 用于显式候选抽取、必要的查询规划与有据表达；Embedding 用于向量化 |
+| 页面与接口 | Vue 提供页面，FastAPI 提供接口，AG-UI 传送进度和回复；LangGraph 转接普通聊天请求 |
+| 查询服务 | 读取本体定义，生成受控查询，检索资料并计算、校验结果 |
+| 图谱与原文 | Neo4j 保存事实和引文，Milvus 保存已发布文档的向量 |
+| 会话与发布记录 | MySQL 保存对话、来源版本、入库任务和发布状态 |
+| 模型 | LLM 负责候选抽取、必要的查询规划和回答整理；Embedding 模型生成向量 |
 
 [统一查询服务](./gustobot/application/services/knowledge_query.py) · [入库服务](./gustobot/application/services/knowledge_ingestion.py) · [语义运行时](./gustobot/infrastructure/knowledge/semantic_runtime.py) · [图稿与详细流程](./docs/ARCHITECTURE.md)
 
-### 领域复用与支持范围
+### 接入其他领域
 
-默认菜谱已使用正式 OWL/RDFS、OWL-RL 与 SHACL 运行链。设备和通用领域提供 YAML 契约样板，接入新领域需要配置并验证对应的语义、映射和查询绑定；现有业务求值仍包含菜谱专属能力。
+默认菜谱使用 OWL/RDFS 和 SHACL 文件，加载时执行 OWL-RL 推导。设备和通用领域提供 YAML 样板。接入新领域时，需要编写并验证本体、字段映射和查询绑定；现有查询提示及部分数值计算仍与菜谱有关。
 
-当前支持明确的本地本体片段和受控查询。原文质量、实体对齐与别名裁决仍依赖来源和业务核对；推导与证据校验不替代资料真实性判断。[领域配置](./gustobot/config/domains/) · [正式语义边界](./docs/DOMAIN_KNOWLEDGE.md)
+支持的本体构件和查询方式见[领域服务文档](./docs/DOMAIN_KNOWLEDGE.md)。原文质量、实体匹配和别名仍需业务核对，语义校验不用于认定文章内容是否真实。[领域配置](./gustobot/config/domains/)
 
 ## 开发文档
 
@@ -134,4 +134,4 @@ docker compose --env-file .env up -d --build
 
 项目代码采用 [Apache License 2.0](./LICENSE)。第三方菜谱、文档和图片按各自来源与许可使用，详见[数据来源与血缘](./docs/DATA_SOURCES.md)。
 
-欢迎通过 [GitHub Issues](https://github.com/skygazer42/GustoBot/issues) 提交问题和改进建议。
+问题与建议请提交到 [GitHub Issues](https://github.com/skygazer42/GustoBot/issues)。

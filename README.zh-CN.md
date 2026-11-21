@@ -6,8 +6,6 @@
 
 <p align="center"><strong>基于领域本体的企业级知识问答</strong></p>
 
-<p align="center">关键词：本体 · 知识图谱 · 语义检索</p>
-
 <p align="center"><a href="./README.md">English</a> · <strong>简体中文</strong></p>
 
 <p align="center">

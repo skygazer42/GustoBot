@@ -150,7 +150,10 @@ services:
     restart: unless-stopped
 
   milvus:
-    image: milvusdb/milvus:v2.5.12
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: milvus
     command: ["milvus", "run", "standalone"]
     security_opt:
       - seccomp:unconfined
@@ -164,18 +167,6 @@ services:
       - "${MILVUS_HEALTH_PORT:-9091}:9091"
     volumes:
       - documents_milvus_data:/var/lib/milvus
-      - type: bind
-        source: ./docker/milvus/embedEtcd.yaml
-        target: /milvus/configs/embedEtcd.yaml
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./docker/milvus/user.yaml
-        target: /milvus/configs/user.yaml
-        read_only: true
-        bind:
-          create_host_path: false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s

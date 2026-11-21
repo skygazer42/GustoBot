@@ -36,6 +36,8 @@ from gustobot.infrastructure.knowledge.vector_store import DocumentChunk, Vector
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOT = ROOT / ".superpowers/sdd/2026-11-16-knowledge-completion/milvus-restart"
 ENABLED = os.environ.get("GUSTOBOT_RUN_MILVUS_RESTART") == "1"
+# QueryCoord checks restored node sessions every 60s; HTTP health can recover earlier.
+RECOVERY_TIMEOUT = 120
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -61,13 +63,13 @@ class OwnedMilvus:
         self.label = "org.gustobot.milvus-restart=" + self.token
         self.folder = OUTPUT_ROOT / self.token
         self.folder.mkdir()
-        self.container_created = self.volume_created = False
+        self.container_created = self.volume_created = self.image_created = False
         self.evidence: dict[str, Any] = {
             "exercise": "isolated_milvus_real_restart_persistence_v1",
             "run_id": self.token,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "provider_kind": "fixed_numeric_vector_fixture",
-            "image": "milvusdb/milvus:v2.5.12",
+            "image": self.name,
             "candidate_schema": INDEX_SCHEMA_VERSION,
             "actual_restart_verified": False,
             "semantic_quality_verified": False,
@@ -132,17 +134,26 @@ class OwnedMilvus:
     async def start(self) -> None:
         started = monotonic()
         self.docker(
+            [
+                "build",
+                "--file",
+                str(ROOT / "Dockerfile"),
+                "--target",
+                "milvus",
+                "--tag",
+                self.name,
+                "--label",
+                self.label,
+                str(ROOT),
+            ],
+            operation="build own image",
+            timeout=300,
+        )
+        self.image_created = True
+        self.docker(
             ["volume", "create", "--label", self.label, self.volume], operation="create own volume"
         )
         self.volume_created = True
-        configurations = {}
-        mounts = []
-        for name in ("embedEtcd.yaml", "user.yaml"):
-            path = (ROOT / "docker/milvus" / name).resolve(strict=True)
-            configurations[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-            mounts.extend(
-                ["--mount", f"type=bind,source={path},target=/milvus/configs/{name},readonly"]
-            )
         self.docker(
             [
                 "run",
@@ -159,7 +170,6 @@ class OwnedMilvus:
                 "seccomp=unconfined",
                 "--volume",
                 self.volume + ":/var/lib/milvus",
-                *mounts,
                 "--env",
                 "ETCD_USE_EMBED=true",
                 "--env",
@@ -168,7 +178,7 @@ class OwnedMilvus:
                 "ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml",
                 "--env",
                 "COMMON_STORAGETYPE=local",
-                "milvusdb/milvus:v2.5.12",
+                self.name,
                 "milvus",
                 "run",
                 "standalone",
@@ -176,9 +186,15 @@ class OwnedMilvus:
             operation="start own service",
         )
         self.container_created = True
+        configuration = self.docker(
+            ["exec", self.name, "cat", "/milvus/configs/embedEtcd.yaml"],
+            operation="read own image configuration",
+        )
         self.ports()
         self.evidence["initial_ports"] = {"grpc": self.grpc_port, "health": self.health_port}
-        self.evidence["configuration_sha256"] = configurations
+        self.evidence["configuration_sha256"] = {
+            "embedEtcd.yaml": hashlib.sha256(configuration).hexdigest()
+        }
         await self.wait_ready()
         self.evidence["timings_seconds"]["initial_start_to_health"] = monotonic() - started
 
@@ -199,6 +215,8 @@ class OwnedMilvus:
     def cleanup(self) -> None:
         with ExitStack() as cleanup:
             cleanup.callback(self._record_cleanup)
+            if self.image_created:
+                cleanup.callback(self._remove_image)
             if self.volume_created:
                 cleanup.callback(self._remove_volume)
             if self.container_created:
@@ -208,6 +226,26 @@ class OwnedMilvus:
         self.assert_owned()
         self.docker(["rm", "--force", self.name], operation="remove own service")
         self.evidence["cleanup"]["container_removed"] = True
+
+    def _remove_image(self) -> None:
+        label = (
+            self.docker(
+                [
+                    "image",
+                    "inspect",
+                    "--format",
+                    '{{ index .Config.Labels "org.gustobot.milvus-restart" }}',
+                    self.name,
+                ],
+                operation="verify own image",
+            )
+            .decode()
+            .strip()
+        )
+        if label != self.token:
+            raise RuntimeError("Refusing to remove an image without this run's ownership label")
+        self.docker(["image", "rm", self.name], operation="remove own image")
+        self.evidence["cleanup"]["image_removed"] = True
 
     def _remove_volume(self) -> None:
         label = (
@@ -284,8 +322,8 @@ def _open_stores(owned: OwnedMilvus, dimension: int):
         dimension=dimension,
         embedding_model="restart-fixed-vector-fixture",
         embedding_fingerprint=fingerprint,
-        timeout=15,
-        initialization_timeout=45,
+        timeout=RECOVERY_TIMEOUT,
+        initialization_timeout=RECOVERY_TIMEOUT,
     )
     try:
         documents = VectorStore(
@@ -296,7 +334,7 @@ def _open_stores(owned: OwnedMilvus, dimension: int):
             embedding_model="restart-fixed-vector-fixture",
             index_type="HNSW",
             metric_type="COSINE",
-            timeout=30,
+            timeout=RECOVERY_TIMEOUT,
         )
     except BaseException:
         candidates.close()
@@ -344,7 +382,11 @@ def _write(stores, domain_id, dimension):
 def _rows(store):
     fields = [field.name for field in store.collection.schema.fields]
     rows = store.collection.query(
-        expr='id != ""', output_fields=fields, limit=100, consistency_level="Strong", timeout=20
+        expr='id != ""',
+        output_fields=fields,
+        limit=100,
+        consistency_level="Strong",
+        timeout=RECOVERY_TIMEOUT,
     )
     return sorted(rows, key=lambda row: row["id"])
 

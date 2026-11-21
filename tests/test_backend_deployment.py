@@ -90,18 +90,17 @@ def test_compose_respects_custom_graph_account(compose_model):
         assert compose_model["services"][service]["environment"]["NEO4J_USER"] == "domain-reader"
 
 
-def test_milvus_uses_persistent_embedded_etcd_and_read_only_configuration(compose_model):
+def test_milvus_image_bundles_configuration_and_keeps_persistent_embedded_etcd(compose_model):
     milvus = compose_model["services"]["milvus"]
     assert milvus["environment"]["ETCD_USE_EMBED"] == "true"
     assert milvus["environment"]["ETCD_DATA_DIR"] == "/var/lib/milvus/etcd"
     assert milvus["environment"]["COMMON_STORAGETYPE"] == "local"
     mounts = {volume["target"]: volume for volume in milvus["volumes"]}
     assert mounts["/var/lib/milvus"]["type"] == "volume"
-    for filename in ("embedEtcd.yaml", "user.yaml"):
-        mount = mounts[f"/milvus/configs/{filename}"]
-        assert mount["read_only"] is True
-        assert not mount["bind"].get("create_host_path", False)
-        assert Path(mount["source"]).is_file()
+    assert milvus["build"]["target"] == "milvus"
+    assert Path(milvus["build"]["context"]) == ROOT
+    assert milvus["build"]["dockerfile"] == "Dockerfile"
+    assert set(mounts) == {"/var/lib/milvus"}
 
 
 def test_backend_import_needs_no_retired_vendor_or_optional_redis(tmp_path):

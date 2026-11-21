@@ -2,14 +2,14 @@
 
 ## 默认服务
 
-`docker-compose.yml` 默认启动应用、MySQL、Neo4j、Milvus 及一次性迁移任务。应用镜像打包 Vue 产物，FastAPI 在同一端口提供网页、后台和接口。Milvus 的内嵌 etcd 与本地存储配置只读挂载。[Milvus v2.5.12 官方单机脚本](https://github.com/milvus-io/milvus/blob/v2.5.12/scripts/standalone_embed.sh)
+`docker-compose.yml` 默认启动应用、MySQL、Neo4j、Milvus 及一次性迁移任务。应用镜像打包 Vue 产物，FastAPI 在同一端口提供网页、后台和接口。Milvus 使用现有 `Dockerfile` 的 `milvus` 构建目标，基于官方 v2.5.12 镜像固化内嵌 etcd 配置，运行时只挂载持久化数据卷。[Milvus v2.5.12 官方单机脚本](https://github.com/milvus-io/milvus/blob/v2.5.12/scripts/standalone_embed.sh)
 
 | 服务 | 镜像/运行时 | 默认宿主机端口 | 持久化 |
 | --- | --- | --- | --- |
 | backend | Python 3.11；项目支持 3.10–3.13 | 8000 | `uploads_data`；原始 `data/` 只读挂载 |
 | mysql | `mysql:8.0.36` | 13306 | `application_mysql_data` |
 | neo4j | `neo4j:5.26-community` | 7474、7687 | `facts_neo4j_data` |
-| milvus | `milvusdb/milvus:v2.5.12` | 19530、9091 | `documents_milvus_data`，包含内嵌 etcd |
+| milvus | `Dockerfile` 的 `milvus` 目标；基于 `milvusdb/milvus:v2.5.12` | 19530、9091 | `documents_milvus_data`，包含内嵌 etcd |
 | redis | `redis:7.2-alpine`；仅 `cache` profile | 无默认宿主机端口 | `redis_data` |
 | migrate | 应用镜像 | 无 | 等待 MySQL 健康，应用版本迁移后退出 |
 | semantic-indexer | 后端镜像；仅 `semantic` profile | 无 | 复用 MySQL generation 与 Milvus 候选集合 |

@@ -271,7 +271,6 @@ onnxruntime-*/
 # 向量数据库持久化文件
 chroma/
 milvus/
-!docker/milvus/
 neo4j_plugins/
 
 # 爬虫相关

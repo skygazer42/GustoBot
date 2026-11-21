@@ -3,3 +3,6 @@
 /eval/knowledge/calibration.jsonl text eol=lf
 /eval/knowledge/controlled_sources.json text eol=lf
 /eval/knowledge/controlled_edge_sources.json text eol=lf
+
+# Documentation assets are excluded from source-language statistics.
+/docs/** linguist-documentation=true

@@ -4,7 +4,9 @@
 
 <h1 align="center">GustoBot · Taotao</h1>
 
-<p align="center"><strong>Question answering with domain ontologies</strong></p>
+<p align="center"><strong>Enterprise question answering with domain ontologies</strong></p>
+
+<p align="center">Keywords: Ontology · Knowledge graphs · Semantic search</p>
 
 <p align="center"><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
 

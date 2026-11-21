@@ -121,9 +121,9 @@ class RecipeCuration(CorrectionModel):
     references: list[CorrectionReference]
     resolutions: list[IssueResolution]
     remaining_limitations: list[str]
-    supplemental_content_license_status: Literal[
-        "reference_only", "review_required"
-    ] = "reference_only"
+    supplemental_content_license_status: Literal["reference_only", "review_required"] = (
+        "reference_only"
+    )
     cooking_tested: Literal[False] = False
     accuracy_certified: Literal[False] = False
 
@@ -315,12 +315,14 @@ def apply_recipe_corrections(
                     references=[references[key] for key in sorted(used)],
                     resolutions=correction.resolutions,
                     remaining_limitations=correction.remaining_limitations,
-                    supplemental_content_license_status="review_required"
-                    if any(
-                        references[key].kind in {"original_author", "recipe_variant"}
-                        for key in used
-                    )
-                    else "reference_only",
+                    supplemental_content_license_status=(
+                        "review_required"
+                        if any(
+                            references[key].kind in {"original_author", "recipe_variant"}
+                            for key in used
+                        )
+                        else "reference_only"
+                    ),
                 )
                 current["curation"] = curation.model_dump()
                 by_id[correction.id] = current

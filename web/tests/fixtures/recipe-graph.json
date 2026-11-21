@@ -1,0 +1,440 @@
+{
+  "entities": [
+    {
+      "id": "recipe-dish:ba8a2c9f116c3092754fbb7338f4537fb2ee79e0dc8a5983df203ff95c32a791",
+      "type": "Dish",
+      "name": "番茄炒蛋",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"番茄炒蛋\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-flavor:f19ef5babb0107694a3b1ed9470fb905f36331d5440b451112629fc435ab1e83",
+      "type": "Flavor",
+      "name": "酸咸",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"酸咸\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-ingredient:24ec8c6a30be46c31f27c85761ad043d33e46a17d2b449d51e41b7f697720859",
+      "type": "Ingredient",
+      "name": "食用油",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"食用油\", \"适量\"]"
+        }
+      ]
+    },
+    {
+      "id": "recipe-ingredient:62374b7047dc69fca0e93c532726f6fc95a23fe28131b073bf039faca7d72eb4",
+      "type": "Ingredient",
+      "name": "鸡蛋",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"鸡蛋\", \"3个\"]"
+        }
+      ]
+    },
+    {
+      "id": "recipe-ingredient:d093e5246c67655d03308a3b8268d1adb0de7120cd57af340f8e16d16ed026d5",
+      "type": "Ingredient",
+      "name": "番茄",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"番茄\", \"2个\"]"
+        }
+      ]
+    },
+    {
+      "id": "recipe-ingredient:f7814e47df257e1be88406e0a3290b9d36b316726f2a58b142f4b6aa3ae2c52d",
+      "type": "Ingredient",
+      "name": "盐",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"盐\", \"1勺\"]"
+        }
+      ]
+    },
+    {
+      "id": "recipe-method:6d9d7aa5f17be75b758d375de2f81059f488260ec0801026e309ca22f05bf768",
+      "type": "CookingMethod",
+      "name": "炒",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"炒\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-step:2ac3e88434ed853406658ff30ec6d3cd20589622c24d928fda234de0cf302576",
+      "type": "CookingStep",
+      "name": "番茄炒蛋 - Step 2",
+      "aliases": [],
+      "properties": {
+        "instruction": "2:蛋液两边摊匀，煎好捞出备用。",
+        "order": 2
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-step:604923e7b8c21bc13454c311d1d3e1543245b178b900079c36dd739cd052f741",
+      "type": "CookingStep",
+      "name": "番茄炒蛋 - Step 1",
+      "aliases": [],
+      "properties": {
+        "instruction": "1:锅中油预热，放入蛋液。",
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-step:635d4358cde0faa8c0368eb11b00cdcb290a310e98a36aaae3728085c2d1fe00",
+      "type": "CookingStep",
+      "name": "番茄炒蛋 - Step 6",
+      "aliases": [],
+      "properties": {
+        "instruction": "6:成品图。",
+        "order": 6
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-step:6faab9bb9a20a854a42be0f9d437e16397a413b38e5af1caf3b6cc4690a8334a",
+      "type": "CookingStep",
+      "name": "番茄炒蛋 - Step 5",
+      "aliases": [],
+      "properties": {
+        "instruction": "5:倒入一勺盐翻炒两分钟即可出锅。",
+        "order": 5
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-step:978ca8bcb50ff00fb310d43a29f097ae8f4d5a6745b60bfa3f48dfccf4fc66c4",
+      "type": "CookingStep",
+      "name": "番茄炒蛋 - Step 4",
+      "aliases": [],
+      "properties": {
+        "instruction": "4:倒入鸡蛋翻炒。",
+        "order": 4
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-step:dbd79aac9ab9fffd298d38d13f7f6955ac50fd3dc79447fef6f1b6198441de98",
+      "type": "CookingStep",
+      "name": "番茄炒蛋 - Step 3",
+      "aliases": [],
+      "properties": {
+        "instruction": "3:锅中油预热，放入番茄煸炒。",
+        "order": 3
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-type:b531096fb759828635f46dd80193459f3689eb4898d5b3184d43bc9f725670ec",
+      "type": "DishType",
+      "name": "热菜",
+      "aliases": [],
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"热菜\""
+        }
+      ]
+    },
+    {
+      "id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "type": "RecipeVariant",
+      "name": "番茄炒蛋",
+      "aliases": [],
+      "properties": {
+        "cook_time": "十分钟",
+        "instructions": "1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。"
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "{\"主食材\": [[\"番茄\", \"2个\"]], \"做法\": \"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\", \"口味\": \"酸咸\", \"工艺\": \"炒\", \"类型\": \"热菜\", \"耗时\": \"十分钟\", \"辅料\": [[\"鸡蛋\", \"3个\"], [\"食用油\", \"适量\"], [\"盐\", \"1勺\"]]}"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "semantic-relation:1d98777f77db697f11833463e5811038fd3b5397ff133d19f61b97c4ef6f1158",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-type:b531096fb759828635f46dd80193459f3689eb4898d5b3184d43bc9f725670ec",
+      "type": "BELONGS_TO_TYPE",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"热菜\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:49b55437df1426ab06200320f5fe75d65a0add04d47c7d1f02d37c757f6c7b0f",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-ingredient:d093e5246c67655d03308a3b8268d1adb0de7120cd57af340f8e16d16ed026d5",
+      "type": "HAS_MAIN_INGREDIENT",
+      "properties": {
+        "role": "main",
+        "amount_text": "2个"
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"番茄\", \"2个\"]"
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:55cadbf76682c9692fe44a10163a60217479b3fb949ba4a95cdbb576570749d2",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-step:dbd79aac9ab9fffd298d38d13f7f6955ac50fd3dc79447fef6f1b6198441de98",
+      "type": "HAS_STEP",
+      "properties": {
+        "order": 3
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:61707ed36be6c83b7e4596409a149bb3eb4244e66f291130e2cbb134f39ea523",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-step:2ac3e88434ed853406658ff30ec6d3cd20589622c24d928fda234de0cf302576",
+      "type": "HAS_STEP",
+      "properties": {
+        "order": 2
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:6d3fc9750fea211f3c8b3d749d0fd5a96cc3e2fcc6530a3a366a188c7b75aea2",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-dish:ba8a2c9f116c3092754fbb7338f4537fb2ee79e0dc8a5983df203ff95c32a791",
+      "type": "VARIANT_OF",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"番茄炒蛋\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:752402fda7f0e2e595e99c03214aadbf8c0a17ddef354ffc2f54734f14123be3",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-step:6faab9bb9a20a854a42be0f9d437e16397a413b38e5af1caf3b6cc4690a8334a",
+      "type": "HAS_STEP",
+      "properties": {
+        "order": 5
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:75bd887109731e6bdc849db0ee00e68572c83c6c2eb9b3ea88dccdd5b68e451b",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-ingredient:24ec8c6a30be46c31f27c85761ad043d33e46a17d2b449d51e41b7f697720859",
+      "type": "HAS_AUX_INGREDIENT",
+      "properties": {
+        "role": "aux",
+        "amount_text": "适量"
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"食用油\", \"适量\"]"
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:873c935de9f023d322b238f3282a51bba58de7c365538fea4a61877c48538f55",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-flavor:f19ef5babb0107694a3b1ed9470fb905f36331d5440b451112629fc435ab1e83",
+      "type": "HAS_FLAVOR",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"酸咸\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:aa664a57446b0f88545bf667e6b92969f20741a983db16b599fdf557a0eef809",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-ingredient:62374b7047dc69fca0e93c532726f6fc95a23fe28131b073bf039faca7d72eb4",
+      "type": "HAS_AUX_INGREDIENT",
+      "properties": {
+        "role": "aux",
+        "amount_text": "3个"
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"鸡蛋\", \"3个\"]"
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:b50df4c5c7e074d597f117bb217ba78bb8b6fcc60e5502ab94f02f7b89d86b93",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-ingredient:f7814e47df257e1be88406e0a3290b9d36b316726f2a58b142f4b6aa3ae2c52d",
+      "type": "HAS_AUX_INGREDIENT",
+      "properties": {
+        "role": "aux",
+        "amount_text": "1勺"
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "[\"盐\", \"1勺\"]"
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:dd742d4f7b63cfd8e4aa71bbde641c6822ede2f8c8f384bf05995af549c9f123",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-method:6d9d7aa5f17be75b758d375de2f81059f488260ec0801026e309ca22f05bf768",
+      "type": "USES_METHOD",
+      "properties": {},
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"炒\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:ea3f134335e27bdc3ec2d9fa857011f76c7f8a5978bedcb78089970bd8792002",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-step:978ca8bcb50ff00fb310d43a29f097ae8f4d5a6745b60bfa3f48dfccf4fc66c4",
+      "type": "HAS_STEP",
+      "properties": {
+        "order": 4
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:f8de73b522ba2e0f0b0d97aae4799ee64217db3244dd893313525430f5e5499e",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-step:604923e7b8c21bc13454c311d1d3e1543245b178b900079c36dd739cd052f741",
+      "type": "HAS_STEP",
+      "properties": {
+        "order": 1
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    },
+    {
+      "id": "semantic-relation:fe56570faddb27bc2b553eb3505b3bf14c399a0ebe6c268a99a35f98eeb9dc60",
+      "source_id": "recipe-variant:a15af8eb0fdcd453cb351a58a024b4e1ae8193527f5ab7d19ff67260b302482f",
+      "target_id": "recipe-step:635d4358cde0faa8c0368eb11b00cdcb290a310e98a36aaae3728085c2d1fe00",
+      "type": "HAS_STEP",
+      "properties": {
+        "order": 6
+      },
+      "evidence": [
+        {
+          "source_id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+          "quote": "\"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\""
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "recipe-source:d5266e08cb664bc28e1218d6e36ce01e79ce4275f84e4b65f2c0bc081108e891",
+      "text": "{\"name\": \"番茄炒蛋\", \"record\": {\"主食材\": [[\"番茄\", \"2个\"]], \"做法\": \"1:锅中油预热，放入蛋液。2:蛋液两边摊匀，煎好捞出备用。3:锅中油预热，放入番茄煸炒。4:倒入鸡蛋翻炒。5:倒入一勺盐翻炒两分钟即可出锅。6:成品图。\", \"口味\": \"酸咸\", \"工艺\": \"炒\", \"类型\": \"热菜\", \"耗时\": \"十分钟\", \"辅料\": [[\"鸡蛋\", \"3个\"], [\"食用油\", \"适量\"], [\"盐\", \"1勺\"]]}}",
+      "uri": null
+    }
+  ],
+  "total": 29,
+  "truncated": false,
+  "ontology_version": "2026-11-17.1",
+  "numeric_coverage": [],
+  "numeric_values": []
+}

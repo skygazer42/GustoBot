@@ -192,6 +192,7 @@ class SnapshotManifest(_Record):
 
 class VerificationReport(_Record):
     """Read-only verification result, rebuild requirements, and restoration checklist."""
+
     valid: bool
     snapshot_id: str | None = None
     scope: ModelScope | None = None

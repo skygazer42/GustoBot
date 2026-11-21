@@ -1,6 +1,6 @@
 [project]
 name = "gustobot"
-version = "0.1.2"
+version = "0.2.0"
 description = "本体约束的统一知识问答与菜谱服务"
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
@@ -24,6 +24,13 @@ build-backend = "setuptools.build_meta"
 [tool.black]
 line-length = 100
 target-version = ['py310']
+
+[tool.ruff.lint.per-file-ignores]
+# Direct CLI execution adds the repository root before importing application types.
+"scripts/build_semantic_index.py" = ["E402"]
+"scripts/import_dish_knowledge.py" = ["E402"]
+"scripts/recipe_kg_to_csv.py" = ["E402"]
+"scripts/verify_knowledge_snapshot.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

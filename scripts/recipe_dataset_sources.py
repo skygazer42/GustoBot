@@ -138,7 +138,10 @@ def _is_tool(text: str) -> bool:
         return True
     base = re.split(r"[（(，,：:]", text, maxsplit=1)[0].strip()
     base = re.sub(r"(?:若干|[一二三四五六七八九十\d]+\s*[个把只台张对])$", "", base).strip()
-    if re.search(r"(?:锅|碗|盘|盘子|盆|刀|铲|纸|保鲜膜|模具|锅盖|烤架|手套|烤箱|微波炉|电蒸炉|料理机|克称|克数称|压汁器|搅拌工具|盘夹)$", base):
+    if re.search(
+        r"(?:锅|碗|盘|盘子|盆|刀|铲|纸|保鲜膜|模具|锅盖|烤架|手套|烤箱|微波炉|电蒸炉|料理机|克称|克数称|压汁器|搅拌工具|盘夹)$",
+        base,
+    ):
         return True
     return any(
         base == tool
@@ -186,8 +189,17 @@ def _ingredient_note(text: str) -> bool:
         or "?" in text
         or "？" in text
         or bool(re.match(r"^\d", text))
-        or bool(re.match(r"^(?:注|注意|建议|参见|一般|每份|每次|一份|基于|按照|如果|若|可选|原料|工具|辅料|配料)[：:]?", text))
-        or bool(re.search(r"过程|分钟|时间|用量为|可准备|需要|容量|体积|质量|家庭用量|建议选择|的用量", text))
+        or bool(
+            re.match(
+                r"^(?:注|注意|建议|参见|一般|每份|每次|一份|基于|按照|如果|若|可选|原料|工具|辅料|配料)[：:]?",
+                text,
+            )
+        )
+        or bool(
+            re.search(
+                r"过程|分钟|时间|用量为|可准备|需要|容量|体积|质量|家庭用量|建议选择|的用量", text
+            )
+        )
     )
 
 
@@ -217,7 +229,9 @@ def _ingredient_pair(text: str, names: list[str]) -> tuple[str, str | None]:
     for name in sorted(names, key=len, reverse=True):
         if text.startswith(name):
             remainder = text[len(name) :]
-            if not remainder or re.match(r"^[\s=:：\d约半一二三四五六七八九十两少适（(]", remainder):
+            if not remainder or re.match(
+                r"^[\s=:：\d约半一二三四五六七八九十两少适（(]", remainder
+            ):
                 amount = remainder.lstrip(" =:：").strip()
                 return name, amount if amount else None
     # 只在括号外寻找数量或分隔符；肥瘦 3:7 及可选说明不是名称的一部分。
@@ -233,7 +247,9 @@ def _ingredient_pair(text: str, names: list[str]) -> tuple[str, str | None]:
                 amount = text[index:].lstrip(" =:：").strip()
                 return name, amount if amount else None
             break
-    match = re.match(r"^(.+?)\s*([一二三四五六七八九十两半几]+(?:小)?(?:个|根|颗|片|只|条|勺|匙|段|块).*)$", text)
+    match = re.match(
+        r"^(.+?)\s*([一二三四五六七八九十两半几]+(?:小)?(?:个|根|颗|片|只|条|勺|匙|段|块).*)$", text
+    )
     if match:
         return _ingredient_name(match.group(1)), match.group(2).strip()
     match = re.match(r"^(.+?)\s+(约|少许|适量|大约)(.+)$", text)

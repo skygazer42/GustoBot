@@ -5,12 +5,14 @@ import copy
 import io
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 from PIL import Image
 from pydantic import ValidationError
 
 from scripts import build_recipe_dataset as dataset
+from scripts.recipe_dataset_http import DownloadCache
 
 
 def meal_record(recipe_id: str = "123") -> dict:
@@ -35,7 +37,13 @@ def test_openkg_preserves_aux_only_recipe_and_existing_cuisine() -> None:
     """主食材为空并不表示没有食材；保留已有西餐菜系与未知耗时。"""
     draft = dataset.normalize_openkg(
         "炖菜",
-        {"主食材": [], "辅料": [["牛肉", "300克"], ["盐", 0]], "做法": "1:备料2:炖煮", "菜系": ["法国菜"], "耗时": ""},
+        {
+            "主食材": [],
+            "辅料": [["牛肉", "300克"], ["盐", 0]],
+            "做法": "1:备料2:炖煮",
+            "菜系": ["法国菜"],
+            "耗时": "",
+        },
         "a" * 64,
     )
     recipe = dataset.DatasetRecipe.model_validate(draft)
@@ -49,7 +57,10 @@ def test_openkg_preserves_aux_only_recipe_and_existing_cuisine() -> None:
 
 def test_step_split_preserves_times_ratios_and_paragraphs() -> None:
     """时刻和配比不是编号，连续记录的步骤仍保持顺序。"""
-    assert dataset.split_recorded_steps("1:18:00开始，水米比1:2。2:关火") == ["18:00开始，水米比1:2。", "关火"]
+    assert dataset.split_recorded_steps("1:18:00开始，水米比1:2。2:关火") == [
+        "18:00开始，水米比1:2。",
+        "关火",
+    ]
     assert dataset.split_recorded_steps("Mix 1:2 sauce. Cook at 18:00.\nServe.") == [
         "Mix 1:2 sauce. Cook at 18:00.",
         "Serve.",
@@ -59,8 +70,16 @@ def test_step_split_preserves_times_ratios_and_paragraphs() -> None:
 def test_step_split_does_not_consume_inline_ratio_as_step_two() -> None:
     """黑椒脆皮肠的真实比例写法不能截断第一步。"""
     text = "1:猪肉肥瘦比是1：9或者2：8；加入黑胡椒。2:大葱切细丝。3:搅拌。"
-    assert dataset.split_recorded_steps(text) == ["猪肉肥瘦比是1：9或者2：8；加入黑胡椒。", "大葱切细丝。", "搅拌。"]
-    assert dataset.split_recorded_steps("1:按比例2:8；混合。2:加盐。3:烹煮。") == ["按比例2:8；混合。", "加盐。", "烹煮。"]
+    assert dataset.split_recorded_steps(text) == [
+        "猪肉肥瘦比是1：9或者2：8；加入黑胡椒。",
+        "大葱切细丝。",
+        "搅拌。",
+    ]
+    assert dataset.split_recorded_steps("1:按比例2:8；混合。2:加盐。3:烹煮。") == [
+        "按比例2:8；混合。",
+        "加盐。",
+        "烹煮。",
+    ]
 
 
 def test_mealdb_retains_measures_language_and_unknown_rights() -> None:
@@ -172,9 +191,10 @@ def test_images_are_decoded_and_cached_by_content(tmp_path: Path) -> None:
     first = dataset.DatasetRecipe.model_validate(dataset.normalize_themealdb(meal_record("1")))
     second = copy.deepcopy(first)
     second.images[0].url = "https://www.themealdb.com/images/bad.jpg"
-    dataset.download_recipe_images([first, second], Cache(), tmp_path, 1)
+    dataset.download_recipe_images([first, second], cast(DownloadCache, Cache()), tmp_path, 1)
     assert first.images[0].validation_status == "verified"
     assert (first.images[0].width, first.images[0].height) == (128, 96)
+    assert first.images[0].local_path is not None
     assert (tmp_path / first.images[0].local_path).is_file()
     assert second.images[0].validation_status == "failed"
     assert second.images[0].error
@@ -193,7 +213,7 @@ def test_truncated_jpeg_does_not_count_as_verified(tmp_path: Path) -> None:
             return truncated, {}
 
     recipe = dataset.DatasetRecipe.model_validate(dataset.normalize_themealdb(meal_record()))
-    dataset.download_recipe_images([recipe], Cache(), tmp_path, 1)
+    dataset.download_recipe_images([recipe], cast(DownloadCache, Cache()), tmp_path, 1)
     assert recipe.images[0].validation_status == "failed"
     assert not list((tmp_path / "media").iterdir())
 
@@ -204,7 +224,10 @@ def test_offline_build_outputs_are_reproducible(
     """完整流水线输出可重复，新菜谱导入文件不会重复包含原有库。"""
     baseline = tmp_path / "baseline.json"
     baseline.write_text(
-        json.dumps({"鸡蛋": {"主食材": [["鸡蛋", "2个"]], "辅料": [], "做法": "1:打散2:炒熟"}}, ensure_ascii=False),
+        json.dumps(
+            {"鸡蛋": {"主食材": [["鸡蛋", "2个"]], "辅料": [], "做法": "1:打散2:炒熟"}},
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(

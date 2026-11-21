@@ -29,17 +29,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.recipe_dataset_http import DownloadCache  # noqa: E402
-from scripts.recipe_dataset_sources import parse_howtocook_recipe  # noqa: E402
-from scripts.recipe_dataset_corrections import (  # noqa: E402
+from scripts.recipe_dataset_corrections import (
     RecipeCuration,
     apply_recipe_corrections,
 )
-from scripts.recipe_dataset_nutrition import (  # noqa: E402
+from scripts.recipe_dataset_http import DownloadCache
+from scripts.recipe_dataset_nutrition import (
     RecipeNutrition,
     apply_nutrition_registry,
     apply_recipe_nutrition,
 )
+from scripts.recipe_dataset_sources import parse_howtocook_recipe
 
 HOWTOCOOK_REVISION = "58c1b9af7900a9489c340bca39ef94a9a62314b1"
 MEALDB_API = "https://www.themealdb.com/api/json/v1/1"
@@ -322,18 +322,20 @@ def normalize_themealdb(entry: dict) -> dict:
         "categories": labels(entry.get("strCategory")),
         "cuisines": labels(entry.get("strArea")),
         "tags": labels(entry.get("strTags")),
-        "images": []
-        if image_url is None
-        else [
-            {
-                "url": image_url,
-                "role": "hero",
-                "alt": name,
-                "source_url": text_or_none(entry.get("strImageSource")) or recipe_url,
-                "license": "CC-confirmed-unspecified" if confirmed else "unknown",
-                "license_status": "provider_confirmed" if confirmed else "review_required",
-            }
-        ],
+        "images": (
+            []
+            if image_url is None
+            else [
+                {
+                    "url": image_url,
+                    "role": "hero",
+                    "alt": name,
+                    "source_url": text_or_none(entry.get("strImageSource")) or recipe_url,
+                    "license": "CC-confirmed-unspecified" if confirmed else "unknown",
+                    "license_status": "provider_confirmed" if confirmed else "review_required",
+                }
+            ]
+        ),
         "source": {
             "provider": "themealdb",
             "record_id": recipe_id,

@@ -47,8 +47,6 @@ _Result = TypeVar("_Result")
 class _CatalogChanged(RuntimeError):
     """Signal that the graph changed while a candidate catalog was exported."""
 
-    pass
-
 
 @dataclass
 class _BuildProgress:

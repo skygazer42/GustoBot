@@ -40,6 +40,7 @@ def compose_model(tmp_path):
         "MYSQL_USER=gustobot\n"
         "MYSQL_PASSWORD=test-application-password\n"
         "DATABASE_URL=mysql+pymysql://gustobot:test-application-password@mysql:3306/gustobot?charset=utf8mb4\n"
+        "NEO4J_USER=domain-reader\n"
         "NEO4J_PASSWORD=test-graph-password\n"
         "LLM_API_KEY=\nEMBEDDING_API_KEY=\n",
         encoding="utf-8",
@@ -75,10 +76,18 @@ def test_default_compose_runs_the_application_with_migration_and_three_stores(co
     assert set(dependencies) == {"migrate", "mysql", "neo4j", "milvus"}
     assert dependencies["migrate"]["condition"] == "service_completed_successfully"
     assert dependencies["migrate"]["required"] is True
-    assert all(dependencies[name]["condition"] == "service_healthy" for name in ("mysql", "neo4j", "milvus"))
+    assert all(
+        dependencies[name]["condition"] == "service_healthy"
+        for name in ("mysql", "neo4j", "milvus")
+    )
     assert services["redis"]["profiles"] == ["cache"]
     assert services["backend"]["environment"]["DATABASE_URL"].startswith("mysql+pymysql://")
     assert services["backend"]["environment"]["KNOWLEDGE_DOMAIN_FILE"].endswith(".yaml")
+
+
+def test_compose_respects_custom_graph_account(compose_model):
+    for service in ("backend", "semantic-indexer"):
+        assert compose_model["services"][service]["environment"]["NEO4J_USER"] == "domain-reader"
 
 
 def test_milvus_uses_persistent_embedded_etcd_and_read_only_configuration(compose_model):

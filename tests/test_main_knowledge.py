@@ -23,6 +23,7 @@ async def test_application_serves_packaged_web_alongside_api(tmp_path, with_web)
     main = importlib.import_module("gustobot.main")
     entrypoint = tmp_path / "gustobot" / "main.py"
     entrypoint.parent.mkdir()
+    assert main.__file__ is not None
     shutil.copyfile(Path(main.__file__), entrypoint)
 
     if with_web:
@@ -34,7 +35,9 @@ async def test_application_serves_packaged_web_alongside_api(tmp_path, with_web)
 
     application = runpy.run_path(str(entrypoint))["application"]
     # HTTP routing can be exercised without opening a database connection.
-    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
         home = await client.get("/?page=workspace")
         if with_web:
             assert home.status_code == 200

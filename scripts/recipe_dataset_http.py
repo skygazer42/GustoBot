@@ -10,7 +10,7 @@ from types import TracebackType
 from urllib.parse import urlsplit
 
 import httpx
-
+from typing_extensions import Self
 
 _ALLOWED_HOSTS = frozenset(
     {"api.github.com", "raw.githubusercontent.com", "www.themealdb.com", "themealdb.com"}
@@ -73,7 +73,7 @@ class DownloadCache:
             else client
         )
 
-    def __enter__(self) -> "DownloadCache":
+    def __enter__(self) -> Self:
         """返回本缓存，供调用方显式限定 HTTP 客户端生命周期。"""
         return self
 
@@ -177,9 +177,12 @@ class DownloadCache:
                     continue
                 response.raise_for_status()
                 content_length = response.headers.get("Content-Length")
-                if content_length is not None and content_length.isdecimal():
-                    if int(content_length) > max_bytes:
-                        raise ValueError("Recipe response exceeds max_bytes")
+                if (
+                    content_length is not None
+                    and content_length.isdecimal()
+                    and int(content_length) > max_bytes
+                ):
+                    raise ValueError("Recipe response exceeds max_bytes")
                 body = bytearray()
                 for chunk in response.iter_bytes():
                     if len(body) + len(chunk) > max_bytes:

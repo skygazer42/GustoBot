@@ -17,7 +17,7 @@
 
 ## 语义角色
 
-正式变量位于 `web/src/styles/global.scss`；已确认的视觉参考保留在 `web/design-lab/taotao.html`。（用户确认 / Agent 推断）
+正式变量位于 `web/src/styles/global.scss`，页面实现位于 `web/src`；README 配图使用 `docs/assets/architecture/knowledge-*.png` 及对应 SVG。（用户确认 / Agent 工程适配）
 
 | Token | 色值或字体 | 用途 |
 |---|---|---|
@@ -71,13 +71,10 @@
 - `web/src/App.vue`、`web/src/components/RecipeCatalog.vue` 与 `web/src/components/LandingPage.vue`：真实目录、所选菜谱阅读与伴随助手，替代固定菜谱首页。（用户要求 / Agent 工程适配）
 - `web/src/components/ChatWidget.vue` 与 `web/src/components/ChatComposer.vue`：相同上下文展开/收起保留草稿和消息；目录通用助手与所选菜谱互相隔离，换上下文取消旧请求并恢复各自草稿。通用聊天可上传，所选菜谱模式隐藏上传；欢迎文案不使用预置对话。（Agent 工程适配）
 - `web/src/components/IngredientList.vue` 与 `web/src/components/InlineQuestion.vue`：共用食材和追问组件。独立页面已移除，删除无调用的AboutPage与RecipeNote组件。（用户最新要求 / Agent 工程适配）
-- `web/design-lab/taotao.html` 为历史独立桌面原型；当前正式页面以本规范最新入口约束为准。（Agent 工程适配）
-- `web/design-lab/taotao-preview.html` 提供适应窗口和100%查看；缩放1440×900画布便于预览，不代表手机布局。（Agent 推断）
 - 正式字体放在 `web/src/assets`，保留OFL许可；菜谱配图来自当前目录已验证的本地文件，通过受控媒体接口提供，并保留原文署名和许可。界面用本地字体子集，动态中文回复使用系统中文字体回退。（Agent 工程适配）
 - 草稿、勾选、份量与专注步骤按菜谱ID和版本在当前页面内保存；换菜启动独立会话，刷新后这些临时偏好重置。目录筛选与所选菜谱保留在URL，刷新可定位。（Agent 工程适配）
 - 正式聊天和上传沿用Axios接口；返回的文字及来源链接安全呈现，失败保留问题和附件，相同问题重试不重复插入用户气泡。未新增历史读取或持久化。（Agent 推断）
 - `web/src/data/recipe.ts` 只保留数据合同和纯显示函数，生产页面没有固定炒蛋对象。公共接口默认读取284条上游声明开放许可的JSONL子集，未自动导入图谱/向量库；这不等于独立版权审核、试做或内容认证。问答使用服务端校验的当前菜谱版本，来源由服务端构造。（用户要求真实后端交互 / Agent 工程适配）
-- 预览形态切换栏属于历史设计工具，不作为正式产品入口。（Agent 工程适配）
 - 正式路由仅目录 `/` 与阅读 `?recipe=<id>`，q/category/offset随返回与详情链接保留。旧workspace+recipe链接归到对应阅读并展开助手，其他旧页面链接归目录；URL移除过时page参数。内部切页保存页面滚动位置和草稿，站外链接标明新标签页。（用户最新要求 / Agent 工程适配）
 
 ### 公共菜谱目录

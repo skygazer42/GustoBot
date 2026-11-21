@@ -227,7 +227,9 @@ def chat_payload():
 
 @asynccontextmanager
 async def chat_model(module, *, sync_handler=None, async_handler=None):
-    handler = lambda request: httpx.Response(200, json=chat_payload())
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=chat_payload())
+
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(handler if async_handler is None else async_handler),
         event_hooks={"request": [module.record_async_http_request]},

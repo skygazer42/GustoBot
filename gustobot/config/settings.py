@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Application metadata
     APP_NAME: str = "GustoBot"
-    APP_VERSION: str = "0.1.2"
+    APP_VERSION: str = "0.2.0"
     DEBUG: bool = False
     KNOWLEDGE_DOMAIN_FILE: str = "gustobot/config/domains/recipes.yaml"
     RECIPE_DATASET_PATH: str = "data/recipes/recipes.open-license.jsonl"

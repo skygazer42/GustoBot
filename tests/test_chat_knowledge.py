@@ -173,19 +173,31 @@ async def test_ag_ui_emits_progress_and_persists_final_answer(chat_api):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.post("/chat/ag-ui", json={
-            "threadId": "thread-test", "runId": "run-test", "state": {}, "tools": [], "context": [],
-            "messages": [{"id": "question-a", "role": "user", "content": "佛跳墙加多少糖？"}],
-            "forwardedProps": {},
-        })
+        response = await client.post(
+            "/chat/ag-ui",
+            json={
+                "threadId": "thread-test",
+                "runId": "run-test",
+                "state": {},
+                "tools": [],
+                "context": [],
+                "messages": [{"id": "question-a", "role": "user", "content": "佛跳墙加多少糖？"}],
+                "forwardedProps": {},
+            },
+        )
     assert response.status_code == 200
-    events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+    events = [
+        json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
     assert events[0]["type"] == "RUN_STARTED"
     assert events[0]["threadId"] == "thread-test"
     started = [event["stepName"] for event in events if event["type"] == "STEP_STARTED"]
     finished = [event["stepName"] for event in events if event["type"] == "STEP_FINISHED"]
     assert started == finished == ["planning", "retrieving", "answering", "saving"]
-    assert [event["delta"] for event in events if event["type"] == "TEXT_MESSAGE_CONTENT"] == ["来源记载", "糖为适量。"]
+    assert [event["delta"] for event in events if event["type"] == "TEXT_MESSAGE_CONTENT"] == [
+        "来源记载",
+        "糖为适量。",
+    ]
     assert events[-1]["type"] == "RUN_FINISHED"
     result = events[-1]["result"]
     assert result["sources"][0]["source"] == "recipe.json"

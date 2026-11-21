@@ -399,12 +399,12 @@ test("a fifteen-node recipe remains readable on mobile and its offscreen relatio
   await browser.setViewport({ width: 390, height: 844 });
   const state = await installRecipes(browser);
   const source = recipes[0];
-  const snapshot = JSON.parse(readFileSync(fileURLToPath(new URL("../design-lab/recipe-workspace-directions/snapshot.json", import.meta.url)), "utf8").replace(/^\uFEFF/, "")) as { graph: FactResult };
+  const snapshot = JSON.parse(readFileSync(fileURLToPath(new URL("./fixtures/recipe-graph.json", import.meta.url)), "utf8")) as FactResult;
   const graph: FactResult = {
-    ...snapshot.graph,
-    entities: snapshot.graph.entities.map((entity) => ({ ...entity, evidence: entity.evidence.map((item) => ({ ...item, source_id: source.source_id })) })),
-    relations: snapshot.graph.relations.map((relation) => ({ ...relation, evidence: relation.evidence.map((item) => ({ ...item, source_id: source.source_id })) })),
-    sources: snapshot.graph.sources.map((item) => ({ ...item, id: source.source_id, uri: source.uri })),
+    ...snapshot,
+    entities: snapshot.entities.map((entity) => ({ ...entity, evidence: entity.evidence.map((item) => ({ ...item, source_id: source.source_id })) })),
+    relations: snapshot.relations.map((relation) => ({ ...relation, evidence: relation.evidence.map((item) => ({ ...item, source_id: source.source_id })) })),
+    sources: snapshot.sources.map((item) => ({ ...item, id: source.source_id, uri: source.uri })),
     ontology_version: domain.version,
   };
   state.sources = [{ ...source, entities: graph.entities.length, relations: graph.relations.length }];

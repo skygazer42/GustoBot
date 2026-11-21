@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from scripts.recipe_dataset_nutrition import apply_nutrition_registry, apply_recipe_nutrition
+from scripts.recipe_dataset_nutrition import (
+    apply_nutrition_registry,
+    apply_recipe_nutrition,
+)
 
 
 def nutrition_fixture(tmp_path: Path) -> tuple[Path, Path]:
@@ -83,7 +86,7 @@ def nutrition_fixture(tmp_path: Path) -> tuple[Path, Path]:
 
 def recipe(*ingredients: tuple[str, str | None], row: int = 1, curated: bool = True) -> dict:
     """构造只包含营养补全所需契约的菜谱。"""
-    record = {
+    record: dict = {
         "id": f"recipe:{row}",
         "name": "测试菜",
         "ingredients": [{"name": name, "amount": amount} for name, amount in ingredients],
@@ -111,7 +114,9 @@ def test_counts_and_milliliters_use_same_food_official_portion(tmp_path: Path) -
 def test_ranges_and_optional_ingredients_preserve_uncertainty(tmp_path: Path) -> None:
     """范围上下界逐项相加，可选原料下界为零。"""
     paths = nutrition_fixture(tmp_path)
-    records, _ = apply_recipe_nutrition([recipe(("生米", "100-150g"), ("鸡蛋", "1个（可选）"))], *paths)
+    records, _ = apply_recipe_nutrition(
+        [recipe(("生米", "100-150g"), ("鸡蛋", "1个（可选）"))], *paths
+    )
     total = records[0]["nutrition"]["subtotal"]["energy_kcal"]
     assert total["minimum"] == 360.0
     assert total["maximum"] == 611.5
@@ -203,9 +208,13 @@ def test_conflicting_aliases_fail_instead_of_picking_arbitrary_food(tmp_path: Pa
 def test_total_and_its_stage_allocation_are_not_double_counted(tmp_path: Path) -> None:
     """量表的总重后再解释分配，不代表额外加入相同的重量。"""
     paths = nutrition_fixture(tmp_path)
-    records, _ = apply_recipe_nutrition([recipe(("生米", "250g：第一阶段100g，第二阶段150g"))], *paths)
+    records, _ = apply_recipe_nutrition(
+        [recipe(("生米", "250g：第一阶段100g，第二阶段150g"))], *paths
+    )
     assert records[0]["nutrition"]["ingredients"][0]["grams_min"] == 250.0
-    records, _ = apply_recipe_nutrition([recipe(("生米", "总量150-200g（第一阶段100g，其余50-100g）"))], *paths)
+    records, _ = apply_recipe_nutrition(
+        [recipe(("生米", "总量150-200g（第一阶段100g，其余50-100g）"))], *paths
+    )
     assert records[0]["nutrition"]["ingredients"][0]["grams_min"] == 150.0
     assert records[0]["nutrition"]["ingredients"][0]["grams_max"] == 200.0
 
@@ -255,7 +264,7 @@ def test_nutrition_batches_keep_published_recipe_values_unchanged(tmp_path: Path
     first_profiles, first_matches = nutrition_fixture(root)
     second = root / "second"
     second.mkdir()
-    second_profiles, second_matches = nutrition_fixture(second)
+    second_profiles, _second_matches = nutrition_fixture(second)
     registry = root / "registry.json"
     registry.write_text(
         json.dumps(

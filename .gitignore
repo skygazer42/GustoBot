@@ -280,7 +280,15 @@ cookies.json
 *.html
 !web/index.html
 !web/admin.html
-!docs/assets/gustobot-architecture.html
+# Keep local design experiments out of the published repository.
+/web/design-lab/
+/docs/ARCHITECTURE_OPTIONS.md
+/docs/assets/architecture/0[123]-*
+/docs/assets/gustobot-architecture.*
+/docs/assets/gustobot-readme-cover.webp
+/.oil-ui/
+/.omx/
+/web/.e2e*/
 screenshots/
 downloads/
 crawled_data/

@@ -1,69 +1,73 @@
 <p align="center">
-  <img src="./docs/assets/taotao-mascot.webp" width="128" alt="Taotao, GustoBot's clay-pot assistant">
+  <img src="./docs/assets/taotao-mascot.webp" width="128" alt="GustoBot 的卡通陶罐陶陶">
 </p>
 
-<h1 align="center">GustoBot · Taotao</h1>
+<h1 align="center">GustoBot · 陶陶</h1>
 
-<p align="center"><strong>Enterprise question answering with domain ontologies</strong></p>
+<p align="center"><strong>基于领域本体的企业级知识问答</strong></p>
 
-<p align="center"><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
+<p align="center"><strong>简体中文</strong> · <a href="./README.en.md">English</a></p>
 
 <p align="center">
-  <a href="#features">Features</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#documentation">Documentation</a>
+  <a href="#核心能力">核心能力</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#技术架构">技术架构</a> ·
+  <a href="#开发文档">开发文档</a>
 </p>
 
 <p align="center">
-  <a href="./docs/ONTOLOGY_REUSE.md"><img alt="The default recipe ontology uses OWL and SHACL" src="https://img.shields.io/badge/Ontology-OWL%20%2B%20SHACL-875239"></a>
+  <a href="./docs/ARCHITECTURE_FLOW.md"><img alt="Agent 工作流" src="https://img.shields.io/badge/Agent-Workflow-586B59"></a>
+  <a href="https://docs.langchain.com/oss/python/langchain/overview"><img alt="LangChain 1.x" src="https://img.shields.io/badge/LangChain-1.x-1C3C3C"></a>
+  <a href="https://docs.langchain.com/oss/python/langgraph/overview"><img alt="LangGraph 1.x" src="https://img.shields.io/badge/LangGraph-1.x-1C3C3C"></a>
+  <a href="https://fastapi.tiangolo.com/"><img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&amp;logoColor=white"></a>
+  <a href="./docs/ONTOLOGY_REUSE.md"><img alt="默认菜谱本体使用 OWL 和 SHACL" src="https://img.shields.io/badge/Ontology-OWL%20%2B%20SHACL-875239"></a>
   <a href="https://www.docker.com/"><img alt="Docker Compose" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&amp;logoColor=white"></a>
   <a href="./LICENSE"><img alt="Apache License 2.0" src="https://img.shields.io/badge/License-Apache%202.0-667866"></a>
 </p>
 
-## What is GustoBot?
+## GustoBot 是什么
 
-GustoBot answers questions from a knowledge graph and source documents. A domain ontology defines the concepts, relationships, and rules used in queries. Answers cite the sources used.
+GustoBot 是一个基于领域本体的知识问答系统，支持查询知识图谱和原文资料，并在回答中标注出处。
 
-The included application lets users browse recipes and ask Taotao about a selected preparation. Recipes with the same name are distinguished by source and version, with ingredients, quantities, steps, and reported durations kept for each preparation.
+仓库目前提供菜谱应用：用户可以选择一道菜，查看做法并向陶陶提问。同名菜谱按来源和版本区分，食材用量、步骤和耗时随具体做法保存。
 
-## Features
+## 核心能力
 
-### Domain definitions and ingestion
+### 本体定义与资料入库
 
-The recipe ontology uses OWL/RDFS to describe concepts and relationships. SHACL checks incoming facts and the graph evidence needed to answer a question. The same definitions specify object identity, query properties, and unit rules.
+菜谱本体用 OWL/RDFS 描述概念与关系，用 SHACL 检查入库事实和查询所需的事实证据。对象身份、查询属性和单位规则也由这套定义管理。
 
-Structured records are mapped into the graph with source quotations. Articles are split into chunks and published for vector search. They can also be linked to graph objects by entity, source, and version, so an answer can use both.
+结构化记录按字段映射写入图谱，保留来源引文。文章分块并发布后可参与向量检索，也可以按实体、来源和版本关联到图谱，供回答时一起查阅。
 
 <p align="center">
-  <a href="./docs/assets/architecture/knowledge-representation.png">
-    <img src="./docs/assets/architecture/knowledge-representation.png" width="800" alt="The relationship between the ontology, graph facts, and source documents">
+  <a href="./docs/assets/architecture/knowledge-representation-zh.png">
+    <img src="./docs/assets/architecture/knowledge-representation-zh.png" width="800" alt="本体、图谱事实与来源原文的关系">
   </a>
 </p>
 
-Documents can remain text-only. To add graph facts from a document, extract candidates, review them, and validate them before writing to the graph. [Data model and ingestion](./docs/DOMAIN_KNOWLEDGE.md)
+文档可以只保留原文供检索。要从中提取图谱事实，需先抽取候选，再由人工核对并通过校验。[数据模型与入库](./docs/DOMAIN_KNOWLEDGE.md)
 
-### Queries, calculations, and answers
+### 查询、计算与回答
 
-To answer a question, the service resolves the relevant objects and source versions, queries properties allowed by the ontology, and reads the selected material and relevant published documents. Simple questions follow rules; a model helps plan queries with more complex conditions.
+回答时，系统会确定相关对象和来源版本，查询本体允许的图谱属性，并结合选中的资料与已发布文档。简单问题直接按规则处理；条件较复杂时，由模型生成查询计划。
 
-For supported properties, code applies ontology rules to calculate values and check fact evidence. A model writes explanations from the retrieved material when needed. Ambiguous preparations or versions prompt a clarification, and missing information is reported.
+对于已支持的属性，程序按本体规则计算结果、检查事实证据，需要归纳说明时再由模型组织回答。做法或版本有歧义时，先请用户确认；资料缺失时说明缺少哪部分。
 
 <p align="center">
-  <a href="./docs/assets/architecture/knowledge-reasoning.png">
-    <img src="./docs/assets/architecture/knowledge-reasoning.png" width="800" alt="The path from query planning and retrieval to calculations and an answer">
+  <a href="./docs/assets/architecture/knowledge-reasoning-zh.png">
+    <img src="./docs/assets/architecture/knowledge-reasoning-zh.png" width="800" alt="从查询规划、资料检索到计算和回答的流程">
   </a>
 </p>
 
-Recorded quantities can be converted using unit rules; descriptions such as "to taste" keep their original meaning. Answers about a preparation follow the selected recipe version, with related articles supplying background. [Query rules](./docs/DOMAIN_KNOWLEDGE.md)
+明确记载的用量可按单位规则换算；“适量”等定性用量沿用原文。回答具体做法时，以选定版本的菜谱为准，相关文章补充背景。[查询规则](./docs/DOMAIN_KNOWLEDGE.md)
 
-### Managing knowledge and conversations
+### 知识库与对话管理
 
-In the admin interface, users can read source documents, publish or withdraw them, delete document records, review candidate facts, and view saved conversations. Chat shows progress and citations. Knowledge updates go through ingestion or review; generated answers are not written back to the graph automatically. [Admin guide](./docs/ADMIN_GUIDE.md)
+后台可以查看来源原文、发布或撤回文档、删除文档记录、审核待入图的候选事实，以及查阅已保存的对话。聊天页面显示处理进度和来源。知识更新需通过入库或审核操作提交，生成的回答不会自动写回图谱。[后台使用说明](./docs/ADMIN_GUIDE.md)
 
-## Quick start
+## 快速开始
 
-Install Docker and Docker Compose, then clone the repository and copy the configuration file.
+安装 Docker 和 Docker Compose，然后克隆仓库、复制配置文件。
 
 ```bash
 git clone https://github.com/skygazer42/GustoBot.git
@@ -71,67 +75,65 @@ cd GustoBot
 cp .env.example .env
 ```
 
-In Windows PowerShell, copy the file with `Copy-Item .env.example .env`. Configure the following in `.env`:
+Windows PowerShell 使用 `Copy-Item .env.example .env` 复制配置。编辑 `.env`，填写以下设置：
 
-- **Chat model:** set `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
-- **Embedding model:** set `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL`. Match `EMBEDDING_DIMENSION` to the model's actual output dimension.
-- **Storage:** replace `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, and `NEO4J_PASSWORD`. Keep the MySQL application credentials in `DATABASE_URL` consistent with these settings. URL-encode reserved characters in the connection string.
-- **Admin login:** set `GUSTOBOT_ADMIN_PASSWORD` and a separate, random `SECRET_KEY` of at least 32 bytes.
+- **聊天模型**：填写 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`。
+- **向量模型**：填写 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_MODEL`，并让 `EMBEDDING_DIMENSION` 匹配实际输出维度。
+- **存储连接**：更换 `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`NEO4J_PASSWORD`，同步 `DATABASE_URL` 中的 MySQL 应用账号与密码。连接串中的保留字符需 URL 编码。
+- **后台登录**：配置 `GUSTOBOT_ADMIN_PASSWORD` 和独立随机的 `SECRET_KEY`（至少 32 字节）。
 
-Chat and embedding models can use separate OpenAI-compatible endpoints. See the [quick-start guide](./docs/QUICK_START.md) for configuration, local development, and data import.
+聊天和向量模型可分别连接 OpenAI-compatible 接口。配置、本地开发和资料导入步骤见[快速启动](./docs/QUICK_START.md)。
 
 ```bash
 docker compose --env-file .env up -d --build
 ```
 
-| Entry point | Default URL |
+| 入口 | 默认地址 |
 | --- | --- |
-| Recipe interface and Taotao chat | <http://localhost:8000/> |
-| Knowledge administration | <http://localhost:8000/admin.html> |
-| API documentation | <http://localhost:8000/docs> |
-| Health check | <http://localhost:8000/health> |
+| 前台与陶陶对话 | <http://localhost:8000/> |
+| 知识管理后台 | <http://localhost:8000/admin.html> |
+| API 文档 | <http://localhost:8000/docs> |
+| 健康检查 | <http://localhost:8000/health> |
 
-Ports are configurable. The recipe catalog and knowledge base are prepared separately. See [data preparation](./docs/DATA_SOURCES.md) and the [admin guide](./docs/ADMIN_GUIDE.md) for file locations, images, and import steps.
+端口可在配置中修改。菜谱目录和知识库需要分别准备，文件位置、配图和导入方式见[数据准备](./docs/DATA_SOURCES.md)及[后台使用说明](./docs/ADMIN_GUIDE.md)。
 
-## Architecture
+## 技术架构
 
-Ingestion and queries use the same ontology. The query service reads graph facts and text from separate stores.
+入库和查询共用一套本体定义。图谱和原文分别存储，由同一个查询服务读取。
 
 <p align="center">
-  <a href="./docs/assets/architecture/knowledge-overview.png">
-    <img src="./docs/assets/architecture/knowledge-overview.png" width="800" alt="Knowledge ingestion, graph and text stores, and the query service">
+  <a href="./docs/assets/architecture/knowledge-overview-zh.png">
+    <img src="./docs/assets/architecture/knowledge-overview-zh.png" width="800" alt="知识入库、图谱与原文存储、查询服务的关系">
   </a>
 </p>
 
-| Component | Role |
+| 模块 | 作用 |
 | --- | --- |
-| UI and API | Vue renders the pages, FastAPI serves the API, and AG-UI streams progress and replies; LangGraph forwards ordinary chat requests |
-| Query service | Reads ontology definitions, builds controlled queries, retrieves material, and calculates and validates results |
-| Graph and text | Neo4j stores facts and quotations; Milvus stores vectors for published documents |
-| Conversation and publication records | MySQL stores conversations, source versions, ingestion jobs, and publication state |
-| Models | LLMs extract candidate facts, plan queries when needed, and write answers; embedding models produce vectors |
+| 页面与接口 | Vue 提供页面，FastAPI 提供接口，AG-UI 传送进度和回复；LangGraph 转接普通聊天请求 |
+| 查询服务 | 读取本体定义，生成受控查询，检索资料并计算、校验结果 |
+| 图谱与原文 | Neo4j 保存事实和引文，Milvus 保存已发布文档的向量 |
+| 会话与发布记录 | MySQL 保存对话、来源版本、入库任务和发布状态 |
+| 模型 | LLM 负责候选抽取、必要的查询规划和回答整理；Embedding 模型生成向量 |
 
-[Shared query service](./gustobot/application/services/knowledge_query.py) · [Ingestion service](./gustobot/application/services/knowledge_ingestion.py) · [Semantic runtime](./gustobot/infrastructure/knowledge/semantic_runtime.py) · [Diagrams and detailed flows](./docs/ARCHITECTURE.md)
+[统一查询服务](./gustobot/application/services/knowledge_query.py) · [入库服务](./gustobot/application/services/knowledge_ingestion.py) · [语义运行时](./gustobot/infrastructure/knowledge/semantic_runtime.py) · [图稿与详细流程](./docs/ARCHITECTURE.md)
 
-### Using other domains
+### 接入其他领域
 
-The recipe domain loads OWL/RDFS and SHACL files and runs OWL-RL inference. Equipment and generic domains have YAML examples. Adding a domain requires an ontology, field mappings, and query bindings, along with validation. Some query prompts and numeric calculations are still recipe-specific.
+默认菜谱使用 OWL/RDFS 和 SHACL 文件，加载时执行 OWL-RL 推导。设备和通用领域提供 YAML 样板。接入新领域时，需要编写并验证本体、字段映射和查询绑定；现有查询提示及部分数值计算仍与菜谱有关。
 
-Supported ontology constructs and query forms are listed in the [domain guide](./docs/DOMAIN_KNOWLEDGE.md). Source quality, entity matching, and aliases still need domain review; semantic checks do not establish whether an article is true. [Domain profiles](./gustobot/config/domains/)
+支持的本体构件和查询方式见[领域服务文档](./docs/DOMAIN_KNOWLEDGE.md)。原文质量、实体匹配和别名仍需业务核对，语义校验不用于认定文章内容是否真实。[领域配置](./gustobot/config/domains/)
 
-## Documentation
+## 开发文档
 
-The detailed guides below are currently in Chinese.
+- [快速启动](./docs/QUICK_START.md)：模型配置、本地开发与资料导入。
+- [领域知识服务](./docs/DOMAIN_KNOWLEDGE.md)：知识表示、查询计划、证据与 API 契约。
+- [本体复用说明](./docs/ONTOLOGY_REUSE.md)：Schema.org 子集、词汇来源与映射依据。
+- [管理后台指南](./docs/ADMIN_GUIDE.md)：文档发布、图谱审核、问答测试和对话记录。
+- [部署与升级](./docs/DEPLOYMENT.md)：存储配置、版本升级与运行维护。
+- [项目代码导航](./docs/PROJECT_STRUCTURE.md)：代码入口与模块职责。
 
-- [Quick start](./docs/QUICK_START.md): model configuration, local development, and data import.
-- [Domain knowledge service](./docs/DOMAIN_KNOWLEDGE.md): knowledge representation, query plans, evidence, and API contracts.
-- [Ontology reuse](./docs/ONTOLOGY_REUSE.md): the Schema.org subset, vocabulary sources, and mapping rationale.
-- [Admin guide](./docs/ADMIN_GUIDE.md): document publication, graph review, query testing, and conversation history.
-- [Deployment and upgrades](./docs/DEPLOYMENT.md): storage configuration, upgrades, and operations.
-- [Code map](./docs/PROJECT_STRUCTURE.md): entry points and module responsibilities.
+## 数据与许可证
 
-## Data and license
+项目代码采用 [Apache License 2.0](./LICENSE)。第三方菜谱、文档和图片按各自来源与许可使用，详见[数据来源与血缘](./docs/DATA_SOURCES.md)。
 
-The project code is licensed under [Apache License 2.0](./LICENSE). Third-party recipes, documents, and images retain their respective licenses. See [data sources and provenance](./docs/DATA_SOURCES.md) for details.
-
-For bugs and suggestions, open a [GitHub issue](https://github.com/skygazer42/GustoBot/issues).
+问题与建议请提交到 [GitHub Issues](https://github.com/skygazer42/GustoBot/issues)。

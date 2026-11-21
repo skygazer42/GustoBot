@@ -28,7 +28,7 @@ NUTRIENTS = (
 )
 _NUMBER = r"\d+(?:\.\d+)?"
 _RANGE = rf"({_NUMBER})(?:\s*[-–—~～至]\s*({_NUMBER}))?"
-_MEASURES = re.compile(rf"(?<![\d.]){_RANGE}\s*(kg|千克|g|克|ml|毫升|l|升|斤)", re.I)
+_MEASURES = re.compile(rf"(?<![\d.]){_RANGE}\s*(kg|千克|g|克|ml|毫升|l|升|斤)", re.IGNORECASE)
 _COUNTS = re.compile(rf"{_RANGE}\s*(个|只|枚|瓣|根|颗|头)")
 
 
@@ -234,7 +234,9 @@ def _quantity(
         if unit in {"g", "克", "kg", "千克", "斤"}:
             factor = 1000 if unit in {"kg", "千克"} else 500 if unit == "斤" else 1
             minimum, maximum = minimum * factor, maximum * factor
-            note = "菜谱明确克重；按所列可食原料状态计算" + ("，同原料分阶段克数相加" if len(measures) > 1 else "")
+            note = "菜谱明确克重；按所列可食原料状态计算" + (
+                "，同原料分阶段克数相加" if len(measures) > 1 else ""
+            )
         else:
             if alias.volume_portion_modifier is None or alias.volume_portion_ml is None:
                 return None, None, "毫升无同食品官方份量换算依据，未按1mL=1g计算"
@@ -320,26 +322,30 @@ def _subtotal(facts: list[IngredientNutrition]) -> dict[str, NutrientSubtotal]:
     for key in NUTRIENTS:
         included = [fact for fact in calculated if fact.contribution[key].minimum is not None]
         result[key] = NutrientSubtotal(
-            minimum=round(
-                sum(
-                    value
-                    for fact in included
-                    if (value := fact.contribution[key].minimum) is not None
-                ),
-                2,
-            )
-            if included
-            else None,
-            maximum=round(
-                sum(
-                    value
-                    for fact in included
-                    if (value := fact.contribution[key].maximum) is not None
-                ),
-                2,
-            )
-            if included
-            else None,
+            minimum=(
+                round(
+                    sum(
+                        value
+                        for fact in included
+                        if (value := fact.contribution[key].minimum) is not None
+                    ),
+                    2,
+                )
+                if included
+                else None
+            ),
+            maximum=(
+                round(
+                    sum(
+                        value
+                        for fact in included
+                        if (value := fact.contribution[key].maximum) is not None
+                    ),
+                    2,
+                )
+                if included
+                else None
+            ),
             included_ingredients=[fact.name for fact in included],
             missing_values_for=[
                 fact.name for fact in calculated if fact.contribution[key].minimum is None
@@ -413,7 +419,10 @@ def apply_recipe_nutrition(
             elif alias is not None:
                 key, reason = alias.food_key, alias.match_note
             else:
-                key, reason = None, "尚无与该物种、加工状态和规格匹配的官方成分；需产品标签或可食部资料"
+                key, reason = (
+                    None,
+                    "尚无与该物种、加工状态和规格匹配的官方成分；需产品标签或可食部资料",
+                )
             facts.append(
                 _ingredient_fact(
                     ingredient, None if key is None else foods[key], alias, override, reason
@@ -425,9 +434,7 @@ def apply_recipe_nutrition(
         ] = (
             "listed_input_total"
             if counted == len(facts)
-            else "known_input_subtotal"
-            if counted
-            else "ingredient_reference_only"
+            else "known_input_subtotal" if counted else "ingredient_reference_only"
         )
         reference_foods = []
         if row in references:

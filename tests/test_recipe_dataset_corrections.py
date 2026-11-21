@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ def correction_fixture(tmp_path: Path) -> tuple[list[dict], Path, Path]:
     directory = root / "corrections" / "first"
     audit.mkdir(parents=True)
     directory.mkdir(parents=True)
-    record = {
+    record: dict[str, Any] = {
         "id": "recipe:1",
         "name": "鸡蛋",
         "description": "未经核算的热量100大卡",

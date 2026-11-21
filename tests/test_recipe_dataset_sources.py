@@ -167,7 +167,10 @@ def test_rejects_mutable_revision_and_skips_templates_and_incomplete_documents()
     with pytest.raises(ValueError, match="immutable"):
         parse_howtocook_recipe("# 菜的做法", "dishes/菜.md", "master")
     assert parse_howtocook_recipe("# 示例菜的做法", "dishes/template/示例菜.md", REVISION) is None
-    assert parse_howtocook_recipe("# 菜的做法\n## 必备原料和工具\n- 水", "dishes/菜.md", REVISION) is None
+    assert (
+        parse_howtocook_recipe("# 菜的做法\n## 必备原料和工具\n- 水", "dishes/菜.md", REVISION)
+        is None
+    )
 
 
 def test_separates_quantity_first_ingredients_tool_groups_and_prose() -> None:

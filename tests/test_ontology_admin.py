@@ -8,6 +8,7 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
@@ -257,9 +258,7 @@ async def test_extraction_checks_source_state_before_model(admin_http, storage, 
     expected = (
         404
         if condition in {"wrong_domain", "missing_version"}
-        else 422
-        if condition == "oversized"
-        else 409
+        else 422 if condition == "oversized" else 409
     )
     assert response.status_code == expected
     admin_http.call.assert_not_awaited()
@@ -370,6 +369,7 @@ async def test_formal_validation_binds_identities_and_returns_shape_errors(stora
     )
     canonical.sources[0].uri = "manual.txt"
     source = canonical.sources[0]
+    assert source.uri is not None
     version = hashlib.sha256(source.text.encode()).hexdigest()
     with storage.transaction() as session:
         KnowledgeRepository(session).put_source(
@@ -416,7 +416,7 @@ async def test_recipe_ingestion_missing_uri_can_be_read_from_its_original_graph(
         source_facts=AsyncMock(),
     )
     ingestion = KnowledgeIngestionService(
-        domain, graph_store=store, session_factory=storage.transaction
+        domain, graph_store=cast(Neo4jGraphStore, store), session_factory=storage.transaction
     )
     receipt = await ingestion.ingest_recipe("糖水", {"辅料": [["糖", None]]})
     original = store.upsert.await_args.args[0]
@@ -448,11 +448,13 @@ async def test_document_uri_fallback_still_requires_mysql_canonical_uri(admin_ht
         transport=ASGITransport(app=admin_http.app), base_url="http://test"
     ) as client:
         accepted = await client.post(
-            "/ontology/admin/validate", json={**selection, "graph": canonical.model_dump(mode="json")}
+            "/ontology/admin/validate",
+            json={**selection, "graph": canonical.model_dump(mode="json")},
         )
         canonical.sources[0].uri = None
         rejected = await client.post(
-            "/ontology/admin/validate", json={**selection, "graph": canonical.model_dump(mode="json")}
+            "/ontology/admin/validate",
+            json={**selection, "graph": canonical.model_dump(mode="json")},
         )
         await client.get("/ontology/admin/source-facts", params=selection)
     assert accepted.status_code == 200
@@ -600,6 +602,7 @@ async def isolated_admin_graph(domain):
     config_path = os.environ.get("GUSTOBOT_TEST_NEO4J_CONFIG")
     if config_path is None:
         pytest.skip("GUSTOBOT_TEST_NEO4J_CONFIG is required for isolated Neo4j checks")
+        return
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
     driver = AsyncGraphDatabase.driver(config["uri"], auth=(config["user"], config["password"]))
     database = config.get("database", "neo4j")

@@ -49,9 +49,10 @@ docker compose --env-file .env up -d --build
 ## 系统架构分析
 
 <p align="center">
-  <a href="./docs/assets/gustobot-architecture.webp">
+  <a href="./docs/assets/gustobot-architecture.webp?raw=true">
     <img src="./docs/assets/gustobot-architecture.webp" width="100%" alt="GustoBot 系统架构，包含 Vue 与 FastAPI 入口、LangGraph 问答、本体语义、资料入库及 Neo4j、Milvus、MySQL">
-  </a>
+  </a><br>
+  <a href="./docs/assets/gustobot-architecture.webp?raw=true">查看高清架构图</a>
 </p>
 
 ### 领域本体

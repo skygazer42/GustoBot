@@ -4,19 +4,19 @@ README 按“知识表示、查询与求值、技术总览”介绍系统。图�
 
 ## 本体约束的知识表示
 
-<p align="center"><img src="assets/architecture/knowledge-representation.png" width="800" alt="本体约束的知识表示"></p>
+<p align="center"><img src="assets/architecture/knowledge-representation-zh.png" width="800" alt="本体约束的知识表示"></p>
 
-[PNG](assets/architecture/knowledge-representation.png) · [SVG](assets/architecture/knowledge-representation.svg)
+[中文 PNG](assets/architecture/knowledge-representation-zh.png) · [中文 SVG](assets/architecture/knowledge-representation-zh.svg) · [英文 PNG](assets/architecture/knowledge-representation.png) · [英文 SVG](assets/architecture/knowledge-representation.svg)
 
 领域定义描述类型、关系、身份、业务属性和可执行约束。实例图保存来源事实；事实通过引文连接来源原文，文章还可通过实体与版本范围关联到图中对象。普通文档可独立检索，不要求事先抽取图事实。
 
-图中的“Business entity”“Related entity”是机制示意，不代表新增的运行时类型。来源引文关联与文章实体关联各有职责，不表示全库已建立通用双向倒排索引。
+图中的“业务对象”“关联对象”是机制示意，不代表新增的运行时类型。来源引文关联与文章实体关联各有职责，不表示全库已建立通用双向倒排索引。
 
 ## 查询与求值
 
-<p align="center"><img src="assets/architecture/knowledge-reasoning.png" width="800" alt="本体驱动的查询与求值"></p>
+<p align="center"><img src="assets/architecture/knowledge-reasoning-zh.png" width="800" alt="本体驱动的查询与求值"></p>
 
-[PNG](assets/architecture/knowledge-reasoning.png) · [SVG](assets/architecture/knowledge-reasoning.svg)
+[中文 PNG](assets/architecture/knowledge-reasoning-zh.png) · [中文 SVG](assets/architecture/knowledge-reasoning-zh.svg) · [英文 PNG](assets/architecture/knowledge-reasoning.png) · [英文 SVG](assets/architecture/knowledge-reasoning.svg)
 
 一次查询经过受控规划、实体与来源绑定、图文取证及答案求值。简单问题可以走确定路径，复杂知识查询最多一次模型规划和一次最终生成；正式事实求值出现违规诊断时，直接返回确定结果与缺口，不继续让模型补齐。
 
@@ -42,11 +42,13 @@ README 按“知识表示、查询与求值、技术总览”介绍系统。图�
 
 ## 在 README 中引用
 
-三个英文图使用 Arial 常规字重和小字号；技术总览另附中文版，中文使用宋体，英文和数字使用 Times New Roman，均为常规字重。README 展示宽度为 800px。PNG 均为 2800×1300；SVG 的文字已转为路径，保留可访问标题和标签，无脚本、外链字体或前端运行依赖，可打开原尺寸查看细节。
+三张图均提供中英两版：英文图使用 Arial，中文图使用宋体，英文技术名称和数字使用 Times New Roman，均为常规字重。中文 README 使用中文图，英文 README 使用英文图，展示宽度均为 800px。PNG 均为 2800×1300；SVG 的文字已转为路径，保留可访问标题和标签，无脚本、外链字体或前端运行依赖，可打开原尺寸查看细节。
 
 ```markdown
 ![知识表示](./docs/assets/architecture/knowledge-representation.png)
+![知识表示中文版](./docs/assets/architecture/knowledge-representation-zh.png)
 ![查询与求值](./docs/assets/architecture/knowledge-reasoning.png)
+![查询与求值中文版](./docs/assets/architecture/knowledge-reasoning-zh.png)
 ![技术总览](./docs/assets/architecture/knowledge-overview.png)
 ![技术总览中文版](./docs/assets/architecture/knowledge-overview-zh.png)
 ```

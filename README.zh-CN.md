@@ -36,8 +36,8 @@ GustoBot 是一个基于领域本体的知识问答系统，支持查询知识�
 结构化记录按字段映射写入图谱，保留来源引文。文章分块并发布后可参与向量检索，也可以按实体、来源和版本关联到图谱，供回答时一起查阅。
 
 <p align="center">
-  <a href="./docs/assets/architecture/knowledge-representation.png">
-    <img src="./docs/assets/architecture/knowledge-representation.png" width="800" alt="本体、图谱事实与来源原文的关系">
+  <a href="./docs/assets/architecture/knowledge-representation-zh.png">
+    <img src="./docs/assets/architecture/knowledge-representation-zh.png" width="800" alt="本体、图谱事实与来源原文的关系">
   </a>
 </p>
 
@@ -50,8 +50,8 @@ GustoBot 是一个基于领域本体的知识问答系统，支持查询知识�
 对于已支持的属性，程序按本体规则计算结果、检查事实证据，需要归纳说明时再由模型组织回答。做法或版本有歧义时，先请用户确认；资料缺失时说明缺少哪部分。
 
 <p align="center">
-  <a href="./docs/assets/architecture/knowledge-reasoning.png">
-    <img src="./docs/assets/architecture/knowledge-reasoning.png" width="800" alt="从查询规划、资料检索到计算和回答的流程">
+  <a href="./docs/assets/architecture/knowledge-reasoning-zh.png">
+    <img src="./docs/assets/architecture/knowledge-reasoning-zh.png" width="800" alt="从查询规划、资料检索到计算和回答的流程">
   </a>
 </p>
 
@@ -102,8 +102,6 @@ docker compose --env-file .env up -d --build
     <img src="./docs/assets/architecture/knowledge-overview-zh.png" width="800" alt="知识入库、图谱与原文存储、查询服务的关系">
   </a>
 </p>
-
-[高清 PNG](./docs/assets/architecture/knowledge-overview-zh.png) · [矢量 SVG](./docs/assets/architecture/knowledge-overview-zh.svg) · [英文版](./README.md#architecture)
 
 | 模块 | 作用 |
 | --- | --- |

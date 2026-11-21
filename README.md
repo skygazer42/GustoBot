@@ -103,8 +103,6 @@ Ingestion and queries use the same ontology. The query service reads graph facts
   </a>
 </p>
 
-[High-resolution PNG](./docs/assets/architecture/knowledge-overview.png) · [Vector SVG](./docs/assets/architecture/knowledge-overview.svg) · [Chinese version](./README.zh-CN.md#技术架构)
-
 | Component | Role |
 | --- | --- |
 | UI and API | Vue renders the pages, FastAPI serves the API, and AG-UI streams progress and replies; LangGraph forwards ordinary chat requests |

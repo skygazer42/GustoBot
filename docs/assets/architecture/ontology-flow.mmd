@@ -1,0 +1,17 @@
+%%{init: {"theme":"base","htmlLabels":false,"fontFamily":"Microsoft YaHei, Arial, sans-serif","flowchart":{"htmlLabels":false,"curve":"linear","nodeSpacing":24,"rankSpacing":34,"padding":12},"themeVariables":{"fontSize":"20px","primaryColor":"#FFFDF9","primaryTextColor":"#2C221E","primaryBorderColor":"#AA9180","lineColor":"#796356","secondaryColor":"#EEE0D1","tertiaryColor":"#FAF6F0","clusterBkg":"#FAF6F0","clusterBorder":"#D9C7B6","edgeLabelBackground":"#FAF6F0"}}}%%
+flowchart TB
+    accTitle: GustoBot 本体驱动问答流程
+    accDescr: 用户问题按本体规划，明确实体与版本后联合检索图谱和原文，经事实证据校验返回回答及来源。
+    question(["用户提问<br/>当前资料 / 会话历史"]) --> plan["规划查询、解析来源<br/>确定性路径 / LLM"]
+    ontology["领域本体<br/>概念 · 关系 · 约束"] -. "约束计划" .-> plan
+    plan --> resolved{"实体与版本明确？"}
+    resolved -- "否" --> clarify(["补充条件或选择来源"])
+    resolved -- "是" --> evidence["联合检索图谱与原文<br/>Neo4j + Milvus"]
+    evidence --> evaluate["本体推导与证据校验<br/>规则计算 / 保留未知"]
+    evaluate --> answer(["回答与真实出处<br/>已知结果 / 资料缺口"])
+
+    classDef semantic fill:#EEE0D1,stroke:#9C4628,stroke-width:2px,color:#6F321F;
+    classDef store fill:#EDF0E8,stroke:#7A8A72,color:#34462F;
+    classDef terminal fill:#FFFDF9,stroke:#9C4628,stroke-width:2px,color:#2C221E;
+    class ontology,plan,evaluate semantic;
+    class question,clarify,answer terminal;

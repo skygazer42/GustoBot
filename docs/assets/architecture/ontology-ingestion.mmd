@@ -1,0 +1,18 @@
+%%{init: {"theme":"base","htmlLabels":false,"fontFamily":"Microsoft YaHei, Arial, sans-serif","flowchart":{"htmlLabels":false,"curve":"linear","nodeSpacing":24,"rankSpacing":34,"padding":12},"themeVariables":{"fontSize":"20px","primaryColor":"#FFFDF9","primaryTextColor":"#2C221E","primaryBorderColor":"#AA9180","lineColor":"#796356","secondaryColor":"#EEE0D1","tertiaryColor":"#FAF6F0","clusterBkg":"#FAF6F0","clusterBorder":"#D9C7B6","edgeLabelBackground":"#FAF6F0"}}}%%
+flowchart TB
+    accTitle: GustoBot 本体约束的知识入库流程
+    accDescr: 结构化资料映射后校验入图，文档向量化后发布，文档可选抽取候选并人工审核后校验入图。
+    records["结构化记录"] --> mapping["按领域映射字段"]
+    mapping --> validate["本体与来源引文校验"]
+    validate --> facts[("Neo4j<br/>事实与引文")]
+    documents["文章与文档"] --> chunks["分块与向量化"]
+    chunks --> vectors[("Milvus<br/>发布原文片段")]
+    documents -. "可选" .-> review["抽取候选与人工审核"]
+    review --> validate
+    ontology["领域本体<br/>类型 · 关系 · 约束"] -. "约束事实" .-> validate
+
+    classDef semantic fill:#EEE0D1,stroke:#9C4628,stroke-width:2px,color:#6F321F;
+    classDef store fill:#EDF0E8,stroke:#7A8A72,color:#34462F;
+    classDef terminal fill:#FFFDF9,stroke:#9C4628,stroke-width:2px,color:#2C221E;
+    class ontology,validate semantic;
+    class facts,vectors store;

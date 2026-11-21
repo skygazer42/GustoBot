@@ -1,0 +1,49 @@
+{
+  "verified_at": "2026-11-21",
+  "product": "GustoBot · 陶陶",
+  "interfaces": [
+    "Vue 3 / Vite",
+    "FastAPI",
+    "AG-UI / SSE"
+  ],
+  "query": "KnowledgeQueryService",
+  "workflow": "LangGraph adapts ordinary chat to the shared query service; selected material and streaming also reuse that service.",
+  "evidence": [
+    "Pinned current recipe source",
+    "Neo4j facts",
+    "Milvus published document chunks"
+  ],
+  "ontology": [
+    "OWL/RDFS",
+    "OWL-RL",
+    "SHACL",
+    "Business-property bindings"
+  ],
+  "storage": {
+    "Neo4j": "Facts, source evidence and graph revisions",
+    "Milvus": "Document vectors; candidate collections are optional",
+    "MySQL": "Conversations, ingestion jobs, source versions and publication",
+    "Files": "Local recipe JSONL, original data and managed uploads"
+  },
+  "publication": [
+    "Structured source mapping and validation",
+    "Document chunking and embedding",
+    "Explicit extraction, human review and graph validation"
+  ],
+  "limits": [
+    "No automatic answer-to-fact feedback",
+    "Core domain model is configurable",
+    "Candidate indexing and reranking are optional",
+    "LightRAG and Redis are not mandatory query dependencies"
+  ],
+  "references": [
+    "gustobot/application/services/knowledge_query.py",
+    "gustobot/interfaces/http/v1/chat.py",
+    "gustobot/application/agents/workflow.py",
+    "gustobot/application/services/knowledge_ingestion.py",
+    "gustobot/application/services/knowledge_runtime.py",
+    "docs/DOMAIN_KNOWLEDGE.md",
+    "docs/DEPLOYMENT.md",
+    "docs/ADMIN_GUIDE.md"
+  ]
+}

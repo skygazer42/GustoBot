@@ -9,7 +9,10 @@ logger = get_logger(service="http")
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
+    """Log request timing and status without changing the response contract."""
+
     async def dispatch(self, request: Request, call_next):
+        """Measure one request and log its response status and elapsed time."""
         start_time = time.perf_counter()
 
         response = await call_next(request)

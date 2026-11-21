@@ -13,5 +13,6 @@ description = "Add scoped candidate generations, leases and publication pointers
 
 
 def upgrade(connection: Connection) -> None:
+    """Create generation history and publication-pointer tables for semantic indexes."""
     for model in (SemanticIndexGeneration, SemanticIndexPublication):
         Base.metadata.tables[model.__tablename__].create(connection, checkfirst=True)

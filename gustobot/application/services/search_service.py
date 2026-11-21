@@ -21,11 +21,15 @@ logger = get_logger(service="search")
 
 
 class _SearchArguments(BaseModel):
+    """Validated search-tool arguments returned by model tool selection."""
+
     query: str = Field(min_length=1, pattern=r"\S")
     num_results: int | None = Field(default=None, ge=1, le=10)
 
 
 class SearchService:
+    """Provide bounded web-search results through the configured search API."""
+
     def __init__(self):
         logger.info("Initializing SearchService...")
         self.client = AsyncOpenAI(
@@ -179,4 +183,5 @@ class SearchService:
             )
 
     async def close(self) -> None:
+        """Close the underlying HTTP client and release its connection pool."""
         await self.client.close()

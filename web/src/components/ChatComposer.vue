@@ -1,5 +1,5 @@
 <template>
-  <form class="composer" :class="variant === 'widget' ? 'widget-form' : 'workspace-form'" @submit.prevent="emit('submit')">
+  <form class="composer widget-form" @submit.prevent="emit('submit')">
     <div v-if="followups.length" class="followups" aria-label="接着问问">
       <button v-for="question in followups" :key="question" type="button" @click="emit('ask', question)">{{ question }}</button>
     </div>
@@ -14,7 +14,7 @@
         ref="input"
         class="draft-input"
         :value="draft"
-        :placeholder="fileName ? '想了解这份文件的什么？' : variant === 'widget' ? '还有哪里拿不准？' : '说说哪一步拿不准，陶陶陪你想想。'"
+        :placeholder="fileName ? '想了解这份文件的什么？' : allowUpload ? '想问哪道菜，或聊聊做饭？' : '这份做法哪里拿不准？'"
         :aria-describedby="error ? 'chat-error' : undefined"
         rows="2"
         maxlength="4000"
@@ -26,7 +26,7 @@
       </button>
     </div>
     <div class="composer-tools">
-      <label class="upload-button" :class="{ 'is-disabled': busy }">
+      <label v-if="allowUpload" class="upload-button" :class="{ 'is-disabled': busy }">
         <input class="file-input" type="file" aria-label="上传文件" :disabled="busy" @change="emit('upload', $event)" />
         <UiIcon name="attachment" /><span>上传文件</span>
       </label>
@@ -41,8 +41,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import UiIcon from "./UiIcon.vue";
 
-const props = defineProps<{
-  variant: "widget" | "workspace";
+const props = withDefaults(defineProps<{
   draft: string;
   busy: boolean;
   fileName: string;
@@ -50,7 +49,8 @@ const props = defineProps<{
   error: string;
   hasConversation: boolean;
   followups: readonly string[];
-}>();
+  allowUpload?: boolean;
+}>(), { allowUpload: true });
 const emit = defineEmits<{
   (event: "update-draft", value: string): void;
   (event: "submit"): void;
@@ -95,7 +95,7 @@ function handleKeydown(event: KeyboardEvent): void {
   }
 }
 
-watch(() => [props.draft, props.variant], () => nextTick(resizeInput));
+watch(() => props.draft, () => nextTick(resizeInput));
 onMounted(() => {
   resizeObserver = new ResizeObserver(resizeInput);
   if (input.value) {

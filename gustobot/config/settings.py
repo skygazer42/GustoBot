@@ -4,7 +4,7 @@ Centralised application settings for GustoBot.
 
 from typing import Any, Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -16,17 +16,25 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.2"
     DEBUG: bool = False
     KNOWLEDGE_DOMAIN_FILE: str = "gustobot/config/domains/recipes.yaml"
+    RECIPE_DATASET_PATH: str = "data/recipes/recipes.open-license.jsonl"
 
     # API configuration
     API_V1_PREFIX: str = "/api/v1"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     SECRET_KEY: str | None = None
+    GUSTOBOT_ADMIN_PASSWORD: SecretStr | None = Field(default=None, min_length=1, max_length=256)
     ALGORITHM: str = "HS256"
+
+    @field_validator("GUSTOBOT_ADMIN_PASSWORD", mode="before")
+    @classmethod
+    def optional_admin_password(cls, value: Any) -> Any:
+        """Treat an empty environment value as an unconfigured password."""
+        return None if value == "" else value
 
     # LLM configuration
     LLM_MODEL: str = Field(
-        default="gpt-5.4",
+        default="gpt-6.1",
         description="LLM model name",
         validation_alias=AliasChoices("LLM_MODEL", "OPENAI_MODEL"),
     )
@@ -47,20 +55,23 @@ class Settings(BaseSettings):
     # OpenAI compatibility (使用 LLM 配置)
     @property
     def OPENAI_API_KEY(self) -> str | None:
+        """Expose the legacy OpenAI key name as an alias for the chat key."""
         return self.LLM_API_KEY
 
     @property
     def OPENAI_API_BASE(self) -> str | None:
+        """Expose the legacy OpenAI base URL as an alias for the chat endpoint."""
         return self.LLM_BASE_URL
 
     @property
     def OPENAI_MODEL(self) -> str:
+        """Expose the legacy model name as an alias for the configured chat model."""
         return self.LLM_MODEL
 
     # Vision models (for image analysis)
     VISION_API_KEY: str | None = None
     VISION_BASE_URL: str | None = None
-    VISION_MODEL: str = "gpt-5.5"
+    VISION_MODEL: str = "gpt-6.1"
 
     # Image generation models (for creating images)
     IMAGE_GENERATION_API_KEY: str | None = None

@@ -27,10 +27,12 @@ QUALIFIER_FIELDS = {"cook_time", "cuisine", "method"}
 
 
 def normalize_name(value: str) -> str:
+    """Normalize candidate text for stable matching and hashing."""
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
 def digest(value: Any) -> str:
+    """Hash canonical JSON so equivalent structured values share an identity."""
     return hashlib.sha256(
         json.dumps(
             value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
@@ -48,6 +50,7 @@ def embedding_fingerprint(
     normalization: str = "none",
     serialization_version: str = INDEX_SCHEMA_VERSION,
 ) -> str:
+    """Fingerprint an embedding space, including endpoint and serialization."""
     if (
         not all(value.strip() for value in (provider, model, revision, serialization_version))
         or dimension <= 0
@@ -78,10 +81,14 @@ def embedding_fingerprint(
 
 
 class _LinkModel(BaseModel):
+    """Base class for strict semantic-linking records."""
+
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
 
 
 class IndexScope(_LinkModel):
+    """Immutable domain and embedding identity that bounds one candidate index."""
+
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     domain_id: str = Field(min_length=1, max_length=64)
     ontology_version: str = Field(min_length=1, max_length=64)
@@ -92,9 +99,11 @@ class IndexScope(_LinkModel):
 
     @property
     def key(self) -> str:
+        """Return a stable digest identifying this complete index scope."""
         return digest(self.model_dump())
 
     def validate_record(self, record: "CatalogRecord") -> None:
+        """Reject catalog entries whose ontology identity is outside this scope."""
         for name in (
             "domain_id",
             "ontology_version",
@@ -107,6 +116,8 @@ class IndexScope(_LinkModel):
 
 
 class CatalogRecord(_LinkModel):
+    """Canonical candidate payload with bounded samples and integrity hashes."""
+
     record_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     domain_id: str = Field(min_length=1, max_length=64)
     ontology_version: str = Field(min_length=1, max_length=64)
@@ -151,6 +162,7 @@ class CatalogRecord(_LinkModel):
         description: str = "",
         graph_revision: int | None = None,
     ) -> "CatalogRecord":
+        """Build a normalized catalog entry and derive its content identities."""
         qualifiers = {} if qualifiers is None else dict(qualifiers)
         if set(qualifiers) - QUALIFIER_FIELDS:
             raise ValueError("Candidate qualifier field is not allowed")
@@ -201,6 +213,7 @@ class CatalogRecord(_LinkModel):
 
     @model_validator(mode="after")
     def _validate_identity_and_hashes(self):
+        """Verify candidate scope, sample counts, and derived content identities."""
         if (self.kind == "entity") != (self.ref_kind == "entity"):
             raise ValueError("Candidate kind and reference kind disagree")
         if self.kind == "concept" and self.graph_revision is not None:
@@ -233,12 +246,15 @@ class CatalogRecord(_LinkModel):
 
 
 def catalog_checksum(records: Sequence[CatalogRecord]) -> str:
+    """Checksum unique catalog identities and their content hashes in order."""
     if len({record.record_id for record in records}) != len(records):
         raise ValueError("Duplicate catalog record identity")
     return digest(sorted((record.record_id, record.record_hash) for record in records))
 
 
 class GraphRevision(_LinkModel):
+    """Publication state and revision for one domain ontology in the graph."""
+
     domain_id: str
     ontology_version: str
     ontology_fingerprint: str
@@ -253,12 +269,16 @@ class GraphRevision(_LinkModel):
 
 
 class CatalogPage(_LinkModel):
+    """One catalog page and the graph revision observed while reading it."""
+
     records: list[CatalogRecord]
     observed_revision: int
     next_after_id: str | None = None
 
 
 class CandidateHit(_LinkModel):
+    """Retrieved candidate with its validated scope, generation, and scores."""
+
     record: CatalogRecord
     scope: IndexScope
     generation_id: str
@@ -273,10 +293,13 @@ class CandidateHit(_LinkModel):
 
     @property
     def ref_id(self):
+        """Expose the domain object identity carried by the catalog record."""
         return self.record.ref_id
 
 
 class LinkedCandidate(_LinkModel):
+    """Candidate merged across retrieval sources with ranking metadata."""
+
     record: CatalogRecord
     match_sources: list[str] = Field(default_factory=list)
     vector_score: float | None = None
@@ -285,16 +308,21 @@ class LinkedCandidate(_LinkModel):
 
     @property
     def ref_id(self):
+        """Expose the domain object identity carried by the catalog record."""
         return self.record.ref_id
 
 
 class NameFamilyResult(_LinkModel):
+    """Candidates grouped around a name-family seed and pagination state."""
+
     items: list[LinkedCandidate]
     has_more: bool = False
     seed_ids: list[str] = Field(default_factory=list)
 
 
 class ScopeAuditReport(_LinkModel):
+    """Counts and diagnostics from checking graph records within one scope."""
+
     scope: GraphRevision
     existing: int = 0
     validated: int = 0
@@ -305,6 +333,8 @@ class ScopeAuditReport(_LinkModel):
 
 
 class IndexVerification(_LinkModel):
+    """Checksum and schema verification result for a candidate index."""
+
     valid: bool
     count: int = Field(ge=0)
     checksum: str
@@ -312,6 +342,8 @@ class IndexVerification(_LinkModel):
 
 
 class BuildIndexRequest(_LinkModel):
+    """Build parameters, optional publication request, and expected active ID."""
+
     scope: IndexScope
     batch_size: int = Field(default=64, ge=1, le=1000)
     publish: bool = False
@@ -319,6 +351,8 @@ class BuildIndexRequest(_LinkModel):
 
 
 class BuildIndexReceipt(_LinkModel):
+    """Progress and final outcome returned by a candidate-index build."""
+
     generation_id: str
     status: GenerationStatus
     graph_revision: int | None = None
@@ -329,6 +363,8 @@ class BuildIndexReceipt(_LinkModel):
 
 
 class IndexPublicationStatus(_LinkModel):
+    """Published generation state and its approved candidate-selection policy."""
+
     scope: IndexScope
     generation_id: str | None = None
     graph_revision: int | None = None
@@ -338,6 +374,8 @@ class IndexPublicationStatus(_LinkModel):
 
 
 class IndexGeneration(_LinkModel):
+    """Persisted build generation, counters, ownership, and lease information."""
+
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     generation_id: str
     scope: IndexScope
@@ -354,12 +392,16 @@ class IndexGeneration(_LinkModel):
 
 
 class ObjectReference(_LinkModel):
+    """Mention to resolve, with an optional expected type or known identity."""
+
     mention: str = Field(min_length=1)
     expected_type: str | None = None
     ref_id: str | None = None
 
 
 class LinkingContext(_LinkModel):
+    """Per-question candidate context, diagnostics, timings, and provider usage."""
+
     question: str
     mode: Literal["off", "shadow", "on"]
     status: str = "ready"
@@ -379,6 +421,8 @@ class LinkingContext(_LinkModel):
 
 
 class LinkResolution(_LinkModel):
+    """Resolved references, candidate set, and whether clarification is needed."""
+
     references: list[ObjectReference]
     candidates: list[LinkedCandidate]
     status: Literal["resolved", "clarify", "unavailable", "no_candidates"]

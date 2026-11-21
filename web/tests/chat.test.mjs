@@ -14,9 +14,9 @@ class FileInput {
 }
 
 const chat = loadTypeScript("../src/lib/chat.ts");
-const recipeData = loadTypeScript("../src/data/recipe.ts", { "../assets/tomato-eggs.jpg": "photo.jpg" });
+const recipeData = loadTypeScript("../src/data/recipe.ts");
 
-function createChat(recipeContext = "") {
+function createChat(recipeReference = null) {
   const requests = [];
   const axios = {
     post(url, body, config) {
@@ -30,13 +30,36 @@ function createChat(recipeContext = "") {
       return promise;
     }
   };
+  const fetchChat = (url, config) => new Promise((resolve, reject) => {
+    const envelope = JSON.parse(config.body);
+    const body = { message: envelope.messages[0].content, session_id: undefined, ...envelope.forwardedProps };
+    const resultEvent = (result) => ({ type: "RUN_FINISHED", runId: envelope.runId, threadId: envelope.threadId, result });
+    const headers = { "Content-Type": "text/event-stream" };
+    requests.push({
+      url, body, config, reject,
+      resolve: (result) => resolve(new Response(`data: ${JSON.stringify(resultEvent(result))}\n\n`, { headers })),
+      stream: () => {
+        let writer;
+        const bodyStream = new ReadableStream({ start: (controller) => { writer = controller; } });
+        resolve(new Response(bodyStream, { headers }));
+        return {
+          push: (event) => writer.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\r\n\r\n`)),
+          finish: (result) => {
+            writer.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(resultEvent(result))}\n\n`));
+            writer.close();
+          },
+          close: () => writer.close()
+        };
+      }
+    });
+  });
   const { useChat } = loadTypeScript("../src/composables/useChat.ts", {
     axios,
     vue,
-    "../lib/chat": chat
+    "../lib/chat": loadTypeScript("../src/lib/chat.ts", {}, { fetch: fetchChat })
   }, { HTMLInputElement: FileInput });
   const scope = vue.effectScope();
-  const result = scope.run(() => useChat(recipeContext));
+  const result = scope.run(() => useChat(recipeReference));
   return { ...result, requests, stop: () => scope.stop() };
 }
 
@@ -57,13 +80,12 @@ function selectFile(name = "菜谱.txt") {
 test("serving quantities scale explicit numbers and preserve qualitative amounts", () => {
   assert.equal(recipeData.scaleQuantity("3", 3, 2), "4.5");
   assert.equal(recipeData.scaleQuantity("0", 4, 2), "0");
-  for (const quantity of ["适量", "少许", "1–2", ""]) {
+  for (const quantity of ["适量", "少许", "1–2", "1/2", "", null]) {
     assert.equal(recipeData.scaleQuantity(quantity, 4, 2), quantity);
   }
-  const context = recipeData.buildRecipeContext(4);
-  assert.match(context, /原份量2人份，当前调整为4人份/);
-  assert.match(context, /番茄4个、鸡蛋6个/);
-  assert.match(context, /不估算用量/);
+  assert.equal(recipeData.scaleQuantity("3", 4, null), "3");
+  assert.equal(recipeData.scaleQuantity("3", null, 2), "3");
+  assert.equal(recipeData.scaleQuantity(null, null, null), null);
 });
 
 test("suggestions exclude sent questions but remain available after a failed send", () => {
@@ -103,19 +125,24 @@ test("unsupported preferences stay honest without exposing slot debugging text",
   assert.deepEqual(parsed.message.clarificationOptions, []);
 });
 
-test("each submission resolves the current serving context without rewriting existing messages", async () => {
+test("each submission resolves current recipe servings without rewriting existing messages", async () => {
   let servings = 2;
-  const client = createChat(() => recipeData.buildRecipeContext(servings));
+  const client = createChat(() => ({ id: "recipe-a", version: "version-a", servings }));
   client.state.userInput = "用量是什么？";
   const first = client.sendMessage();
-  assert.match(client.requests[0].body.message, /当前调整为2人份/);
+  assert.deepEqual(client.requests[0].body, {
+    message: "用量是什么？", session_id: undefined,
+    recipe_id: "recipe-a", recipe_version: "version-a", recipe_servings: 2
+  });
   client.requests[0].resolve(response());
   await first;
   servings = 4;
   client.state.userInput = "现在呢？";
   const second = client.sendMessage();
-  assert.match(client.requests[1].body.message, /当前调整为4人份/);
-  assert.match(client.requests[1].body.message, /鸡蛋6个/);
+  assert.equal(client.requests[1].body.message, "现在呢？");
+  assert.equal(client.requests[1].body.recipe_servings, 4);
+  assert.equal(client.requests[1].body.recipe_id, "recipe-a");
+  assert.equal(client.requests[1].body.recipe_version, "version-a");
   assert.equal(client.state.messages[0].content, "用量是什么？");
   client.requests[1].resolve(response());
   await second;
@@ -178,6 +205,8 @@ test("links allow only http and https and leave markup as ordinary text", () => 
     assert.equal(chat.getSourceUrl({ url }), null);
   }
   assert.equal(chat.getSourceUrl({ url: " https://example.com " }), "https://example.com");
+  assert.equal(chat.getSourceUrl({ backend: "milvus", source: "https://zh.wikipedia.org/w/index.php?oldid=93383154" }), "https://zh.wikipedia.org/w/index.php?oldid=93383154");
+  assert.equal(chat.getSourceUrl({ source: "preview://tomato-eggs" }), null);
 });
 
 test("source labels retain backend, title, origin and document identifiers", () => {
@@ -207,8 +236,8 @@ test("successful chat carries the session forward and uses stable distinct messa
   const client = createChat();
   client.state.userInput = "  做法  ";
   const first = client.sendMessage();
-  assert.equal(client.requests[0].url, "/api/v1/chat/");
-  assert.deepEqual(client.requests[0].body, { message: "做法", session_id: undefined, stream: false });
+  assert.equal(client.requests[0].url, "/api/v1/chat/ag-ui");
+  assert.deepEqual(client.requests[0].body, { message: "做法", session_id: undefined });
   assert.equal(client.isBusy.value, true);
   const userId = client.state.messages[0].id;
   assert.equal(client.state.messages[0].delivery, "pending");
@@ -231,29 +260,128 @@ test("successful chat carries the session forward and uses stable distinct messa
   client.stop();
 });
 
-test("recipe context is sent through the existing message field but not repeated in the user bubble", async () => {
-  const client = createChat("番茄炒蛋\n鸡蛋 2个\n炒熟盛出");
+test("selected recipes send exact identity and preserve the original question", async () => {
+  const client = createChat({ id: "recipe-with-long-steps", version: "record-version" });
   client.state.userInput = "只有一个鸡蛋呢";
   const pending = client.sendMessage();
-  assert.equal(client.requests[0].body.message, "当前正在阅读的食谱：\n番茄炒蛋\n鸡蛋 2个\n炒熟盛出\n\n我的问题：只有一个鸡蛋呢");
+  assert.deepEqual(client.requests[0].body, {
+    message: "只有一个鸡蛋呢", session_id: undefined,
+    recipe_id: "recipe-with-long-steps", recipe_version: "record-version"
+  });
   assert.equal(client.state.messages[0].content, "只有一个鸡蛋呢");
   client.requests[0].resolve(response());
   await pending;
   client.stop();
 });
 
-test("oversized drafts and contextual messages preserve all input and do not send", async () => {
-  const client = createChat("食谱".repeat(1000));
+test("progress and partial reply are visible before completion and a broken stream can be retried", async () => {
+  const client = createChat();
+  client.state.userInput = "这道菜怎么做？";
+  const first = client.sendMessage();
+  const stream = client.requests[0].stream();
+  stream.push({ type: "STEP_STARTED", stepName: "retrieving" });
+  stream.push({ type: "TEXT_MESSAGE_START", role: "assistant", messageId: "preview" });
+  stream.push({ type: "TEXT_MESSAGE_CONTENT", messageId: "preview", delta: "先准备食材" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(client.state.replyProgress, "正在检索并核对资料…");
+  assert.equal(client.state.replyDraft, "先准备食材");
+  assert.equal(client.state.messages.length, 1);
+  stream.close();
+  await first;
+  assert.equal(client.state.replyDraft, "");
+  assert.equal(client.state.messages[0].delivery, "failed");
+  assert.equal(client.state.userInput, "这道菜怎么做？");
+  const retry = client.sendMessage();
+  client.requests[1].stream().finish({ ...response(), sources: [{ source: "菜谱原文" }] });
+  await retry;
+  assert.equal(client.state.messages.length, 2);
+  assert.equal(client.state.messages[1].sources[0].source, "菜谱原文");
+  assert.equal(client.state.replyProgress, "");
+  client.stop();
+});
+
+test("a recipe reference getter can enter generic chat without sending stale recipe fields", async () => {
+  let reference = { id: "recipe-a", version: "version-a", servings: 3 };
+  const client = createChat(() => reference);
+  client.state.userInput = "当前菜怎么做？";
+  const selected = client.sendMessage();
+  client.requests[0].resolve(response());
+  await selected;
+
+  client.resetSession();
+  reference = null;
+  client.state.userInput = "普通问题";
+  const generic = client.sendMessage();
+  assert.deepEqual(client.requests[1].body, {
+    message: "普通问题", session_id: undefined
+  });
+  client.requests[1].resolve(response("generic-session"));
+  await generic;
+  client.stop();
+});
+
+test("switching recipes after reset aborts old requests and keeps the new recipe session", async () => {
+  let reference = { id: "recipe-a", version: "version-a" };
+  const client = createChat(() => reference);
+  client.state.userInput = "第一道菜的问题";
+  const previous = client.sendMessage();
+  client.resetSession();
+  reference = { id: "recipe-b", version: "version-b" };
+  client.state.userInput = "第二道菜的问题";
+  const current = client.sendMessage();
+  assert.equal(client.requests[0].config.signal.aborted, true);
+  assert.equal(client.requests[1].body.recipe_id, "recipe-b");
+  assert.equal(client.requests[1].body.recipe_version, "version-b");
+  assert.equal(client.requests[1].body.session_id, undefined);
+  client.requests[0].resolve(response("old-recipe-session", "旧菜回复"));
+  await previous;
+  assert.equal(client.state.sessionId, "");
+  assert.equal(client.state.messages.length, 1);
+  assert.equal(client.state.isTyping, true);
+  client.requests[1].resolve(response("new-recipe-session", "新菜回复"));
+  await current;
+  assert.equal(client.state.sessionId, "new-recipe-session");
+  assert.deepEqual(client.state.messages.map((message) => message.content), ["第二道菜的问题", "新菜回复"]);
+  client.stop();
+});
+
+test("selected recipes reject uploads and conflicting attachments before HTTP requests", async () => {
+  const client = createChat({ id: "recipe-a", version: "version-a" });
+  await client.onFileSelected(selectFile());
+  assert.equal(client.requests.length, 0);
+  assert.ok(client.state.error.length > 0);
+  assert.equal(client.state.isUploading, false);
+
+  client.state.userInput = "看看用量";
+  client.state.attachedFilePath = "/uploads/existing.txt";
+  client.state.attachedFileName = "已有附件.txt";
+  await client.sendMessage();
+  assert.equal(client.requests.length, 0);
+  assert.equal(client.state.messages.length, 0);
+  assert.equal(client.state.userInput, "看看用量");
+  assert.equal(client.state.attachedFilePath, "/uploads/existing.txt");
+  assert.ok(client.state.error.length > 0);
+  client.stop();
+});
+
+test("oversized drafts stay intact while long valid questions use recipe references", async () => {
+  const client = createChat({ id: "long-recipe", version: "full-record-version" });
   const draft = "原".repeat(4001);
   client.state.userInput = draft;
   await client.sendMessage();
   assert.equal(client.state.userInput, draft);
   assert.match(client.state.error, /4000/);
-  client.state.userInput = "原".repeat(3500);
-  await client.sendMessage();
-  assert.equal(client.state.userInput.length, 3500);
   assert.equal(client.requests.length, 0);
-  assert.ok(client.state.error.length > 0);
+  assert.equal(client.state.messages.length, 0);
+  client.state.userInput = "原".repeat(3500);
+  const pending = client.sendMessage();
+  assert.equal(client.state.userInput.length, 3500);
+  assert.equal(client.requests.length, 1);
+  assert.equal(client.requests[0].body.message, "原".repeat(3500));
+  assert.equal(client.requests[0].body.recipe_id, "long-recipe");
+  assert.equal(client.state.error, "");
+  client.requests[0].resolve(response());
+  await pending;
   client.stop();
 });
 
@@ -267,7 +395,7 @@ test("failed chat keeps the draft and attachment and retry reuses the same user 
   assert.equal(client.state.messages[0].delivery, "pending");
   assert.equal(client.state.messages[0].attachmentName, "菜谱.txt");
   assert.equal(client.requests[0].body.file_path, "/uploads/recipe.txt");
-  assert.equal(client.requests[0].body.ingest_incremental, true);
+  assert.equal("ingest_incremental" in client.requests[0].body, false);
   assert.equal("delivery" in client.requests[0].body, false);
   assert.equal("attachmentName" in client.requests[0].body, false);
   client.requests[0].reject(new Error("network"));

@@ -63,6 +63,7 @@ def get_db() -> Generator[Session, None, None]:
     """
     Provide a database session dependency for FastAPI routes.
     """
+    # 请求依赖只管理会话生命周期，提交时机交给具体业务操作。
     with session_scope(commit=False) as db:
         yield db
 
@@ -75,6 +76,7 @@ def session_scope(*, commit: bool = True) -> Iterator[Session]:
     session = SessionLocal()
     try:
         yield session
+        # 默认由上下文统一提交，调用方异常时整段回滚，防止只保存部分元数据。
         if commit:
             session.commit()
     except BaseException:

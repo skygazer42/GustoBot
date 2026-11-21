@@ -9,6 +9,8 @@ from pathlib import Path
 
 @dataclass
 class IngredientAmount:
+    """Normalized ingredient name, source amount text, and recipe role."""
+
     name: str
     amount: str | None
     role: str
@@ -16,12 +18,16 @@ class IngredientAmount:
 
 @dataclass
 class StepRecord:
+    """One ordered recipe instruction after source normalization."""
+
     order: int
     instruction: str
 
 
 @dataclass
 class RecipeRecord:
+    """Normalized recipe metadata, cooking steps, and ingredient groups."""
+
     name: str
     cook_time: str | None
     flavors: list[str]
@@ -36,6 +42,8 @@ class RecipeRecord:
 
 @dataclass
 class IngredientProfile:
+    """Optional nutrition and benefit text associated with one ingredient."""
+
     name: str
     nutrition: str | None
     benefits: list[str]
@@ -88,6 +96,7 @@ def _load_json(path: Path) -> dict[str, dict[str, object]]:
 def _normalise_recipes(
     recipes_raw: dict[str, dict[str, object]],
 ) -> tuple[list[RecipeRecord], set[str]]:
+    """Normalize recipe records and return the complete set of used ingredients."""
     records: list[RecipeRecord] = []
     ingredients_seen: set[str] = set()
 
@@ -162,6 +171,7 @@ def _normalise_ingredients(
     role: str,
     seen: set[str],
 ) -> list[IngredientAmount]:
+    """Normalize ingredient variants while preserving first-seen order and roles."""
     result: list[IngredientAmount] = []
     items: Iterable[object]
     if value is None:
@@ -188,6 +198,7 @@ def _normalise_ingredients(
 
 
 def _normalise_steps(instructions: str | None) -> list[StepRecord]:
+    """Split source instructions into ordered, nonempty recipe steps."""
     if not instructions:
         return []
 

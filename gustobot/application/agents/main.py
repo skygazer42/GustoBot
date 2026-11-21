@@ -11,6 +11,7 @@ from gustobot.application.services.knowledge_runtime import (
 
 
 async def main() -> None:
+    """Start the agent entry point using the configured application runtime."""
     history: list[BaseMessage] = []
     try:
         while True:

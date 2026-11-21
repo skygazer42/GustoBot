@@ -8,12 +8,16 @@ logger = get_logger(service="tool.search")
 
 
 class _OrganicResult(BaseModel):
+    """Validated organic search result returned by the provider."""
+
     title: str = Field(min_length=1)
     link: str = Field(min_length=1)
     snippet: str = ""
 
 
 class _SearchResponse(BaseModel):
+    """Provider response fields used by the search tool adapter."""
+
     error: str | None = None
     organic_results: list[_OrganicResult] = Field(default_factory=list)
 

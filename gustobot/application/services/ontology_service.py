@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
 
 class OntologyService:
+    """Extract, validate, store, and query evidence-backed ontology facts."""
+
     def __init__(
         self,
         domain: DomainDefinition,
@@ -60,6 +62,7 @@ class OntologyService:
         return schema
 
     async def extract(self, sources: list[SourceDocument]) -> KnowledgeGraph:
+        """Extract a graph and validate it before returning the result."""
         return self._validate_candidate(await self.extract_candidate(sources))
 
     async def extract_candidate(self, sources: list[SourceDocument]) -> KnowledgeGraph:
@@ -111,6 +114,7 @@ class OntologyService:
         return await self.graph_store.upsert(graph)
 
     async def query(self, request: FactQuery) -> FactResult:
+        """Execute a typed fact query using the configured graph store."""
         if self.graph_store is None:
             raise RuntimeError("Neo4j 事实存储尚未配置")
         return await self.graph_store.query(request)

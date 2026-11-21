@@ -14,12 +14,15 @@ import httpx
 
 @dataclass(frozen=True)
 class CheckResult:
+    """One endpoint probe outcome and its optional failure detail."""
+
     name: str
     ok: bool
     detail: str = ""
 
 
 def test_backend(*, base_url: str, exercise_chat: bool = False) -> list[CheckResult]:
+    """Probe read-only backend contracts and optionally create then clear a chat."""
     results = []
     with httpx.Client(base_url=base_url.rstrip("/"), timeout=30, trust_env=False) as client:
         for path in (
@@ -92,6 +95,7 @@ def test_backend(*, base_url: str, exercise_chat: bool = False) -> list[CheckRes
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run endpoint probes and return a failing process status for any failed check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument(

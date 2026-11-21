@@ -14,6 +14,7 @@ WEB_ROOT = PROJECT_ROOT / "web"
 
 
 def start_backend() -> subprocess.Popen[bytes]:
+    """Start the reload-enabled backend in its own process group."""
     print("启动后端服务器...")
     creationflags = 0
     if sys.platform == "win32":
@@ -38,6 +39,7 @@ def start_backend() -> subprocess.Popen[bytes]:
 
 
 def start_frontend() -> subprocess.Popen[bytes]:
+    """Start Vite after checking the web project and npm installation."""
     if not WEB_ROOT.is_dir():
         raise FileNotFoundError(f"web 目录不存在: {WEB_ROOT}")
     npm = shutil.which("npm")
@@ -62,6 +64,7 @@ def start_frontend() -> subprocess.Popen[bytes]:
 
 
 def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    """Stop a child process tree and wait for termination on each platform."""
     if sys.platform == "win32":
         if process.poll() is None:
             # npm 和 uvicorn reload 都会创建子进程，只终止父进程会留下服务。
@@ -84,6 +87,7 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
 
 
 def main() -> None:
+    """Run both development servers and clean them up if either exits."""
     print("正在启动 GustoBot 开发服务...")
     try:
         with ExitStack() as cleanup:

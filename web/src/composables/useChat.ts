@@ -1,21 +1,25 @@
 import { computed, onScopeDispose, reactive } from "vue";
 import axios from "axios";
 import {
+  ChatRunError,
+  createChatRunId,
   createMessageId,
-  parseChatResponse,
   parseUploadResponse,
+  requestChatRun,
   type ChatRequest,
-  type ChatState
+  type ChatState,
+  type RecipeReference
 } from "../lib/chat";
 
 const MAX_MESSAGE_LENGTH = 4000;
-const API_MESSAGE_LIMIT = 5000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
-export function useChat(recipeContext: string | (() => string) = "") {
+export function useChat(recipeReference: RecipeReference | null | (() => RecipeReference | null) = null) {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
   const state = reactive<ChatState>({
     isTyping: false,
+    replyProgress: "",
+    replyDraft: "",
     isUploading: false,
     sessionId: "",
     userInput: "",
@@ -28,6 +32,7 @@ export function useChat(recipeContext: string | (() => string) = "") {
   const isBusy = computed(() => state.isTyping || state.isUploading);
   let chatController: AbortController | null = null;
   let uploadController: AbortController | null = null;
+  let threadId = createChatRunId();
   let disposed = false;
   let lastSubmission: { messageId: string; content: string; filePath: string } | null = null;
 
@@ -42,8 +47,11 @@ export function useChat(recipeContext: string | (() => string) = "") {
 
   function resetSession(): void {
     invalidateRequests();
+    threadId = createChatRunId();
     lastSubmission = null;
     state.isTyping = false;
+    state.replyProgress = "";
+    state.replyDraft = "";
     state.isUploading = false;
     state.sessionId = "";
     state.userInput = "";
@@ -77,12 +85,9 @@ export function useChat(recipeContext: string | (() => string) = "") {
       state.error = "问题最多 4000 字，已保留原文，请缩短后再发送。";
       return;
     }
-    const currentRecipeContext = typeof recipeContext === "function" ? recipeContext() : recipeContext;
-    const requestMessage = currentRecipeContext.trim().length > 0
-      ? `当前正在阅读的食谱：\n${currentRecipeContext}\n\n我的问题：${message}`
-      : message;
-    if (requestMessage.length > API_MESSAGE_LIMIT) {
-      state.error = "问题与当前食谱内容较长，请缩短问题后再发送。";
+    const currentRecipe = typeof recipeReference === "function" ? recipeReference() : recipeReference;
+    if (currentRecipe !== null && state.attachedFilePath) {
+      state.error = "当前菜谱对话不支持同时附加文件。请开启独立对话后上传。";
       return;
     }
 
@@ -108,26 +113,32 @@ export function useChat(recipeContext: string | (() => string) = "") {
     const controller = new AbortController();
     chatController = controller;
     state.isTyping = true;
+    state.replyProgress = "正在连接陶陶…";
+    state.replyDraft = "";
     state.error = "";
     const chatRequest: ChatRequest = {
-      message: requestMessage,
-      session_id: state.sessionId || undefined,
-      stream: false
+      message,
+      session_id: state.sessionId || undefined
     };
+    if (currentRecipe !== null) {
+      chatRequest.recipe_id = currentRecipe.id;
+      chatRequest.recipe_version = currentRecipe.version;
+      if (currentRecipe.servings !== undefined) chatRequest.recipe_servings = currentRecipe.servings;
+    }
     if (filePath.length > 0) {
       chatRequest.file_path = filePath;
-      chatRequest.ingest_incremental = true;
     }
 
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const { data: chatResponse } = await axios.post<unknown>(`${apiBaseUrl}/api/v1/chat/`, chatRequest, {
-        signal: controller.signal,
-        timeout: REQUEST_TIMEOUT_MS
+      const result = await requestChatRun(apiBaseUrl, chatRequest, threadId, userMessage.id, controller.signal, (update) => {
+        if (disposed || chatController !== controller) return;
+        if ("progress" in update) state.replyProgress = update.progress;
+        else state.replyDraft += update.delta;
       });
       if (disposed || chatController !== controller) {
         return;
       }
-      const result = parseChatResponse(chatResponse);
       userMessage.delivery = "sent";
       state.messages.push(result.message);
       state.sessionId = result.sessionId;
@@ -140,21 +151,34 @@ export function useChat(recipeContext: string | (() => string) = "") {
         state.attachedFileName = "";
         state.uploadStatus = "";
       }
-    } catch {
+    } catch (error: unknown) {
       if (!disposed && chatController === controller) {
         userMessage.delivery = "failed";
-        state.error = "请求出错了，请稍后重试。你的问题与附件已保留。";
+        const status = error instanceof ChatRunError ? error.status : null;
+        state.error = currentRecipe !== null && status === 409
+          ? "这份菜谱已更新，请重新打开菜谱后再提问。问题已保留。"
+          : currentRecipe !== null && status === 404 ? "这份菜谱已无法读取，请返回目录选菜。问题已保留。"
+            : "请求出错了，请稍后重试。你的问题与附件已保留。";
       }
     } finally {
+      clearTimeout(timeout);
       if (!disposed && chatController === controller) {
         chatController = null;
         state.isTyping = false;
+        state.replyProgress = "";
+        state.replyDraft = "";
       }
     }
   }
 
   async function onFileSelected(event: Event): Promise<void> {
     const fileInput = event.target;
+    const currentRecipe = typeof recipeReference === "function" ? recipeReference() : recipeReference;
+    if (currentRecipe !== null) {
+      if (fileInput instanceof HTMLInputElement) fileInput.value = "";
+      state.error = "当前菜谱对话不支持同时附加文件。请开启独立对话后上传。";
+      return;
+    }
     if (disposed || isBusy.value || !(fileInput instanceof HTMLInputElement)) {
       return;
     }

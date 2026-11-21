@@ -15,6 +15,8 @@ from gustobot.infrastructure.knowledge.request_telemetry import record_provider_
 
 
 class _RerankResult(BaseModel):
+    """Provider result row with its original index and relevance score."""
+
     model_config = ConfigDict(extra="ignore", strict=True)
     index: int = Field(ge=0)
     relevance_score: float | None = Field(default=None, allow_inf_nan=False)

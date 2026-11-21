@@ -257,7 +257,11 @@ onnxruntime-*/
 *.bin
 *.safetensors
 
-# 数据文件 (只忽略特定的大文件格式和向量数据库目录)
+# 本地业务数据、菜谱快照和上传附件
+/data/
+/uploads/
+
+# 生成的数据文件
 *.csv
 *.json.gz
 *.parquet
@@ -267,13 +271,7 @@ onnxruntime-*/
 # 向量数据库持久化文件
 chroma/
 milvus/
-data/chroma/
-data/milvus/
-data/vector_store/
-data/lightrag/
-data/neo4j/
-data/tiktoken_cache/
-data/.kb_*_ingested
+!docker/milvus/
 neo4j_plugins/
 
 # 爬虫相关
@@ -282,6 +280,7 @@ cookies.json
 *.html
 !web/index.html
 !web/admin.html
+!docs/assets/gustobot-architecture.html
 screenshots/
 downloads/
 crawled_data/

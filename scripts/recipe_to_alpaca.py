@@ -13,6 +13,7 @@ from scripts.dataset_io import read_any
 
 
 def is_recipe(record: dict[str, Any]) -> bool:
+    """Identify source records that contain recipe ingredients or instructions."""
     field_names = {k.lower() for k in record}
     return ("recipeingredient" in field_names) or ("recipeinstructions" in field_names)
 
@@ -36,6 +37,7 @@ def to_lines(value: Any) -> list[str]:
 
 
 def build_output(ingredients, steps) -> str:
+    """Format ingredients and ordered steps as one Alpaca answer body."""
     ingredient_lines = to_lines(ingredients)
     step_lines = to_lines(steps)
     out = []
@@ -50,6 +52,7 @@ def build_output(ingredients, steps) -> str:
 
 
 def main() -> None:
+    """Convert recipe JSON or JSONL records to Alpaca JSONL output."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--in", dest="in_path", required=True, help="输入 JSON/JSONL 文件")
     parser.add_argument("--out", dest="out_path", required=True, help="输出 Alpaca JSONL 文件")

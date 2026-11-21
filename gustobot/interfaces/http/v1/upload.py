@@ -21,6 +21,8 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 
 
 class UploadResponse(BaseModel):
+    """Common asset metadata returned after a successful upload."""
+
     success: bool
     asset_id: str
     filename: str
@@ -31,21 +33,28 @@ class UploadResponse(BaseModel):
 
 
 class FileUploadResponse(UploadResponse):
+    """Upload receipt with the file download route and compatibility ID."""
+
     file_id: str
     file_url: str
 
 
 class ImageUploadResponse(UploadResponse):
+    """Upload receipt with the image display route and compatibility ID."""
+
     image_id: str
     image_url: str
 
 
 class DeleteUploadResponse(BaseModel):
+    """Result of removing a previously uploaded asset file."""
+
     success: bool
     message: str
 
 
 def _validate_filename(filename: str | None) -> str:
+    """Reject empty names and path syntax before using a client filename."""
     if (
         not filename
         or filename in {".", ".."}
@@ -56,6 +65,7 @@ def _validate_filename(filename: str | None) -> str:
 
 
 def _uploaded_path(directory: Path, filename: str) -> Path:
+    """Resolve a filename and reject paths that escape the upload directory."""
     path = (directory / _validate_filename(filename)).resolve()
     if not path.is_relative_to(directory.resolve()):
         raise HTTPException(status_code=400, detail="文件路径无效")
@@ -63,10 +73,12 @@ def _uploaded_path(directory: Path, filename: str) -> Path:
 
 
 def _save_new_asset(directory, asset_id, original_name, content, file_type):
+    """Write an asset and register it, removing the file if registration fails."""
     directory.mkdir(parents=True, exist_ok=True)
     filename = f"{asset_id}_{original_name}"
     path = _uploaded_path(directory, filename)
     created = False
+    # 文件和数据库无法共用事务；登记失败时删除本次新文件，避免留下失联附件。
     try:
         with path.open("xb") as stream:
             created = True
@@ -90,6 +102,7 @@ def _save_new_asset(directory, asset_id, original_name, content, file_type):
 
 
 async def _receive_upload(file: UploadFile, directory: Path, allowed_types: set[str]):
+    """Validate, size-limit, store, and register an uploaded file."""
     original_name = _validate_filename(file.filename)
     file_type = Path(original_name).suffix.lower()
     if file_type not in allowed_types:
@@ -97,6 +110,7 @@ async def _receive_upload(file: UploadFile, directory: Path, allowed_types: set[
             status_code=400,
             detail="不支持的文件类型。支持的类型: " + ", ".join(sorted(allowed_types)),
         )
+    # 多读一个字节即可识别超限，不必将整个超大文件加载到内存。
     content = await file.read(MAX_FILE_SIZE + 1)
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
@@ -125,6 +139,7 @@ async def _receive_upload(file: UploadFile, directory: Path, allowed_types: set[
 
 @router.post("/file", response_model=FileUploadResponse)
 async def upload_file(file: Annotated[UploadFile, File()]) -> FileUploadResponse:
+    """Store a supported document and return its asset and download identifiers."""
     payload = await _receive_upload(file, UPLOAD_DIR, ALLOWED_FILE_TYPES)
     return FileUploadResponse(
         **payload,
@@ -135,6 +150,7 @@ async def upload_file(file: Annotated[UploadFile, File()]) -> FileUploadResponse
 
 @router.post("/image", response_model=ImageUploadResponse)
 async def upload_image(image: Annotated[UploadFile, File()]) -> ImageUploadResponse:
+    """Store a supported image and return its asset and display identifiers."""
     payload = await _receive_upload(image, UPLOAD_DIR / "images", ALLOWED_IMAGE_TYPES)
     return ImageUploadResponse(
         **payload,
@@ -145,6 +161,7 @@ async def upload_image(image: Annotated[UploadFile, File()]) -> ImageUploadRespo
 
 @router.get("/files/{filename}")
 def get_uploaded_file(filename: str):
+    """Return an uploaded file after constraining its resolved path to uploads."""
     path = _uploaded_path(UPLOAD_DIR, filename)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
@@ -153,6 +170,7 @@ def get_uploaded_file(filename: str):
 
 @router.get("/images/{filename}")
 def get_uploaded_image(filename: str):
+    """Return an uploaded image after constraining its path to the image folder."""
     path = _uploaded_path(UPLOAD_DIR / "images", filename)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="图片不存在")
@@ -161,6 +179,7 @@ def get_uploaded_image(filename: str):
 
 @router.delete("/{file_id}", response_model=DeleteUploadResponse)
 def delete_uploaded_file(file_id: str):
+    """Remove the first stored file matching a valid uploaded asset identifier."""
     try:
         uuid.UUID(file_id)
     except ValueError as error:

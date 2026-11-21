@@ -25,6 +25,7 @@ DURATION_FIELDS = {
 
 
 def exact_number(value: ExactNumber) -> Decimal:
+    """Convert a supported numeric value to Decimal without float rounding."""
     if type(value) not in (str, int):
         raise ValueError("Numeric values must be exact strings or integers")
     try:
@@ -37,16 +38,21 @@ def exact_number(value: ExactNumber) -> Decimal:
 
 
 class _NumericModel(BaseModel):
+    """Base class for strict numeric-query and projection contracts."""
+
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
 class _NumericReference(_NumericModel):
+    """Common ontology target reference used by numeric query records."""
+
     property: NumericProperty
     target_ref: str | None = None
     grain: NumericGrain
 
     @model_validator(mode="after")
     def _validate_grain(self):
+        """Require target and grain fields to agree with the numeric property."""
         if self.property == "reportedDuration":
             valid = self.grain in DURATION_FIELDS and self.target_ref is None
         else:
@@ -62,14 +68,20 @@ class _NumericReference(_NumericModel):
 
 
 class OrderSpec(_NumericReference):
+    """Sort direction for a numeric property or target reference."""
+
     direction: Literal["asc", "desc"] = "asc"
 
 
 class NumericSelection(_NumericReference):
+    """Numeric value requested for a target, optionally in a chosen unit."""
+
     unit: str | None = None
 
 
 class NumericCondition(_NumericReference):
+    """Validated comparison or closed interval for a numeric target."""
+
     op: Literal["eq", "ne", "lt", "lte", "gt", "gte", "between"]
     value: ExactNumber | None = None
     minimum: ExactNumber | None = None
@@ -78,6 +90,7 @@ class NumericCondition(_NumericReference):
 
     @model_validator(mode="after")
     def _validate_bounds(self):
+        """Require one exact operand or an ordered pair for a between condition."""
         if not self.unit.strip():
             raise ValueError("Numeric unit cannot be blank")
         if self.op == "between":
@@ -94,6 +107,8 @@ class NumericCondition(_NumericReference):
 
 
 class NumericProjectionSpec(_NumericModel):
+    """Versioned fixed-point scale and allowed range for a numeric dimension."""
+
     dimension: str
     tick_unit: str
     minimum: int = Field(ge=0)
@@ -102,12 +117,15 @@ class NumericProjectionSpec(_NumericModel):
 
     @model_validator(mode="after")
     def _validate_range(self):
+        """Reject fixed-point projection ranges whose lower bound exceeds upper."""
         if self.minimum > self.maximum:
             raise ValueError("Projection range is reversed")
         return self
 
 
 class NumericValue(_NumericModel):
+    """Projected numeric value and whether it can be compared safely."""
+
     status: Literal["comparable", "unknown", "non_comparable"]
     dimension: str | None = None
     minimum: int | None = None
@@ -116,6 +134,8 @@ class NumericValue(_NumericModel):
 
 
 class NumericCoverage(_NumericModel):
+    """Per-property counts describing comparable and unavailable projections."""
+
     property: NumericProperty
     target_ref: str | None = None
     grain: NumericGrain
@@ -129,6 +149,8 @@ class NumericCoverage(_NumericModel):
 
 
 class NumericMeasurement(_NumericReference):
+    """Projected measurement with its anchor, evidence, and comparability state."""
+
     anchor_id: str
     status: Literal["comparable", "unknown", "uncertain", "non_comparable"]
     minimum: int | None = None
@@ -140,6 +162,8 @@ class NumericMeasurement(_NumericReference):
 
 
 class NumericRebuildReport(_NumericModel):
+    """Outcome and coverage totals for rebuilding numeric graph projections."""
+
     domain_id: str
     ontology_version: str
     ontology_fingerprint: str
@@ -177,6 +201,7 @@ _ISO_DURATION = re.compile(
 
 
 def _duration_number(value: str) -> Decimal:
+    """Parse one Arabic or supported Chinese duration numeral exactly."""
     if value == "半":
         return Decimal("0.5")
     if value[0].isdigit():
@@ -206,6 +231,7 @@ def _duration_number(value: str) -> Decimal:
 
 
 def duration_components(raw: str | None) -> list[tuple[Decimal, str]] | None:
+    """Parse a complete ISO or Chinese duration into exact value/unit pairs."""
     if raw is None:
         return None
     text = "".join(unicodedata.normalize("NFKC", raw).split())

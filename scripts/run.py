@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def check_requirements() -> bool:
+    """Check Python service dependencies and offer to create a local dotenv file."""
     print(f"Python 版本: {sys.version.split()[0]}")
 
     if not (PROJECT_ROOT / ".env").is_file():
@@ -29,6 +30,7 @@ def check_requirements() -> bool:
 
 
 def create_env_example() -> None:
+    """Create .env from the example only when the destination does not exist."""
     template = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
     with (PROJECT_ROOT / ".env").open("x", encoding="utf-8") as env_file:
         env_file.write(template)
@@ -36,6 +38,7 @@ def create_env_example() -> None:
 
 
 def start_server(mode: str) -> None:
+    """Run the backend with reload in development or multiple workers in production."""
     command = [
         sys.executable,
         "-m",
@@ -62,6 +65,7 @@ def start_server(mode: str) -> None:
 
 
 def start_docker() -> None:
+    """Build and run the configured Docker Compose services until interrupted."""
     compose_file = PROJECT_ROOT / "docker-compose.yml"
     if not compose_file.is_file():
         raise FileNotFoundError(f"Docker Compose 配置不存在: {compose_file}")
@@ -77,6 +81,7 @@ def start_docker() -> None:
 
 
 def test_api() -> None:
+    """Check backend health and make one minimal chat API request."""
     # 帮助与依赖检查命令需要在 HTTP 客户端尚未安装时也能运行。
     import httpx
 
@@ -98,6 +103,7 @@ def test_api() -> None:
 
 
 def main() -> int:
+    """Dispatch the backend start, Docker, smoke-test, or requirements command."""
     parser = argparse.ArgumentParser(
         description="GustoBot 后端服务管理工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -24,6 +24,8 @@ def _utc_now() -> datetime:
 
 
 class UploadedAsset(Base):
+    """Metadata for an uploaded file managed by the application."""
+
     __tablename__ = "uploaded_assets"
     __table_args__ = (
         CheckConstraint("size >= 0", name="ck_uploaded_assets_nonnegative_size"),
@@ -43,6 +45,8 @@ class UploadedAsset(Base):
 
 
 class KnowledgeSource(Base):
+    """Immutable text version and publication metadata for one domain source."""
+
     __tablename__ = "knowledge_sources"
     __table_args__ = (
         Index("ix_knowledge_sources_domain_status", "domain_id", "status"),
@@ -72,6 +76,8 @@ class KnowledgeSource(Base):
 
 
 class IngestionJob(Base):
+    """Current status, progress, and failure details for one source ingestion."""
+
     __tablename__ = "ingestion_jobs"
     __table_args__ = (
         ForeignKeyConstraint(

@@ -1,3 +1,45 @@
+export interface ConversationFilters {
+  q: string;
+  state: "all" | "active" | "deleted";
+  offset: number;
+  limit: number;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string | null;
+  is_active: boolean;
+  message_count: number;
+  last_message_preview: string | null;
+}
+
+export interface ConversationPage {
+  items: ConversationSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface ConversationMessage {
+  id: number;
+  message_type: string;
+  content: string;
+  message_metadata: Record<string, unknown> | null;
+  order_index: number;
+  created_at: string;
+}
+
+export interface ConversationMessagePage {
+  session: ConversationSummary;
+  items: ConversationMessage[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export interface SourceFilters {
   q: string;
   state: "all" | "ready" | "pending" | "processing" | "failed" | "withdrawn";
@@ -51,6 +93,14 @@ export interface SourceChunk {
   number: number;
   total: number;
   content: string;
+}
+
+export interface DocumentContent {
+  source_id: string;
+  version: string;
+  revision: string;
+  title: string;
+  text: string;
 }
 
 export interface SourceDetail {

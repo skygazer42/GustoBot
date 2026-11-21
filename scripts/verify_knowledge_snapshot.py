@@ -34,33 +34,45 @@ class SnapshotError(ValueError):
 
 
 class _Record(BaseModel):
+    """Base contract that forbids unknown fields in snapshot records."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class ModelScope(_Record):
+    """Domain and ontology identity that stored artifacts must match."""
+
     domain_id: str = Field(min_length=1)
     ontology_version: str = Field(min_length=1)
     ontology_fingerprint: str = Field(pattern=_DIGEST)
 
 
 class ExpectedScope(ModelScope):
+    """Optional expected vector-index identity used to compare a snapshot."""
+
     embedding_fingerprint: str | None = Field(default=None, pattern=_DIGEST)
     index_schema_version: str = INDEX_SCHEMA_VERSION
     kind: Literal["concept", "entity"] | None = None
 
 
 class ModelFiles(_Record):
+    """Ontology, shape graph, and local resource files included in a snapshot."""
+
     ontology: str
     shapes: str
     resources: list[str] = Field(default_factory=list)
 
 
 class StoreFiles(_Record):
+    """Store dump and metadata paths supplied by the backup operator."""
+
     dump: str
     metadata: str
 
 
 class SourceFile(_Record):
+    """Source version and optional uploaded asset files to include in a backup."""
+
     source_id: str = Field(min_length=1)
     version: str = Field(min_length=1)
     asset_id: str | None = None
@@ -68,16 +80,22 @@ class SourceFile(_Record):
 
 
 class AssetFile(_Record):
+    """Uploaded asset identity and its path relative to the snapshot root."""
+
     asset_id: str = Field(min_length=1)
     path: str
 
 
 class VectorBackups(_Record):
+    """Optional exported document and semantic candidate vector backups."""
+
     documents: str | None = None
     candidates: str | None = None
 
 
 class SnapshotSpec(_Record):
+    """Operator-supplied inventory of model, store, source, and vector files."""
+
     snapshot_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
     model: ModelFiles
     mysql: StoreFiles
@@ -90,6 +108,8 @@ class SnapshotSpec(_Record):
 
 
 class SourcePublication(_Record):
+    """Published source version and optional asset identity recorded by a store."""
+
     source_id: str
     version: str
     ontology_version: str
@@ -98,6 +118,8 @@ class SourcePublication(_Record):
 
 
 class StoreMetadata(_Record):
+    """Captured store scope, graph revision, and initialization state."""
+
     capture_id: str
     scope: ModelScope
     graph_revision: int | None = Field(ge=0)
@@ -105,24 +127,32 @@ class StoreMetadata(_Record):
 
 
 class MySQLMetadata(StoreMetadata):
+    """MySQL schema revisions, published sources, and managed asset IDs."""
+
     schema_revisions: list[str]
     sources: list[SourcePublication]
     asset_ids: list[str]
 
 
 class GraphMetadata(StoreMetadata):
+    """Neo4j source and sample identities plus numeric projection version."""
+
     source_ids: list[str]
     sample_entity_ids: list[str]
     numeric_projection_version: str | None = None
 
 
 class DocumentPublication(_Record):
+    """Document source version and entity links exposed by vector metadata."""
+
     source_id: str
     version: str
     entity_ids: list[str] = Field(default_factory=list)
 
 
 class DocumentMetadata(_Record):
+    """Document vector collection configuration and published source versions."""
+
     capture_id: str
     scope: ModelScope
     collection: str = Field(min_length=1)
@@ -132,18 +162,24 @@ class DocumentMetadata(_Record):
 
 
 class CandidateMetadata(_Record):
+    """Candidate publication pointers and generation records from the vector store."""
+
     capture_id: str
     publications: list[IndexPublicationStatus]
     generations: list[IndexGeneration]
 
 
 class Artifact(_Record):
+    """Relative artifact path, byte count, and SHA-256 content checksum."""
+
     path: str
     size: int = Field(ge=0)
     sha256: str = Field(pattern=_DIGEST)
 
 
 class SnapshotManifest(_Record):
+    """Generated manifest binding a snapshot spec to captured state and hashes."""
+
     manifest_schema: Literal["gustobot_knowledge_snapshot_v1"] = "gustobot_knowledge_snapshot_v1"
     created_at: str
     spec: SnapshotSpec
@@ -155,6 +191,7 @@ class SnapshotManifest(_Record):
 
 
 class VerificationReport(_Record):
+    """Read-only verification result, rebuild requirements, and restoration checklist."""
     valid: bool
     snapshot_id: str | None = None
     scope: ModelScope | None = None
@@ -211,6 +248,7 @@ def _path(root: Path, relative: str) -> Path:
 
 
 def _artifact_paths(spec: SnapshotSpec) -> dict[str, str]:
+    """Map every declared backup artifact to its stable manifest key and path."""
     result = {
         "model.ontology": spec.model.ontology,
         "model.shapes": spec.model.shapes,
@@ -254,6 +292,7 @@ def _candidate_reasons(
     expected: ExpectedScope | None,
     has_backup: bool,
 ) -> list[str]:
+    """Explain whether candidate vectors can be reused or must be rebuilt."""
     reasons = []
     if not has_backup:
         reasons.append("candidate_backup_missing")
@@ -328,6 +367,7 @@ def _restore_checklist(candidate_compatible: bool) -> list[str]:
 def _inspect(
     root: Path, spec: SnapshotSpec, expected: ExpectedScope | None = None
 ) -> tuple[VerificationReport, str, str | None]:
+    """Cross-check captured store metadata and model scope without contacting stores."""
     ontology, shapes = _path(root, spec.model.ontology), _path(root, spec.model.shapes)
     # The executable loader permits this single local imported vocabulary.
     imported = ontology.parent / "schema-recipe-subset.ttl"
@@ -412,6 +452,7 @@ def _inspect(
 def create_manifest(
     spec_path: Path, output_path: Path, *, root: Path | None = None
 ) -> VerificationReport:
+    """Hash declared files and write a manifest bound to validated store metadata."""
     root = (spec_path.parent if root is None else root).resolve(strict=True)
     spec = _read_record(spec_path, SnapshotSpec)
     paths = _artifact_paths(spec)
@@ -439,6 +480,7 @@ def verify_manifest(
     root: Path | None = None,
     expected_scope: dict[str, Any] | ExpectedScope | None = None,
 ) -> VerificationReport:
+    """Verify manifest files, compiled model identity, and exported store metadata."""
     try:
         root = (manifest_path.parent if root is None else root).resolve(strict=True)
         manifest = _read_record(manifest_path, SnapshotManifest)
@@ -469,6 +511,7 @@ def verify_manifest(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Create or verify a local snapshot manifest without contacting live stores."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     create = commands.add_parser("create", help="Hash existing artifacts and write a new manifest")

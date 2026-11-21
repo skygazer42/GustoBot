@@ -25,18 +25,15 @@ EMBEDDING_DIMENSION=1536
 图事实导入和类型校验不调用模型；文档入库需要 embedding，文档事实抽取和一般答案生成需要聊天模型。`EMBEDDING_DIMENSION` 必须匹配实际模型输出。
 
 ```powershell
-docker compose --env-file .env config --quiet
-docker compose --env-file .env --profile setup build backend migrate
-docker compose --env-file .env up -d mysql neo4j milvus
-docker compose --env-file .env --profile setup run --rm migrate
-docker compose --env-file .env up -d backend
-docker compose --env-file .env logs -f backend
+docker compose --env-file .env up -d --build
 ```
 
-默认服务为后端、MySQL 8.0、Neo4j 5.26 和 Milvus 2.5。Milvus 使用内嵌 etcd 与本地对象存储。`setup` profile 的 `migrate` 服务显式应用迁移；后端等待存储健康后只执行 `scripts/migrate_database.py --check`，不补表、不修改 schema。首次启动缺少迁移时，先运行迁移命令再启动后端。构建和启动不导入数据、不调用模型。
+默认部署包含应用、MySQL 8.0、Neo4j 5.26 和 Milvus 2.5。镜像内置 Vue 构建产物，由 FastAPI 提供同源网页与 API。`migrate` 等待 MySQL 健康后应用迁移并退出，应用等待迁移成功和各存储健康后启动。已有部署升级前先完成停写和备份。[部署与升级](DEPLOYMENT.md)
 
 | 地址 | 用途 |
 | --- | --- |
+| `http://localhost:8000/` | 餐桌手记与陶陶对话 |
+| `http://localhost:8000/admin.html` | 知识管理后台 |
 | `http://localhost:8000/docs` | API 文档 |
 | `http://localhost:8000/health` | 后端健康检查 |
 | `http://localhost:7474` | Neo4j Browser |
@@ -45,9 +42,11 @@ docker compose --env-file .env logs -f backend
 
 端口可在 `.env` 中调整。Redis 不参与默认请求链；需要保留的可选服务时可执行 `docker compose --env-file .env --profile cache up -d redis`。
 
-## 导入样例
+## 准备和导入本地资料
 
-先导入少量菜谱事实，核对领域、来源和做法版本：
+应用读取本机 `data/`。把菜谱目录快照放在 `data/recipes/recipes.open-license.jsonl`，关联图片放在 `data/recipes/media/`。长期知识可从管理后台单独导入。[数据来源与构建](DATA_SOURCES.md)
+
+如已准备 `data/recipe.json`，可先导入少量结构化菜谱以核对来源和做法版本。
 
 ```powershell
 docker compose --env-file .env exec backend python scripts/import_knowledge.py recipes --path data/recipe.json --limit 10
@@ -55,7 +54,7 @@ docker compose --env-file .env exec backend python scripts/import_knowledge.py r
 
 去掉 `--limit` 可导入整个输入文件。相同源记录重复导入保留身份；内容变化产生新的来源与做法版本，不按同名覆盖其他做法。
 
-原文导入是独立操作：
+准备好本机 `data/kb/data.txt` 和 embedding 配置后，可导入原文。
 
 ```powershell
 docker compose --env-file .env exec backend python scripts/import_knowledge.py documents --path data/kb/data.txt --source-id recipe-history
@@ -82,13 +81,13 @@ python -m uvicorn gustobot.main:application --reload
 
 将示例密码替换为实际密码，使用调整后的宿主机端口。开发检查工具安装命令是 `python -m pip install -r requirements-dev.txt`。
 
-## 前端与领域
+## 本地前端开发与领域配置
 
-另开终端执行：
+需要 Vite 热更新时，另开终端执行以下命令。开发页面默认使用 `http://localhost:5174`，由 Vite 将 API 请求代理到 `8000`。
 
 ```powershell
 Set-Location web
-npm install
+npm ci
 npm run dev
 ```
 

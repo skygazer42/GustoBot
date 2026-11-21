@@ -40,6 +40,7 @@ class EmbeddingTelemetry:
         }
 
     def record(self, **increments: float) -> None:
+        """Add call counters under a lock shared by worker-thread operations."""
         with self._lock:
             for name, value in increments.items():
                 current = self._values[name]
@@ -48,6 +49,7 @@ class EmbeddingTelemetry:
                 self._values[name] = current + value
 
     def snapshot(self) -> TelemetrySnapshot:
+        """Return a detached snapshot of current embedding counters."""
         with self._lock:
             return dict(self._values)
 
@@ -179,9 +181,11 @@ class OpenAICompatibleEmbeddings:
             raise EmbeddingResponseError(str(error)) from error
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed an ordered batch, splitting requests at the configured limit."""
         return self._embed(texts)
 
     def embed_query(self, text: str) -> list[float]:
+        """Embed one query and reuse its vector within the active request trace."""
         if self.space_fingerprint is not None:
             from gustobot.infrastructure.knowledge.request_telemetry import (
                 request_query_vector,
@@ -193,9 +197,11 @@ class OpenAICompatibleEmbeddings:
         return self._embed([text])[0]
 
     async def aembed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Run blocking batch embedding in a worker thread."""
         return await asyncio.to_thread(self.embed_documents, texts)
 
     async def aembed_query(self, text: str) -> list[float]:
+        """Run blocking query embedding in a worker thread."""
         return await asyncio.to_thread(self.embed_query, text)
 
     def _validate_vector(self, values: Sequence[float]) -> list[float]:
@@ -214,6 +220,7 @@ class OpenAICompatibleEmbeddings:
         return vector
 
     def _embed(self, texts: Sequence[str]) -> list[list[float]]:
+        """Send ordered bounded batches and record provider usage and elapsed time."""
         if not texts:
             return []
         ordered_inputs = [text.strip() or " " for text in texts]
@@ -252,4 +259,5 @@ class OpenAICompatibleEmbeddings:
             self._event("logical_complete", elapsed_seconds=perf_counter() - started)
 
     def close(self) -> None:
+        """Close the owned OpenAI client and its HTTP transport."""
         self._client.close()

@@ -19,6 +19,17 @@ class MemoryVectors:
     def existing_ids(self, ids):
         return set(ids) & self.rows.keys()
 
+    def delete_source(self, *, domain_id, source_id, versions):
+        self.rows = {
+            identifier: stored
+            for identifier, stored in self.rows.items()
+            if not (
+                stored[0].domain_id == domain_id
+                and stored[0].source_id == source_id
+                and stored[0].source_version in versions
+            )
+        }
+
     def read_chunk(self, chunk_id, **scope):
         stored = self.rows.get(chunk_id)
         if stored is None:
@@ -367,6 +378,9 @@ class MilvusCollection:
         self.calls.append(("query", kwargs))
         return [{key: row[key] for key in kwargs["output_fields"]} for row in self.rows]
 
+    def delete(self, **kwargs):
+        self.calls.append(("delete", kwargs))
+
     def search(self, **kwargs):
         self.calls.append(("search", kwargs))
         return [[SimpleNamespace(entity=row, score=0.9) for row in self.rows]]
@@ -414,6 +428,25 @@ def test_milvus_adapter_preserves_provenance_and_constrains_search_before_rankin
         'and JSON_CONTAINS_ANY(metadata["entity_ids"], ["recipe-1"])'
     )
     assert collection.rows[0]["metadata"] == {"uri": None, "entity_ids": ["recipe-1"]}
+
+
+def test_document_delete_scopes_all_chunk_versions_and_ontologies_to_one_domain_source():
+    from gustobot.infrastructure.knowledge.vector_store import VectorStore
+
+    collection, embeddings = MilvusCollection(), Embeddings()
+    vectors = VectorStore(collection=collection, dimension=2, embedding_model="test-embedding")
+    knowledge = service(vectors, embeddings)
+    identifier = ' guide"\\/资料 '
+
+    knowledge.delete_source(identifier, ["v1", "v2"])
+
+    deleted = [parameters for name, parameters in collection.calls if name == "delete"]
+    assert len(deleted) == 1
+    assert deleted[0]["expr"] == (
+        'domain_id == "recipes" and source_id == " guide\\"\\\\/资料 " and source_version in ["v1", "v2"]'
+    )
+    assert deleted[0]["timeout"] == vectors.timeout
+    assert embeddings.documents == embeddings.queries == []
 
 
 def test_chunk_read_queries_only_scoped_scalar_fields_without_embeddings():
@@ -579,7 +612,7 @@ async def test_isolated_milvus_ingestion_versions_link_refresh_and_schema_compat
         embeddings = Embeddings()
         published: dict[str, str] = {}
         knowledge = service(vectors, embeddings, lambda: dict(published))
-        await knowledge.ingest_source(
+        previous = await knowledge.ingest_source(
             SourceDocument(id="manual", text="旧做法：先炒番茄。", uri="managed.txt")
         )
         current = SourceDocument(id="manual", text="新做法：先炒鸡蛋。", uri="managed.txt")
@@ -605,7 +638,7 @@ async def test_isolated_milvus_ingestion_versions_link_refresh_and_schema_compat
             reranker=False,
             source_versions=lambda: dict(published),
         )
-        await other.ingest_source(
+        equipment = await other.ingest_source(
             SourceDocument(id="manual", text=current.text, uri="equipment.txt")
         )
         hits = await knowledge.search("步骤")
@@ -622,6 +655,17 @@ async def test_isolated_milvus_ingestion_versions_link_refresh_and_schema_compat
             assert reopened.existing_ids(result.ids) == set(result.ids)
         finally:
             reopened.close()
+        knowledge.delete_source("manual", [result.version])
+        assert vectors.existing_ids(result.ids) == set()
+        assert vectors.existing_ids(previous.ids) == set(previous.ids)
+        assert vectors.existing_ids(equipment.ids) == set(equipment.ids)
+        assert await knowledge.search("步骤") == []
+        equipment_hits = await other.search("步骤")
+        assert len(equipment_hits) == 1
+        assert equipment_hits[0]["metadata"]["domain_id"] == "equipment"
+        published["manual"] = previous.version
+        old_hits = await knowledge.search("步骤")
+        assert len(old_hits) == 1 and old_hits[0]["content"] == "旧做法：先炒番茄。"
     finally:
         # This exact UUID collection was created by this test in the isolated service.
         try:

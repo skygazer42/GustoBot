@@ -29,6 +29,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 class ExpectedOutcome(BaseModel):
+    """Expected answer properties and evidence rules used to grade a case."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
     concept_ids: list[str] = Field(default_factory=list)
     object_ids: list[str] = Field(default_factory=list)
@@ -47,6 +49,8 @@ class ExpectedOutcome(BaseModel):
 
 
 class EvaluationCase(BaseModel):
+    """One question, fixture, and expected outcome in the evaluation set."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(min_length=1)
     split: Literal["holdout", "calibration"]
@@ -61,6 +65,8 @@ class EvaluationCase(BaseModel):
 
 @dataclass
 class EvaluationDataset:
+    """Validated cases and source identity used to reproduce an evaluation run."""
+
     cases: list[EvaluationCase]
     fixtures: dict[str, Any]
     manifest: dict[str, Any]
@@ -69,6 +75,8 @@ class EvaluationDataset:
 
 @dataclass
 class EvaluationRuntime:
+    """Evaluation-only services and deployment metadata with owned resources."""
+
     query_service: Any
     scope: dict[str, Any]
     deployment: dict[str, Any]
@@ -102,6 +110,7 @@ def _canonical(value) -> str:
 
 
 def load_dataset(path: str | Path) -> EvaluationDataset:
+    """Load and verify an evaluation dataset and its content identity."""
     path = Path(path)
     raw = path.read_bytes()
     manifest_path = path.with_name("manifest.json")
@@ -207,6 +216,7 @@ def materialize_dataset(path: Path, output: Path, *, model=None):
         identity_map[original_edge.id] = matches[0]
 
     def bind(value):
+        """Recursively replace fixture identities with their bound graph IDs."""
         if isinstance(value, str):
             return identity_map.get(value, value)
         if isinstance(value, list):
@@ -301,6 +311,7 @@ _RANGE_NUMBER = re.compile(
 
 
 def _number(value, unit, semantic_engine=None):
+    """Parse a numeric expectation and normalize its value into the target unit."""
     canonical = _UNITS.get(unit, unit)
     amount = Fraction(str(value))
     if semantic_engine is not None:
@@ -349,6 +360,7 @@ def _source_id(source):
 
 
 def _derived_evidence(assertion, facts, expected, engine):
+    """Resolve expected evidence through source facts and semantic derivation traces."""
     from rdflib import RDFS
 
     from gustobot.domain.numeric import DURATION_FIELDS, NumericMeasurement
@@ -436,6 +448,7 @@ def grade_case(
     target_names=None,
     semantic_engine=None,
 ) -> dict[str, Any]:
+    """Compare one observed answer with expected facts, scope, and source evidence."""
     expected = case.expected
     status_ok = observation["status"] in expected.statuses
     selected = set(observation["selected_ids"])
@@ -534,6 +547,7 @@ def grade_case(
         coverage = observation.get("numeric_coverage", [])
 
         def matches_coverage(item, condition):
+            """Match one measured coverage row to a requested numeric condition."""
             if not all(item.get(key) == condition.get(key) for key in ("property", "grain")):
                 return False
             target = target_names.get(item.get("target_ref"), item.get("target_ref"))
@@ -585,6 +599,7 @@ def grade_case(
 
 
 def _metric(values: Sequence[bool]) -> dict[str, Any]:
+    """Summarize passed checks with a stable numerator, denominator, and rate."""
     total = len(values)
     if not total:
         return {"value": None, "passed": 0, "total": 0, "wilson_95": None}
@@ -643,6 +658,7 @@ def _delta(before, after):
 
 
 def _candidate(item, scope=None):
+    """Normalize one recalled candidate for scoring and calibration reports."""
     if scope is not None:
         return {
             "id": item["ref_id"],
@@ -690,6 +706,7 @@ async def _no_fault():
 
 
 async def _observe(case, runtime, mode, serial):
+    """Run one evaluation case and capture answer, candidates, timing, and provider use."""
     from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
     history: list[BaseMessage] = [
@@ -798,6 +815,7 @@ async def _observe(case, runtime, mode, serial):
 
 
 def _release_gate(metrics, provider_kind, cases, mode):
+    """Apply evaluation thresholds and provider-evidence requirements for release."""
     limits = {
         "concept_recall_at_5": 0.98,
         "entity_recall_at_10": 0.95,
@@ -854,6 +872,7 @@ async def run_evaluation(
     concurrency: int = 1,
     repeats: int = 1,
 ):
+    """Evaluate cases with bounded concurrency and collect outcomes and telemetry."""
     from gustobot.domain.linking import INDEX_SCHEMA_VERSION
 
     runtime.scope.setdefault("index_schema_version", INDEX_SCHEMA_VERSION)
@@ -881,6 +900,7 @@ async def run_evaluation(
     semaphore = asyncio.Semaphore(concurrency)
 
     async def one(case, repetition):
+        """Run and grade one case repetition while capturing timing and failure."""
         async with semaphore:
             started = time.perf_counter()
             try:
@@ -1109,6 +1129,7 @@ async def run_evaluation(
 
 
 def classify_outcome(case, row):
+    """Assign one stable outcome category from the case and its graded observation."""
     if row["error"] is not None:
         return "service_unavailable" if case.fault else "functional_defect"
     if case.truth == "manual_unverified":
@@ -1140,6 +1161,7 @@ def classify_outcome(case, row):
 
 
 def calibrate_policy(cases, observations, *, embedding_fingerprint, scope=None, kind="entity"):
+    """Select candidate thresholds from held-out observations for one embedding scope."""
     if not cases or any(case.split != "calibration" for case in cases):
         raise ValueError("Calibration requires a separate calibration split; holdout is forbidden")
     if any(case.truth == "manual_unverified" for case in cases):
@@ -1206,6 +1228,7 @@ def calibrate_policy(cases, observations, *, embedding_fingerprint, scope=None, 
 
 
 def compare_reports(baseline, current):
+    """Compare two reports by outcome, quality gate, and resource usage changes."""
     if baseline["provider_kind"] != current["provider_kind"]:
         raise ValueError("Protocol and real-provider reports require separate baselines")
     semantic_keys = ("domain_id", "ontology_version", "ontology_fingerprint")
@@ -1252,6 +1275,7 @@ def compare_reports(baseline, current):
 
 
 def _report_dataset(report):
+    """Read the frozen dataset identity embedded in an evaluation report."""
     frozen = report["frozen_dataset"]
     raw = frozen["questions_jsonl"].encode("utf-8")
     if _checksum(raw) != report["dataset_hash"]:
@@ -1278,6 +1302,7 @@ def _report_dataset(report):
 
 
 def _approval_metrics(cases, rows):
+    """Calculate calibration acceptance metrics from graded cases and observations."""
     scored = [row for row in rows if row["truth"] != "manual_unverified"]
     names = {
         "correct_binding": "binding",
@@ -1344,6 +1369,7 @@ def _approval_metrics(cases, rows):
 
 
 def _assert_real_report(report, scope, generation_id):
+    """Reject calibration inputs lacking real-provider, scope, or generation evidence."""
     from gustobot.domain.linking import GraphRevision
 
     if report.get("provider_kind") != "real":
@@ -1631,10 +1657,12 @@ def build_approved_calibration_report(calibration_report, heldout_report, *, sco
 
 
 def normalize_question(question):
+    """Normalize whitespace and Unicode for stable evaluation question identity."""
     return " ".join(unicodedata.normalize("NFKC", question).casefold().split())
 
 
 def validate_approved_calibration_report(payload):
+    """Validate report provenance and real-provider evidence before policy use."""
     if payload.get("schema_version") != "knowledge-approved-calibration-v1":
         raise ValueError("Unsupported approved-calibration report schema")
     try:
@@ -1663,6 +1691,7 @@ def calculate_cost(calls, prices):
     unknown = []
 
     def decimal_text(value):
+        """Format a rational cost exactly without scientific notation."""
         with localcontext() as context:
             context.prec = 50
             text = format(Decimal(value.numerator) / Decimal(value.denominator), "f")
@@ -1708,6 +1737,7 @@ def calculate_cost(calls, prices):
 
 
 def _attach_build_cost(report, args):
+    """Attach observed index-build resource totals and configured prices."""
     if args.build_telemetry is None:
         return
     source = _json(args.build_telemetry.read_text(encoding="utf-8"))
@@ -1735,6 +1765,7 @@ def _attach_build_cost(report, args):
 
 
 def create_runtime(*, scope, linking_mode):
+    """Create isolated evaluation clients for the requested domain and link mode."""
     from gustobot.application.services import knowledge_runtime
     from gustobot.config import settings
 
@@ -1768,6 +1799,7 @@ def create_runtime(*, scope, linking_mode):
 
 
 def _write_report(report, output):
+    """Write the report, case rows, and failed rows as JSON files."""
     output.mkdir(parents=True, exist_ok=True)
     (output / "report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
@@ -1790,6 +1822,7 @@ def _write_report(report, output):
 
 
 async def execute(args, *, runtime_factory=None):
+    """Load, run, and report an evaluation while closing all acquired resources."""
     if args.approve_calibration:
         if not args.heldout_report or not args.generation or not args.kind:
             raise ValueError(
@@ -1942,6 +1975,7 @@ async def execute(args, *, runtime_factory=None):
 
 
 def main(argv=None, *, runtime_factory=None):
+    """Parse evaluation options and return an exit status from release gates."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("protocol", "retrieval", "qa", "latency"), required=True)
     parser.add_argument(

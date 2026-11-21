@@ -288,7 +288,7 @@ async def test_sse_send_failure_closes_the_suspended_query_stream(monkeypatch):
     query = Query()
 
     async def prepare(request, db):
-        return "session", [], None, "parent"
+        return "session", [], None, "parent", None
 
     async def receive():
         await asyncio.Event().wait()
@@ -387,7 +387,7 @@ async def test_repeated_ingestion_cancel_waits_for_registration_and_durable_outc
         recorded.append(status)
         return current, None
 
-    async def write():
+    async def write(_receipt):
         raise AssertionError("Cancelled registration must not begin the external write")
 
     monkeypatch.setattr(service, "_start", register)

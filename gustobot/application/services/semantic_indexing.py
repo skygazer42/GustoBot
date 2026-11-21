@@ -45,11 +45,15 @@ _Result = TypeVar("_Result")
 
 
 class _CatalogChanged(RuntimeError):
+    """Signal that the graph changed while a candidate catalog was exported."""
+
     pass
 
 
 @dataclass
 class _BuildProgress:
+    """Mutable counters for the current embedding and index-write phase."""
+
     embedded: int
     reused: int = 0
     written: int = 0
@@ -125,6 +129,7 @@ class SemanticIndexingService:
         return source
 
     def scope(self, kind: Literal["concept", "entity"]) -> IndexScope:
+        """Return the current immutable ontology and embedding scope for a kind."""
         return IndexScope(
             domain_id=self.domain.id,
             ontology_version=self.domain.version,
@@ -144,6 +149,7 @@ class SemanticIndexingService:
         return generation
 
     async def graph_revision(self) -> GraphRevision:
+        """Read the authoritative graph revision used to validate entity indexes."""
         return await (await self._graph()).graph_revision()
 
     def _check_scope(self, scope: IndexScope) -> None:
@@ -193,6 +199,7 @@ class SemanticIndexingService:
         generation_id: str,
         batch_size: int,
     ) -> list[CatalogRecord]:
+        """Export and validate a complete catalog at the requested graph revision."""
         if scope.kind == "concept":
             records = list(self.formal.linking_records())
         else:
@@ -228,6 +235,8 @@ class SemanticIndexingService:
     async def _publish(
         self, generation: IndexGeneration, request: BuildIndexRequest
     ) -> IndexGeneration:
+        """Publish only after rechecking generation ownership and expected active pointer."""
+        # 构建期间事实图可能更新；实体索引只能发布到它实际导出的那个图版本。
         if request.scope.kind == "entity":
             observed = await self._revision(request.scope)
             if observed.state != "ready" or observed.revision != generation.graph_revision:
@@ -241,8 +250,7 @@ class SemanticIndexingService:
                 ),
             )
         except Exception:
-            # A connection can fail after COMMIT reached MySQL. Recover from its
-            # authoritative pointer before attempting to record a failed outcome.
+            # 断线可能发生在 MySQL 已提交之后；先回读生效指针，不能直接判定发布失败。
             pointer = await asyncio.to_thread(
                 self._transaction, lambda repo: repo.publication_status(request.scope)
             )
@@ -278,6 +286,7 @@ class SemanticIndexingService:
         checksum: str,
         progress: _BuildProgress,
     ) -> None:
+        """Reuse or create scoped vectors, write batches, and persist build progress."""
         await asyncio.to_thread(
             self._save_progress,
             generation.generation_id,
@@ -344,6 +353,7 @@ class SemanticIndexingService:
         checksum: str,
         progress: _BuildProgress,
     ) -> IndexGeneration:
+        """Verify vector count and checksum before marking a build publishable."""
         await asyncio.to_thread(self._renew, generation.generation_id)
         progress.stage = "generation verification"
         candidates = await self._candidates()
@@ -376,6 +386,8 @@ class SemanticIndexingService:
         )
 
     async def build(self, request: BuildIndexRequest) -> BuildIndexReceipt:
+        """Build a candidate generation and optionally publish its completed snapshot."""
+        # 新索引写入独立代次，完成校验后才切换生效指针，在线查询不读取半成品。
         self._check_scope(request.scope)
         revision = None
         if request.scope.kind == "entity":
@@ -462,6 +474,7 @@ class SemanticIndexingService:
     def _outcome(
         self, generation_id: str, *, status: Literal["failed", "superseded"], error: str
     ) -> IndexGeneration:
+        """Persist a failed or superseded generation while preserving its diagnostic."""
         current = self._generation(generation_id)
         if current.status == "active":
             return current
@@ -473,6 +486,7 @@ class SemanticIndexingService:
         )
 
     async def status(self, scope: IndexScope) -> IndexPublicationStatus:
+        """Return publication state, including graph staleness for entity indexes."""
         self._check_scope(scope)
         publication: IndexPublicationStatus = await asyncio.to_thread(
             self._transaction, lambda repo: repo.publication_status(scope)
@@ -490,6 +504,7 @@ class SemanticIndexingService:
         return publication
 
     async def bootstrap(self, *, audit_only: bool = True):
+        """Initialize or audit the graph revision scope before entity indexing."""
         return await (await self._graph()).bootstrap_graph_scope(audit_only=audit_only)
 
     async def calibrate(
@@ -499,6 +514,7 @@ class SemanticIndexingService:
         *,
         expected_active_generation: str | None = None,
     ) -> IndexPublicationStatus:
+        """Validate an approved evaluation report and publish its calibrated policy."""
         report, report_hash = await asyncio.to_thread(_approved_calibration, report_path)
         scope = IndexScope.model_validate(report["scope"])
         self._check_scope(scope)
@@ -532,5 +548,6 @@ class SemanticIndexingService:
         )
 
     async def retire(self, generation_id: str) -> None:
+        """Retire a non-active generation and then remove its vector collection."""
         await asyncio.to_thread(self._transaction, lambda repo: repo.retire(generation_id))
         await asyncio.to_thread((await self._candidates()).delete_generation, generation_id)

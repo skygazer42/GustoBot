@@ -67,11 +67,15 @@ def compose_model(tmp_path):
     return json.loads(process.stdout)
 
 
-def test_default_compose_runs_only_application_and_three_authoritative_stores(compose_model):
+def test_default_compose_runs_the_application_with_migration_and_three_stores(compose_model):
     services = compose_model["services"]
     active = {name for name, service in services.items() if not service.get("profiles")}
-    assert active == {"backend", "mysql", "neo4j", "milvus"}
-    assert set(services["backend"]["depends_on"]) == {"mysql", "neo4j", "milvus"}
+    assert active == {"backend", "migrate", "mysql", "neo4j", "milvus"}
+    dependencies = services["backend"]["depends_on"]
+    assert set(dependencies) == {"migrate", "mysql", "neo4j", "milvus"}
+    assert dependencies["migrate"]["condition"] == "service_completed_successfully"
+    assert dependencies["migrate"]["required"] is True
+    assert all(dependencies[name]["condition"] == "service_healthy" for name in ("mysql", "neo4j", "milvus"))
     assert services["redis"]["profiles"] == ["cache"]
     assert services["backend"]["environment"]["DATABASE_URL"].startswith("mysql+pymysql://")
     assert services["backend"]["environment"]["KNOWLEDGE_DOMAIN_FILE"].endswith(".yaml")
@@ -84,8 +88,11 @@ def test_milvus_uses_persistent_embedded_etcd_and_read_only_configuration(compos
     assert milvus["environment"]["COMMON_STORAGETYPE"] == "local"
     mounts = {volume["target"]: volume for volume in milvus["volumes"]}
     assert mounts["/var/lib/milvus"]["type"] == "volume"
-    assert mounts["/milvus/configs/embedEtcd.yaml"]["read_only"] is True
-    assert mounts["/milvus/configs/user.yaml"]["read_only"] is True
+    for filename in ("embedEtcd.yaml", "user.yaml"):
+        mount = mounts[f"/milvus/configs/{filename}"]
+        assert mount["read_only"] is True
+        assert not mount["bind"].get("create_host_path", False)
+        assert Path(mount["source"]).is_file()
 
 
 def test_backend_import_needs_no_retired_vendor_or_optional_redis(tmp_path):
@@ -219,15 +226,15 @@ def test_candidate_worker_is_opt_in_and_uses_identical_scope_configuration():
     assert "SEMANTIC_INDEX_BATCH_SIZE" in worker["environment"]
 
 
-def test_schema_migration_requires_the_explicit_setup_profile():
+def test_schema_migration_waits_for_mysql_and_exits():
     import yaml
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     setup = compose["services"]["migrate"]
-    assert setup["profiles"] == ["setup"]
     assert setup["entrypoint"] == []
     assert setup["command"] == ["python", "scripts/migrate_database.py"]
-    assert set(setup["depends_on"]) == {"mysql"}
+    assert setup["depends_on"] == {"mysql": {"condition": "service_healthy"}}
+    assert setup["restart"] == "no"
 
 
 @pytest.fixture(scope="module")

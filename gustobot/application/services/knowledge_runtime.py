@@ -10,6 +10,7 @@ from loguru import logger
 from gustobot.config import settings
 from gustobot.config.domain import get_domain_definition
 
+# 客户端按能力惰性创建；线程池中的并发首访也必须复用同一个实例。
 _runtime_lock = RLock()
 
 _graph = None
@@ -24,6 +25,7 @@ _linker = None
 
 
 def get_graph_store():
+    """Return the lazily initialized graph client for the active domain."""
     global _graph
     with _runtime_lock:
         if _graph is None:
@@ -42,6 +44,7 @@ def get_graph_store():
 
 
 def published_versions():
+    """Read source versions currently published for document retrieval."""
     from gustobot.infrastructure.core.database import session_scope
     from gustobot.infrastructure.persistence.crud.knowledge import KnowledgeRepository
 
@@ -53,6 +56,7 @@ def published_versions():
 
 
 def get_document_service():
+    """Return the shared document ingestion and retrieval service."""
     global _documents
     with _runtime_lock:
         if _documents is None:
@@ -67,6 +71,7 @@ def get_document_service():
 
 
 def get_model() -> ChatOpenAI | None:
+    """Return the shared instrumented chat model, or None when unconfigured."""
     global _model
     with _runtime_lock:
         if _model is None and settings.LLM_API_KEY:
@@ -118,6 +123,7 @@ def get_model() -> ChatOpenAI | None:
 
 
 def candidate_embedding_fingerprint() -> str:
+    """Return the configured candidate vector-space identity or reject ambiguity."""
     from gustobot.domain.linking import embedding_fingerprint
 
     if not settings.SEMANTIC_EMBEDDING_REVISION.strip():
@@ -132,6 +138,7 @@ def candidate_embedding_fingerprint() -> str:
 
 
 def get_candidate_store():
+    """Return the shared candidate store with request-time operation limits."""
     global _candidates
     with _runtime_lock:
         if _candidates is None:
@@ -152,6 +159,7 @@ def get_candidate_store():
 
 
 def get_build_candidate_store():
+    """Return the shared candidate store configured for index-building limits."""
     global _build_candidates
     with _runtime_lock:
         if _build_candidates is None:
@@ -172,6 +180,7 @@ def get_build_candidate_store():
 
 
 def _new_candidate_embeddings(*, build: bool):
+    """Create a candidate embedder with timeout and telemetry for its workload."""
     from gustobot.infrastructure.knowledge.embeddings import OpenAICompatibleEmbeddings
 
     candidate_embedding_fingerprint()
@@ -195,6 +204,7 @@ def _new_candidate_embeddings(*, build: bool):
 
 
 def get_candidate_embeddings():
+    """Return the shared embedder used for interactive candidate retrieval."""
     global _candidate_embeddings
     with _runtime_lock:
         if _candidate_embeddings is None:
@@ -203,6 +213,7 @@ def get_candidate_embeddings():
 
 
 def get_build_embeddings():
+    """Return the shared embedder used for offline candidate index builds."""
     global _build_embeddings
     with _runtime_lock:
         if _build_embeddings is None:
@@ -211,6 +222,7 @@ def get_build_embeddings():
 
 
 def semantic_publication(scope):
+    """Read the persisted publication pointer for an exact candidate scope."""
     from gustobot.infrastructure.core.database import session_scope
     from gustobot.infrastructure.persistence.crud.semantic_index import (
         SemanticIndexRepository,
@@ -221,6 +233,7 @@ def semantic_publication(scope):
 
 
 def create_semantic_indexing_service():
+    """Assemble index-building dependencies without opening external clients early."""
     from gustobot.application.services.semantic_indexing import SemanticIndexingService
 
     return SemanticIndexingService(
@@ -233,6 +246,7 @@ def create_semantic_indexing_service():
 
 
 def get_entity_linker():
+    """Return the shared linker when semantic linking is enabled."""
     global _linker
     if settings.SEMANTIC_LINKING_MODE == "off":
         return None
@@ -275,6 +289,7 @@ def get_entity_linker():
 
 
 def get_query_service():
+    """Return the shared query service and its configured retrieval dependencies."""
     global _queries
     with _runtime_lock:
         if _queries is None:
@@ -282,6 +297,7 @@ def get_query_service():
                 KnowledgeQueryService,
             )
 
+            # 传入存储工厂，只有真正需要事实图或文档时才建立对应连接。
             _queries = KnowledgeQueryService(
                 get_domain_definition(),
                 graph_store=get_graph_store,
@@ -294,8 +310,10 @@ def get_query_service():
 
 
 async def cleanup_runtime():
+    """Detach shared clients, close every owned resource, and propagate failures."""
     global _build_candidates
     global _graph, _documents, _queries, _model, _candidates, _candidate_embeddings, _build_embeddings, _linker
+    # 锁内摘除共享引用，耗时的关闭操作放在锁外，避免持锁等待外部 I/O。
     with _runtime_lock:
         graph, documents, model = _graph, _documents, _model
         clients = (

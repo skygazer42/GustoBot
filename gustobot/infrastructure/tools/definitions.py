@@ -42,19 +42,24 @@ class ToolRegistry:
         self._factories: dict[str, Callable[[], Any]] = {}
 
     def register(self, spec: ToolSpec, factory: Callable[[], Any]) -> None:
+        """Register one model-visible tool specification and its lazy factory."""
         self._specs[spec.name] = spec
         self._factories[spec.name] = factory
 
     def get_spec(self, name: str) -> ToolSpec:
+        """Return a registered tool specification by its name."""
         return self._specs[name]
 
     def get_specs(self) -> Iterable[ToolSpec]:
+        """Return the registered tool specifications without copying them."""
         return self._specs.values()
 
     def has_tool(self, name: str) -> bool:
+        """Check whether a tool name has a registered specification."""
         return name in self._specs
 
     def create(self, name: str) -> Any:
+        """Instantiate a registered tool through its factory."""
         factory = self._factories.get(name)
         if factory is None:
             raise KeyError(f"No tool registered under name '{name}'")

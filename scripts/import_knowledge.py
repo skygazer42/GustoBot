@@ -17,12 +17,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def create_service():
+    """Create the ingestion service configured for the active domain."""
     from gustobot.interfaces.http.knowledge_router import get_ingestion_service
 
     return get_ingestion_service()
 
 
 async def close_resources():
+    """Close runtime clients and dispose the shared database engine."""
     from gustobot.application.services.knowledge_runtime import cleanup_runtime
     from gustobot.infrastructure.core.database import engine
 
@@ -33,6 +35,7 @@ async def close_resources():
 
 
 def _recipe_entries(payload: Any) -> Iterator[tuple[str, dict]]:
+    """Yield recipe names and original records from either supported JSON shape."""
     if isinstance(payload, dict):
         for name, record in payload.items():
             if not isinstance(record, dict):
@@ -58,6 +61,7 @@ async def import_path(
     limit: int | None = None,
     source_id: str | None = None,
 ) -> int:
+    """Import recipe records or one parsed document and return item count."""
     from gustobot.application.services.knowledge_ingestion import (
         DocumentIngestionRequest,
         parse_document,
@@ -90,6 +94,7 @@ async def import_path(
 
 
 async def execute(args) -> int:
+    """Run the selected import command and report failures without leaking secrets."""
     from gustobot.application.services.knowledge_ingestion import IngestionFailed
 
     try:
@@ -114,6 +119,7 @@ async def execute(args) -> int:
 
 
 def _positive_limit(value: str) -> int:
+    """Parse a strictly positive recipe import limit for argparse."""
     parsed = int(value)
     if parsed < 1:
         raise argparse.ArgumentTypeError("limit must be positive")
@@ -121,6 +127,7 @@ def _positive_limit(value: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse and execute an explicit recipe or document import command."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     recipes = commands.add_parser(

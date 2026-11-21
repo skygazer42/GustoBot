@@ -11,6 +11,7 @@ from scripts.dataset_io import read_any
 
 
 def detect_container(path: str) -> str:
+    """Detect whether a file begins with a JSON array or JSONL record."""
     with open(path, "r", encoding="utf-8") as f:
         while True:
             ch = f.read(1)
@@ -22,6 +23,7 @@ def detect_container(path: str) -> str:
 
 
 def parse_replace(spec: str) -> tuple[str, str]:
+    """Split one literal replacement argument at its first arrow marker."""
     # format: old=>new
     if "=>" not in spec:
         raise ValueError(f"--replace 参数格式应为 old=>new, 但收到: {spec}")
@@ -30,6 +32,7 @@ def parse_replace(spec: str) -> tuple[str, str]:
 
 
 def apply_rules(val: str, rules: list[tuple[str, str]]) -> str:
+    """Apply ordered literal replacements to one string value."""
     out = val
     for old, new in rules:
         out = out.replace(old, new)
@@ -37,6 +40,7 @@ def apply_rules(val: str, rules: list[tuple[str, str]]) -> str:
 
 
 def main() -> None:
+    """Replace selected string fields while preserving JSON container format."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--in", dest="in_path", required=True, help="输入 JSON/JSONL 文件")
     parser.add_argument(

@@ -18,12 +18,16 @@ from gustobot.infrastructure.persistence.crud.knowledge import KnowledgeReposito
 
 
 class DraftValidation(BaseModel):
+    """Validation outcome and user-readable errors for a graph draft."""
+
     model_config = ConfigDict(extra="forbid")
     valid: bool
     errors: list[str]
 
 
 class GraphDraft(BaseModel):
+    """Candidate graph paired with its current ontology validation result."""
+
     model_config = ConfigDict(extra="forbid")
     graph: KnowledgeGraph
     validation: DraftValidation
@@ -42,12 +46,15 @@ class InvalidGraph(ValueError):
 
 
 class OntologyAdminService:
+    """Review and write graph facts against an exact stored source version."""
+
     def __init__(self, domain: DomainDefinition, *, session_factory=session_scope):
         self.domain = domain
         self.session_factory = session_factory
         self.ontology = OntologyService(domain)
 
     def _source(self, source_id: str, version: str, *, document: bool) -> SourceDocument:
+        """Load the exact editable source version and enforce its current ontology state."""
         with self.session_factory() as session:
             source = KnowledgeRepository(session).get_source(self.domain.id, source_id, version)
             if source is None:
@@ -97,6 +104,7 @@ class OntologyAdminService:
         return GraphDraft(graph=graph, validation=DraftValidation(valid=False, errors=errors))
 
     async def extract(self, source_id: str, version: str, model: BaseChatModel) -> GraphDraft:
+        """Extract a bounded document draft and validate it without persisting it."""
         source = await asyncio.to_thread(self._source, source_id, version, document=True)
         if len(source.text) > 40000:
             raise InvalidGraph("图谱抽取最多支持 40000 字符，请拆分文档后重新上传；原文不会被截断")
@@ -104,6 +112,7 @@ class OntologyAdminService:
         return await asyncio.to_thread(self._draft, graph)
 
     async def validate(self, source_id: str, version: str, graph: KnowledgeGraph) -> GraphDraft:
+        """Check draft provenance and ontology constraints for the selected source."""
         source = await asyncio.to_thread(self._source, source_id, version, document=True)
         self._check_source(graph, source)
         return await asyncio.to_thread(self._draft, graph)
@@ -111,6 +120,7 @@ class OntologyAdminService:
     async def insert(
         self, source_id: str, version: str, graph: KnowledgeGraph, store: Neo4jGraphStore
     ) -> GraphWriteResult:
+        """Persist a validated draft after binding it to its authoritative source."""
         source = await asyncio.to_thread(self._source, source_id, version, document=True)
         self._check_source(graph, source)
         try:
@@ -126,5 +136,6 @@ class OntologyAdminService:
     async def source_facts(
         self, source_id: str, version: str, store: Neo4jGraphStore, *, limit: int
     ) -> FactResult:
+        """Read graph facts attributed to one source version."""
         source = await asyncio.to_thread(self._source, source_id, version, document=False)
         return await store.source_facts(source, version=version, limit=limit)

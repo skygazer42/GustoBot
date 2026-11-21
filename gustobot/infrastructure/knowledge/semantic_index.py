@@ -81,6 +81,8 @@ def _generation_id(value: str) -> str:
 
 
 class SemanticCandidateStore:
+    """Store immutable semantic candidate generations and query their vectors."""
+
     def __init__(
         self,
         collection_name: str | None = None,
@@ -131,6 +133,7 @@ class SemanticCandidateStore:
             self._initialize()
 
     def _schema(self) -> CollectionSchema:
+        """Build the expected collection fields and indexes for candidate records."""
         return CollectionSchema(
             [
                 FieldSchema(name, DataType.VARCHAR, max_length=maximum, is_primary=name == "id")
@@ -154,6 +157,7 @@ class SemanticCandidateStore:
 
     @property
     def schema_fingerprint(self) -> str:
+        """Hash the collection schema and index settings used for verification."""
         return digest(
             {
                 "schema": self._schema().to_dict(),
@@ -163,6 +167,7 @@ class SemanticCandidateStore:
         )
 
     def _initialize(self) -> None:
+        """Create the candidate collection if absent and validate its current schema."""
         try:
             connections.connect(
                 alias=self._connection_alias,
@@ -202,6 +207,7 @@ class SemanticCandidateStore:
             raise
 
     def _validate_schema(self) -> None:
+        """Reject a collection whose persisted fields differ from this store contract."""
         actual = self.collection.schema
         expected = self._schema()
         try:
@@ -228,6 +234,7 @@ class SemanticCandidateStore:
                     )
 
     def _ensure_index(self, *, timeout: float | None = None) -> None:
+        """Create a missing vector index or reject incompatible existing settings."""
         timeout = self.timeout if timeout is None else timeout
         if self.collection.has_index(timeout=timeout):
             index = self.collection.index(timeout=timeout)
@@ -300,6 +307,7 @@ class SemanticCandidateStore:
     def _row(
         self, generation_id: str, candidate: CatalogRecord, vector: Sequence[float]
     ) -> dict[str, Any]:
+        """Serialize one candidate and vector into the collection's storage schema."""
         record = CatalogRecord.model_validate(candidate.model_dump())
         self._record_scope(record)
         if record.kind == "entity" and (
@@ -328,6 +336,7 @@ class SemanticCandidateStore:
         return row
 
     def _read_row(self, row: Mapping[str, Any]) -> CatalogRecord:
+        """Decode a stored candidate row and verify its serialized identity."""
         generation_id = _generation_id(row["generation_id"])
         try:
             metadata = json.loads(row["metadata"])
@@ -377,6 +386,7 @@ class SemanticCandidateStore:
         records: Sequence[CatalogRecord],
         vectors: Sequence[Sequence[float]],
     ) -> None:
+        """Write candidate records and aligned vectors into one generation."""
         generation_id = _generation_id(generation_id)
         if len(records) != len(vectors):
             raise ValueError("Candidate and embedding counts must match")
@@ -426,6 +436,7 @@ class SemanticCandidateStore:
     def reusable_vectors(
         self, scope: IndexScope, text_hashes: Sequence[str]
     ) -> dict[str, list[float]]:
+        """Reuse vectors for matching text hashes in the same embedding scope."""
         scope = self._validate_scope(scope)
         hashes = sorted(set(text_hashes))
         if any(_DIGEST.fullmatch(value) is None for value in hashes):
@@ -464,6 +475,7 @@ class SemanticCandidateStore:
         expected_types: Sequence[str],
         top_k: int,
     ) -> list[CandidateHit]:
+        """Search one published generation with scope and entity-type filters."""
         scope = self._validate_scope(scope)
         generation_id = _generation_id(generation_id)
         if not 0 <= top_k <= 1000:
@@ -513,6 +525,7 @@ class SemanticCandidateStore:
     def verify_generation(
         self, generation_id: str, *, expected_count: int, expected_checksum: str
     ) -> IndexVerification:
+        """Recompute the generation count and checksum before publication."""
         generation_id = _generation_id(generation_id)
         if expected_count < 0:
             raise ValueError("Expected candidate count cannot be negative")
@@ -549,6 +562,7 @@ class SemanticCandidateStore:
         )
 
     def close(self) -> None:
+        """Disconnect the candidate collection only when this store owns it."""
         if self._owns_connection and not self._closed:
             connections.disconnect(self._connection_alias)
             self._closed = True

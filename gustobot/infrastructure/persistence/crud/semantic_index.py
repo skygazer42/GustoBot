@@ -37,6 +37,7 @@ def _scope_key(scope: IndexScope) -> str:
 
 
 def _validate_policy(calibration_id: str | None, policy: dict[str, Any]) -> None:
+    """Require publication thresholds and provenance to match calibration rules."""
     if not policy and calibration_id is None:
         return
     if calibration_id is None or not calibration_id.strip() or len(calibration_id) > 128:
@@ -76,6 +77,8 @@ def _generation(row: SemanticIndexGeneration) -> IndexGeneration:
 
 
 class SemanticIndexRepository:
+    """Flush-only generation and publication operations inside caller transactions."""
+
     def __init__(self, session: Session):
         self.session = session
 
@@ -91,10 +94,12 @@ class SemanticIndexRepository:
         return row
 
     def get_generation(self, generation_id: str) -> IndexGeneration | None:
+        """Return a generation record or None when its ID is not present."""
         row = self.session.get(SemanticIndexGeneration, generation_id)
         return None if row is None else _generation(row)
 
     def list_generations(self, scope: IndexScope | None = None) -> list[IndexGeneration]:
+        """List generations in creation order, optionally within one scope."""
         statement = select(SemanticIndexGeneration).order_by(
             SemanticIndexGeneration.created_at.desc(), SemanticIndexGeneration.generation_id
         )
@@ -103,12 +108,14 @@ class SemanticIndexRepository:
         return [_generation(row) for row in self.session.scalars(statement)]
 
     def get_publication(self, scope: IndexScope) -> SemanticIndexPublication | None:
+        """Return the publication pointer for the exact candidate scope."""
         row = self.session.get(SemanticIndexPublication, _scope_key(scope))
         if row is not None and row.scope_json != scope.model_dump():
             raise ValueError("Publication scope identity conflicts with ontology version")
         return row
 
     def _lock_scope(self, scope: IndexScope) -> SemanticIndexPublication:
+        """Lock and return the publication pointer used for compare-and-swap writes."""
         values = dict(
             scope_key=_scope_key(scope),
             scope_json=scope.model_dump(),
@@ -155,6 +162,7 @@ class SemanticIndexRepository:
         owner: str | None = None,
         lease_until: datetime | None = None,
     ) -> IndexGeneration:
+        """Create one immutable generation identity and its initial build state."""
         if (scope.kind == "entity") != (graph_revision is not None) or (
             graph_revision is not None and graph_revision < 0
         ):
@@ -193,6 +201,7 @@ class SemanticIndexRepository:
         now: datetime,
         lease_seconds: float,
     ) -> IndexGeneration:
+        """Acquire the scope build lease or reject a conflicting live owner."""
         self._lock_scope(scope)
         rows = list(
             self.session.scalars(
@@ -248,6 +257,7 @@ class SemanticIndexRepository:
     def renew_lease(
         self, generation_id: str, *, owner: str, now: datetime, lease_seconds: float
     ) -> IndexGeneration:
+        """Extend a build lease only while the caller still owns it."""
         row = self._row(generation_id, lock=True)
         self._check_owner(row, owner=owner, now=now)
         row.lease_until = now + timedelta(seconds=lease_seconds)
@@ -266,6 +276,7 @@ class SemanticIndexRepository:
         owner: str,
         now: datetime,
     ) -> IndexGeneration:
+        """Persist counters and checksum for the active leased build."""
         row = self._row(generation_id, lock=True)
         self._check_owner(row, owner=owner, now=now)
         row.expected_count, row.written_count, row.checksum = (
@@ -287,6 +298,7 @@ class SemanticIndexRepository:
         owner: str | None = None,
         now: datetime | None = None,
     ) -> IndexGeneration:
+        """Mark a fully written generation ready after validating its receipt."""
         row = self._row(generation_id, lock=True)
         now = _utc_now() if now is None else now
         if row.status in {"ready", "active", "retired"}:
@@ -323,6 +335,7 @@ class SemanticIndexRepository:
         error: str,
         owner: str | None = None,
     ) -> IndexGeneration:
+        """Finish a failed or superseded build and retain its diagnostic."""
         row = self._row(generation_id, lock=True)
         if row.status in {"active", "retired"}:
             raise ValueError(
@@ -336,6 +349,7 @@ class SemanticIndexRepository:
         return _generation(row)
 
     def publication_status(self, scope: IndexScope) -> IndexPublicationStatus:
+        """Read the active generation and policy associated with a scope."""
         row = self.get_publication(scope)
         if row is None or row.active_generation_id is None:
             return IndexPublicationStatus(scope=scope)
@@ -359,6 +373,7 @@ class SemanticIndexRepository:
         calibration_id: str | None = None,
         policy: dict[str, Any] | None = None,
     ) -> IndexPublicationStatus:
+        """Atomically advance the active pointer if the expected value is current."""
         # Read immutable scope first; every publisher then locks scope before generation.
         candidate = self._row(generation_id)
         scope = IndexScope.model_validate(candidate.scope_json)
@@ -428,6 +443,7 @@ class SemanticIndexRepository:
         return self.publication_status(scope)
 
     def retire(self, generation_id: str) -> IndexGeneration:
+        """Retire a non-active generation after its lease and status checks pass."""
         candidate = self._row(generation_id)
         pointer = self._lock_scope(IndexScope.model_validate(candidate.scope_json))
         candidate = self._row(generation_id, lock=True)

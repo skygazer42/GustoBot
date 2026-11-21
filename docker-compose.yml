@@ -9,6 +9,8 @@ services:
     environment: &knowledge-environment
       APP_NAME: GustoBot
       DEBUG: "${DEBUG:-false}"
+      GUSTOBOT_ADMIN_PASSWORD: "${GUSTOBOT_ADMIN_PASSWORD:-}"
+      SECRET_KEY: "${SECRET_KEY:-}"
       KNOWLEDGE_DOMAIN_FILE: "${KNOWLEDGE_DOMAIN_FILE:-gustobot/config/domains/recipes.yaml}"
       DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the application MySQL connection}"
       NEO4J_URI: "${NEO4J_URI:-bolt://neo4j:7687}"
@@ -76,6 +78,8 @@ services:
         condition: service_healthy
       milvus:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
       interval: 30s
@@ -85,7 +89,6 @@ services:
     restart: unless-stopped
 
   migrate:
-    profiles: [setup]
     build: *backend-build
     entrypoint: []
     command: ["python", "scripts/migrate_database.py"]
@@ -161,8 +164,18 @@ services:
       - "${MILVUS_HEALTH_PORT:-9091}:9091"
     volumes:
       - documents_milvus_data:/var/lib/milvus
-      - ./docker/milvus/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:ro
-      - ./docker/milvus/user.yaml:/milvus/configs/user.yaml:ro
+      - type: bind
+        source: ./docker/milvus/embedEtcd.yaml
+        target: /milvus/configs/embedEtcd.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./docker/milvus/user.yaml
+        target: /milvus/configs/user.yaml
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s

@@ -2,10 +2,11 @@
 
 import asyncio
 import csv
+import hashlib
 import io
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -17,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pypdf import PdfReader
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from gustobot.domain.knowledge import DomainDefinition, SourceDocument, validate_graph
 from gustobot.infrastructure.core.database import session_scope
@@ -32,10 +34,14 @@ from gustobot.infrastructure.knowledge.knowledge_service import (
 from gustobot.infrastructure.knowledge.recipe_facts import recipe_to_facts
 from gustobot.infrastructure.knowledge.semantic_runtime import get_semantic_runtime
 from gustobot.infrastructure.persistence.crud.knowledge import KnowledgeRepository
-from gustobot.infrastructure.persistence.db.models.knowledge import KnowledgeSource
+from gustobot.infrastructure.persistence.db.models.knowledge import (
+    IngestionJob,
+    KnowledgeSource,
+)
 
 
 def parse_document(path: Path) -> str:
+    """Extract text from supported formats and reject unreadable or empty files."""
     extension = path.suffix.lower()
     if extension in {".txt", ".md", ".markdown", ".json", ".csv", ".log"}:
         text = path.read_text(encoding="utf-8-sig")
@@ -72,6 +78,8 @@ _PUBLICATION_KINDS = {"ready": "document", "graph_ready": "recipe"}
 
 
 class DocumentIngestionRequest(BaseModel):
+    """Document text or managed upload plus source identity and ingestion context."""
+
     model_config = ConfigDict(extra="forbid")
 
     text: str | None = None
@@ -105,6 +113,8 @@ class DocumentIngestionRequest(BaseModel):
 
 
 class IngestionReceipt(BaseModel):
+    """Client-facing receipt for one source version ingestion job."""
+
     model_config = ConfigDict(extra="forbid")
 
     job_id: str
@@ -119,6 +129,8 @@ class IngestionReceipt(BaseModel):
 
 
 class IngestionJobStatus(BaseModel):
+    """Persisted job state and timestamps returned by the status endpoint."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -133,10 +145,29 @@ class IngestionJobStatus(BaseModel):
 
 
 class IngestionFailed(RuntimeError):
+    """Ingestion failure carrying its receipt and any metadata-write failure."""
+
     def __init__(self, receipt: IngestionReceipt, metadata_error: Exception | None = None):
         super().__init__(f"Ingestion job {receipt.job_id} failed")
         self.receipt = receipt
         self.metadata_error = metadata_error
+
+
+class DocumentRevisionConflict(ValueError):
+    """The source changed or is busy before an editor could register its revision."""
+
+
+def document_revision(
+    domain_id: str,
+    source_id: str,
+    version: str,
+    updated_at: datetime,
+    metadata: dict[str, object] | None,
+) -> str:
+    """Identify an actual persisted editor snapshot, including changes to its title."""
+    snapshot = [domain_id, source_id, version, updated_at.isoformat(), metadata]
+    payload = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class KnowledgeIngestionService:
@@ -161,6 +192,7 @@ class KnowledgeIngestionService:
     def _document_source(
         self, request: DocumentIngestionRequest
     ) -> tuple[SourceDocument, dict[str, Any]]:
+        """Resolve request text or an owned upload into a versioned source record."""
         context: dict[str, Any] = {
             "metadata": request.metadata,
             "entity_ids": request.entity_ids,
@@ -192,12 +224,78 @@ class KnowledgeIngestionService:
             context,
         )
 
+    def _revision_source(
+        self,
+        session: Session,
+        source_id: str,
+        expected_version: str,
+        expected_revision: str,
+        version: str,
+    ) -> KnowledgeSource:
+        """Lock the whole source family before accepting an editor's version reference."""
+        sources = list(
+            session.scalars(
+                select(KnowledgeSource)
+                .where(
+                    KnowledgeSource.domain_id == self.domain.id,
+                    KnowledgeSource.source_id == source_id,
+                )
+                .order_by(KnowledgeSource.created_at.desc(), KnowledgeSource.version.desc())
+                .with_for_update()
+            )
+        )
+        if not sources or expected_version not in {source.version for source in sources}:
+            raise LookupError("找不到指定的文档版本。")
+        current = sources[0]
+        if current.version != expected_version:
+            raise DocumentRevisionConflict("文档已有新版本，请刷新后重新编辑。")
+        if any(
+            source.source_metadata is None or source.source_metadata.get("kind") != "document"
+            for source in sources
+        ):
+            raise DocumentRevisionConflict("只能编辑文档原文，图谱资料请单独管理。")
+        if (
+            document_revision(
+                current.domain_id,
+                current.source_id,
+                current.version,
+                current.updated_at,
+                current.source_metadata,
+            )
+            != expected_revision
+        ):
+            raise DocumentRevisionConflict("文档已被修改，请刷新后重新编辑，避免覆盖他人的修改。")
+        active_job = session.scalar(
+            select(IngestionJob.id)
+            .where(
+                IngestionJob.domain_id == self.domain.id,
+                IngestionJob.source_id == source_id,
+                IngestionJob.status.in_(("pending", "processing")),
+            )
+            .limit(1)
+            .with_for_update()
+        )
+        if active_job is not None or any(
+            source.status in {"pending", "processing"} for source in sources
+        ):
+            raise DocumentRevisionConflict("文档正在入库，请等待任务结束后再编辑。")
+        if version != current.version and version in {source.version for source in sources}:
+            raise DocumentRevisionConflict("正文与某个历史版本相同，暂不支持通过编辑回退历史版本。")
+        if source_version(current.text) != current.version:
+            raise DocumentRevisionConflict("原文与版本记录不一致，请先核对来源。")
+        return current
+
     def _start(
         self,
         source: SourceDocument,
         kind: Literal["document", "recipe"],
         context: dict[str, Any],
+        require_existing: bool = False,
+        expected_version: str | None = None,
+        expected_revision: str | None = None,
     ) -> IngestionReceipt:
+        """Persist the immutable source and initial job state before external writes."""
+        # 内容决定版本，同一内容的重试复用来源身份，但每次尝试都有独立任务记录。
         version = source_version(source.text)
         job_id = str(uuid4())
         details: dict[str, Any] = {
@@ -208,6 +306,68 @@ class KnowledgeIngestionService:
         }
         with self.session_factory() as session:
             repository = KnowledgeRepository(session)
+            if expected_version is not None:
+                if expected_revision is None:
+                    raise DocumentRevisionConflict("缺少文档编辑快照，请刷新后重新编辑。")
+                current = self._revision_source(
+                    session, source.id, expected_version, expected_revision, version
+                )
+                assert current.source_metadata is not None
+                stored_context = current.source_metadata
+                metadata = cast(dict[str, Any], stored_context.get("metadata", {}))
+                previous_revision = metadata.get("local_revision", {})
+                context = {
+                    name: value for name, value in stored_context.items() if name != "kind"
+                } | {
+                    "metadata": metadata
+                    | {
+                        "title": context["metadata"]["title"],
+                        "local_revision": {
+                            "previous_version": expected_version,
+                            "content_version": version,
+                            "edited_at": datetime.now(timezone.utc).isoformat(),
+                            "graph_review_required": (
+                                version != expected_version
+                                or previous_revision.get("graph_review_required") is True
+                            ),
+                        },
+                    },
+                    "entity_ids": stored_context.get("entity_ids"),
+                }
+                source = SourceDocument(id=source.id, text=source.text, uri=current.uri)
+                details["context"] = context
+                if (
+                    version == expected_version
+                    and current.status == "ready"
+                    and current.ontology_version == self.domain.version
+                ):
+                    document = session.scalar(
+                        select(IngestionJob.details["document"])
+                        .where(
+                            IngestionJob.domain_id == self.domain.id,
+                            IngestionJob.source_id == source.id,
+                            IngestionJob.source_version == version,
+                            IngestionJob.status == "ready",
+                            IngestionJob.details["ontology_version"].as_string()
+                            == self.domain.version,
+                        )
+                        .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc())
+                        .limit(1)
+                    )
+                    if document is None:
+                        raise DocumentRevisionConflict("文档缺少切片回执，请先重试入库后再更名。")
+                    manifest = DocumentIngestionResult.model_validate(document)
+                    if (manifest.domain_id, manifest.source_id, manifest.version) != (
+                        self.domain.id,
+                        source.id,
+                        version,
+                    ) or manifest.chunks != len(manifest.ids):
+                        raise DocumentRevisionConflict(
+                            "文档切片回执与原文版本不一致，请先重试入库。"
+                        )
+                    details["external_write"] = "not_needed"
+                    details["document"] = manifest.model_copy(update={"embedded": 0}).model_dump()
+            details["source_uri"] = source.uri
             existing = session.scalar(
                 select(KnowledgeSource)
                 .where(
@@ -217,6 +377,8 @@ class KnowledgeIngestionService:
                 )
                 .with_for_update()
             )
+            if require_existing and existing is None:
+                raise LookupError("Knowledge source version no longer exists")
             if existing is not None:
                 recorded_kind = (
                     None
@@ -269,6 +431,7 @@ class KnowledgeIngestionService:
         details: dict[str, Any],
         error: str | None = None,
     ) -> IngestionReceipt:
+        """Persist the job and source publication outcome for one ingestion attempt."""
         with self.session_factory() as session:
             repository = KnowledgeRepository(session)
             source = session.scalar(
@@ -304,6 +467,7 @@ class KnowledgeIngestionService:
                 source.ontology_version = receipt.ontology_version
                 source.source_metadata = metadata | context | {"kind": receipt.kind}
                 source.status = status
+            # 新尝试失败时，不能顺带撤销此前已经成功发布的同一来源版本。
             elif (
                 source.status not in _PUBLICATION_KINDS
                 and source.ontology_version == receipt.ontology_version
@@ -319,6 +483,7 @@ class KnowledgeIngestionService:
         details: dict[str, Any],
         error: str,
     ) -> tuple[IngestionReceipt, Exception | None]:
+        """Record a failed attempt and preserve any independent metadata-write error."""
         try:
             outcome = await asyncio.to_thread(
                 self._outcome,
@@ -346,21 +511,39 @@ class KnowledgeIngestionService:
         source: SourceDocument,
         kind: Literal["document", "recipe"],
         context: dict[str, Any],
-        write: Callable[[], Awaitable[DocumentIngestionResult | GraphWriteResult]],
+        write: Callable[[IngestionReceipt], Awaitable[DocumentIngestionResult | GraphWriteResult]],
+        *,
+        require_existing: bool = False,
+        expected_version: str | None = None,
+        expected_revision: str | None = None,
     ) -> IngestionReceipt:
-        start = asyncio.create_task(asyncio.to_thread(self._start, source, kind, context))
+        """Record progress, run the external write, then publish its outcome."""
+        # MySQL 元数据和外部存储无法共用事务：先登记任务，写成功后再发布来源。
+        start = asyncio.create_task(
+            asyncio.to_thread(
+                self._start,
+                source,
+                kind,
+                context,
+                require_existing,
+                expected_version,
+                expected_revision,
+            )
+        )
         receipt = None
         completion = None
         details: dict[str, Any] = {}
         try:
             receipt = await asyncio.shield(start)
-            details = receipt.details | {"external_write": "attempted"}
-            result = await write()
-            details = details | {
-                "external_write": "succeeded",
-                "document" if kind == "document" else "graph": result.model_dump(mode="json"),
-                "metadata_recorded": True,
-            }
+            details = dict(receipt.details)
+            if details["external_write"] != "not_needed":
+                details["external_write"] = "attempted"
+                result = await write(receipt)
+                result_key = "document" if kind == "document" else "graph"
+                details.update(
+                    {"external_write": "succeeded", result_key: result.model_dump(mode="json")}
+                )
+            details["metadata_recorded"] = True
             status = "ready" if kind == "document" else "graph_ready"
             completion = asyncio.create_task(
                 asyncio.to_thread(self._outcome, receipt, status, details)
@@ -369,7 +552,8 @@ class KnowledgeIngestionService:
         except asyncio.CancelledError as cancellation:
 
             async def finish_metadata(task):
-                # A running DB thread cannot be stopped; retain its result through repeated cancellation.
+                """Wait for a database thread to finish despite repeated cancellation."""
+                # 取消协程无法终止已运行的数据库线程，必须等结果落定再记录取消状态。
                 with anyio.CancelScope(shield=True):
                     while not task.done():
                         try:
@@ -404,20 +588,44 @@ class KnowledgeIngestionService:
             failed, metadata_error = await self._failed(receipt, "failed", details, str(error))
             raise IngestionFailed(failed, metadata_error) from error
 
-    async def ingest_document(self, request: DocumentIngestionRequest) -> IngestionReceipt:
+    async def ingest_document(
+        self,
+        request: DocumentIngestionRequest,
+        *,
+        require_existing: bool = False,
+        expected_version: str | None = None,
+        expected_revision: str | None = None,
+    ) -> IngestionReceipt:
+        """Index text or a managed upload and publish the source after success."""
         source, context = await asyncio.to_thread(self._document_source, request)
 
-        async def write():
+        async def write(receipt: IngestionReceipt):
+            """Resolve the document service lazily and index the source chunks."""
             documents = self.documents
             if documents is None:
                 raise RuntimeError("Document index is not configured")
             if callable(documents):
                 documents = await asyncio.to_thread(documents)
-            return await documents.ingest_source(source, entity_ids=request.entity_ids)
+            registered = SourceDocument(
+                id=source.id, text=source.text, uri=receipt.details["source_uri"]
+            )
+            return await documents.ingest_source(
+                registered, entity_ids=receipt.details["context"]["entity_ids"]
+            )
 
-        return await self._execute(source, "document", context, write)
+        return await self._execute(
+            source,
+            "document",
+            context,
+            write,
+            require_existing=require_existing,
+            expected_version=expected_version,
+            expected_revision=expected_revision,
+        )
 
     async def ingest_recipe(self, name: str, record: dict) -> IngestionReceipt:
+        """Validate a recipe graph, write it, then publish its source version."""
+        # 先绑定稳定身份并校验事实，再写入图；重复菜名不代表同一份来源做法。
         graph = recipe_to_facts(name, record, domain=self.domain)
         if self.semantic_runtime is None:
             validate_graph(self.domain, graph)
@@ -425,7 +633,8 @@ class KnowledgeIngestionService:
             graph = self.semantic_runtime.bind_graph(graph)
             self.semantic_runtime.validate_input(graph)
 
-        async def write():
+        async def write(_receipt: IngestionReceipt):
+            """Resolve the graph store lazily and write the validated recipe facts."""
             graph_store = self.graph_store
             if graph_store is None:
                 raise RuntimeError("Fact graph is not configured")
@@ -441,9 +650,12 @@ class KnowledgeIngestionService:
             return None if job is None else IngestionJobStatus.model_validate(job)
 
     async def get_job(self, job_id: str) -> IngestionJobStatus | None:
+        """Return the job in this domain, or None when the identifier is unknown."""
         return await asyncio.to_thread(self._get_job, job_id)
 
     def _withdraw_source(self, source_id: str):
+        """Withdraw every version of a source from published retrieval."""
+        # 撤回只改变发布可见性，保留原文和版本记录；图事实不由此操作删除。
         with self.session_factory() as session:
             sources = session.scalars(
                 select(KnowledgeSource)
@@ -472,4 +684,5 @@ class KnowledgeIngestionService:
         }
 
     async def withdraw_source(self, source_id: str):
+        """Withdraw all document versions while retaining their stored content."""
         return await asyncio.to_thread(self._withdraw_source, source_id)

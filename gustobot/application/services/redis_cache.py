@@ -16,14 +16,20 @@ _EmbeddingVector = list[Annotated[float, Field(strict=True, allow_inf_nan=False)
 
 
 class _EmbeddingItem(BaseModel):
+    """One cached vector with finite, strictly typed float values."""
+
     embedding: _EmbeddingVector = Field(min_length=1)
 
 
 class _EmbeddingResponse(BaseModel):
+    """Expected single-item response shape for an embedding cache hit."""
+
     data: list[_EmbeddingItem] = Field(min_length=1, max_length=1)
 
 
 class _HistoryEntry(BaseModel):
+    """Validated serialized conversation message stored in Redis."""
+
     role: str
     content: str
     metadata: dict[str, Any]

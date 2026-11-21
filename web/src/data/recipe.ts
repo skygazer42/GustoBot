@@ -1,51 +1,91 @@
-import photo from "../assets/tomato-eggs.jpg";
-
-export const recipe = {
-  id: "tomato-eggs",
-  title: "番茄炒蛋",
-  description: "酸甜恰好，趁热拌进一碗米饭里。",
-  minutes: 15,
-  servings: 2,
-  photo,
-  ingredients: [
-    { id: "tomato", name: "番茄", quantity: "2", unit: "个", question: "怎样挑适合炒蛋的番茄？" },
-    { id: "egg", name: "鸡蛋", quantity: "3", unit: "个", question: "只有一个鸡蛋，番茄要放多少？" }
-  ],
-  steps: [
-    {
-      id: "eggs",
-      title: "先炒鸡蛋，留一点嫩",
-      lead: "鸡蛋打散，热油下锅。",
-      before: "炒到",
-      highlight: "刚凝固",
-      after: "就盛出，别等到发干。",
-      summary: "鸡蛋打散，热油下锅，炒至刚凝固盛出。",
-      question: "怎么判断鸡蛋刚凝固？"
-    },
-    {
-      id: "tomatoes",
-      title: "番茄出汁，再合在一起",
-      lead: "",
-      before: "番茄切块，入锅炒软。等",
-      highlight: "汁水",
-      after: "出来，倒回鸡蛋，加盐，轻轻翻匀就好。",
-      summary: "番茄炒软出汁，倒回鸡蛋，加盐翻匀。",
-      question: "番茄要炒到什么程度再放鸡蛋？"
-    }
-  ]
-} as const;
-
-export function scaleQuantity(quantity: string, servings: number, baseServings: number = recipe.servings): string {
-  const amount = Number(quantity);
-  return quantity.trim() && Number.isFinite(amount)
-    ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(amount * servings / baseServings)
-    : quantity;
+export interface RecipeSource {
+  provider: string;
+  record_id: string;
+  url: string | null;
+  original_url: string | null;
+  license: string | null;
+  license_url: string | null;
+  license_status: string | null;
+  attribution: string | null;
+  revision: string | null;
 }
 
-export function buildRecipeContext(servings: number): string {
-  return [
-    `${recipe.title}，来源标注${recipe.minutes}分钟，原份量${recipe.servings}人份，当前调整为${servings}人份。`,
-    `食材按份量等比例换算：${recipe.ingredients.map((ingredient) => ingredient.name + scaleQuantity(ingredient.quantity, servings) + ingredient.unit).join("、")}。少许食用油、盐和可选葱花保持原记录，不估算用量。`,
-    ...recipe.steps.map((step, index) => `${index + 1}. ${step.summary}`)
-  ].join("\n");
+export interface RecipeImage {
+  url: string;
+  original_url: string | null;
+  source_url: string | null;
+  alt: string;
+  role: string;
+  step_index: number | null;
+  width: number | null;
+  height: number | null;
+  license: string | null;
+  license_status: string | null;
+  author: string | null;
+}
+
+export interface RecipeSummary {
+  id: string;
+  version: string;
+  name: string;
+  categories: string[];
+  cuisines: string[];
+  tags: string[];
+  ingredient_names: string[];
+  step_count: number;
+  servings: string | null;
+  servings_count: number | null;
+  durations: { prep: string | null; cook: string | null; total: string | null };
+  cover_image: RecipeImage | null;
+  source: RecipeSource;
+}
+
+export interface RecipeDetail extends RecipeSummary {
+  description: string | null;
+  ingredients: { name: string; amount: string | null; unit: string | null; role: string }[];
+  steps: string[];
+  tips: string[];
+  images: RecipeImage[];
+}
+
+export interface RecipePage {
+  items: RecipeSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  categories: { name: string; count: number }[];
+  dataset_version: string;
+}
+
+export interface RecipeFilters {
+  q: string;
+  category: string;
+  offset: number;
+  limit: number;
+}
+
+export function scaleQuantity(amount: string | null, servings: number | null, baseServings: number | null): string | null {
+  if (amount === null || servings === null || baseServings === null || !Number.isFinite(servings)
+    || !Number.isFinite(baseServings) || servings <= 0 || baseServings <= 0 || !/^\d+(?:\.\d+)?$/.test(amount.trim())) {
+    return amount;
+  }
+  const scaledAmount = Number(amount) * servings / baseServings;
+  return Number.isFinite(scaledAmount)
+    ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(scaledAmount)
+    : amount;
+}
+
+export function ingredientQuantity(ingredient: RecipeDetail["ingredients"][number], servings: number | null, baseServings: number | null): string {
+  const amount = scaleQuantity(ingredient.amount, servings, baseServings);
+  return [amount, ingredient.unit].filter((value) => value !== null && value.length > 0).join("") || "用量未注明";
+}
+
+export function recipeDuration(recipe: RecipeSummary): string | null {
+  return recipe.durations.total ?? recipe.durations.cook
+    ?? (recipe.durations.prep !== null ? `准备 ${recipe.durations.prep}` : null);
+}
+
+export function sourceUrl(source: RecipeSource): string | null {
+  const url = source.url ?? source.original_url;
+  return url !== null && /^https?:\/\//i.test(url) ? url : null;
 }

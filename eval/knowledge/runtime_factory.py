@@ -2,6 +2,7 @@
 
 
 def create_runtime(*, scope, linking_mode, candidate_calibration=None):
+    """Create an evaluation runtime with an optional process-local policy overlay."""
     from scripts.evaluate_knowledge import create_runtime as application_runtime
 
     base = application_runtime(scope=scope, linking_mode=linking_mode)
@@ -19,6 +20,7 @@ def create_runtime(*, scope, linking_mode, candidate_calibration=None):
     original = base.linker
 
     def publication(selected_scope):
+        """Expose calibration only while its generation and graph revision remain current."""
         result = original.publication_provider(selected_scope)
         if selected_scope != calibrated_scope:
             return result

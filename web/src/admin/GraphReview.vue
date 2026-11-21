@@ -23,7 +23,7 @@ const props = defineProps<{
   source: SourceSummary;
   domain: DomainDefinition | null;
 }>();
-const emit = defineEmits<{ saved: [] }>();
+const emit = defineEmits<{ saved: []; browse: [] }>();
 
 const facts = ref<FactResult | null>(null);
 const factsLoading = ref(false);
@@ -76,9 +76,9 @@ const factsTruncated = computed(
 );
 const unavailableReason = computed(() => {
   if (props.source.kind !== "document")
-    return "只有文档资料可以从原文抽取图谱。";
+    return "";
   if (props.source.status === "withdrawn")
-    return "这份文档已撤回，已写入的图谱仍保留。";
+    return "这份文档已停止检索，已写入的图谱仍保留。";
   if (!props.domain) return "当前类型规则尚未加载，暂时无法抽取或保存。";
   if (!domainMatches.value)
     return "这份资料使用的本体版本与当前知识空间不同，无法在此抽取或保存。";
@@ -276,6 +276,9 @@ async function save(): Promise<void> {
           }}
         </p>
       </div>
+      <button v-if="facts?.entities.length && !draft" class="admin-secondary" type="button" @click="emit('browse')">
+        <UiIcon name="graph" />查看已入库图谱
+      </button>
       <button
         v-if="source.kind === 'document' && !draft"
         class="admin-secondary"
@@ -1148,9 +1151,15 @@ dd {
 }
 @media (max-width: 760px) {
   .graph-heading {
-    flex-direction: column;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
   }
+  .graph-heading > div { grid-column: 1 / -1; }
+  .graph-heading h3 { font-size: 18px; }
+  .graph-heading > button { min-height: 44px; padding-inline: 8px; font-size: 13px; }
+  .graph-review > .admin-notice { margin: 8px 0 0; padding: 0; border: 0; background: transparent; color: var(--subtle); font-size: 12px; line-height: 1.5; }
+  .saved-facts { margin-top: 12px; }
   .fact-columns,
   .editor-row {
     grid-template-columns: minmax(0, 1fr);

@@ -19,12 +19,16 @@ ScalarValue = str | int | float | bool
 
 
 class _KnowledgeModel(BaseModel):
+    """Base contract for strict, assignment-validated knowledge records."""
+
     model_config = ConfigDict(
         extra="forbid", strict=True, validate_assignment=True, populate_by_name=True
     )
 
 
 class VocabularySource(_KnowledgeModel):
+    """Pinned external vocabulary metadata and the terms used by this domain."""
+
     namespace: str = Field(pattern=r"^https?://\S+$")
     version: str = Field(min_length=1)
     definition_url: str = Field(pattern=r"^https?://\S+$")
@@ -33,6 +37,8 @@ class VocabularySource(_KnowledgeModel):
 
 
 class ExternalReference(_KnowledgeModel):
+    """A provenance link from a local schema element to an external term."""
+
     source: str = Field(min_length=1)
     uri: str = Field(min_length=1)
     kind: Literal[
@@ -50,6 +56,8 @@ class ExternalReference(_KnowledgeModel):
 
 
 class PropertyDefinition(_KnowledgeModel):
+    """Value type, bounds, requiredness, and provenance for one schema property."""
+
     type: Literal["string", "integer", "number", "boolean"]
     required: bool = False
     description: str = ""
@@ -60,6 +68,8 @@ class PropertyDefinition(_KnowledgeModel):
 
 
 class EntityTypeDefinition(_KnowledgeModel):
+    """Local entity type definition, including identity and property contracts."""
+
     label: str = ""
     description: str
     identity: Literal[
@@ -71,11 +81,15 @@ class EntityTypeDefinition(_KnowledgeModel):
 
 
 class Cardinality(_KnowledgeModel):
+    """Minimum and optional maximum count for an outgoing relation type."""
+
     minimum: int = Field(default=0, alias="min", ge=0)
     maximum: int | None = Field(default=None, alias="max", ge=0)
 
 
 class RelationTypeDefinition(_KnowledgeModel):
+    """Allowed source and target types plus property and cardinality constraints."""
+
     source_types: list[str] = Field(alias="domain")
     target_types: list[str] = Field(alias="range")
     description: str
@@ -85,20 +99,28 @@ class RelationTypeDefinition(_KnowledgeModel):
 
 
 class LexiconEntry(_KnowledgeModel):
+    """Terms that map user wording to local ontology references."""
+
     terms: list[str] = Field(min_length=1)
     refs: list[str] = Field(min_length=1)
 
 
 class UnitDefinition(_KnowledgeModel):
+    """A measurement dimension and its accepted unit aliases."""
+
     dimension: Literal["mass", "volume", "time", "count"]
     aliases: list[str]
 
 
 class SubgraphShape(_KnowledgeModel):
+    """Relation types required for a complete entity subgraph."""
+
     required_edges: list[str] = Field(default_factory=list)
 
 
 class OntologyRule(_KnowledgeModel):
+    """A domain integrity rule for a relation property."""
+
     id: str = Field(min_length=1)
     kind: Literal["unique_relation_property"]
     relation: str
@@ -106,6 +128,8 @@ class OntologyRule(_KnowledgeModel):
 
 
 class DomainDefinition(_KnowledgeModel):
+    """Versioned ontology, vocabulary, and validation policy for one domain."""
+
     _semantic_model: "FormalOntology | None" = PrivateAttr(default=None)
     id: str = Field(min_length=1)
     version: str = Field(default="1", min_length=1)
@@ -203,17 +227,23 @@ class DomainDefinition(_KnowledgeModel):
 
 
 class SourceDocument(_KnowledgeModel):
+    """Authoritative source text against which extracted evidence is checked."""
+
     id: str = Field(min_length=1)
     text: str
     uri: str | None = None
 
 
 class EvidenceReference(_KnowledgeModel):
+    """Verbatim source quote supporting one extracted assertion."""
+
     source_id: str = Field(min_length=1)
     quote: str = Field(min_length=1)
 
 
 class KnowledgeEntity(_KnowledgeModel):
+    """Typed domain entity with properties, aliases, and source evidence."""
+
     id: str = Field(min_length=1)
     type: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -223,6 +253,8 @@ class KnowledgeEntity(_KnowledgeModel):
 
 
 class KnowledgeRelation(_KnowledgeModel):
+    """Directed, typed edge between entities with properties and evidence."""
+
     id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     target_id: str = Field(min_length=1)
@@ -232,15 +264,20 @@ class KnowledgeRelation(_KnowledgeModel):
 
 
 class ExtractedKnowledge(_KnowledgeModel):
+    """Entities and relations returned by a knowledge extraction pass."""
+
     entities: list[KnowledgeEntity]
     relations: list[KnowledgeRelation]
 
 
 class KnowledgeGraph(ExtractedKnowledge):
+    """Extracted knowledge together with the source records it depends on."""
+
     sources: list[SourceDocument]
 
 
 def _validate_definition(domain: DomainDefinition) -> None:
+    """Check cross-references and consistency across the domain schema."""
     for key, vocabulary in domain.vocabularies.items():
         if (
             not key.strip()
@@ -315,6 +352,7 @@ def _validate_definition(domain: DomainDefinition) -> None:
 
 
 def _check_unique_ids(ids: list[str], kind: str) -> None:
+    """Reject duplicate identifiers within one graph component collection."""
     seen = set()
     for identifier in ids:
         if identifier in seen:
@@ -327,6 +365,7 @@ def _validate_properties(
     definitions: dict[str, PropertyDefinition],
     owner: str,
 ) -> None:
+    """Validate property names, required values, exact types, and numeric bounds."""
     for name in properties:
         if name not in definitions:
             raise ValueError(f"Unknown property {name} on {owner}")
@@ -363,6 +402,7 @@ def _validate_properties(
 def _validate_evidence(
     evidence: list[EvidenceReference], sources: dict[str, SourceDocument], owner: str
 ) -> None:
+    """Require every assertion quote to occur verbatim in a declared source."""
     if not evidence:
         raise ValueError(f"Evidence is required for {owner}")
     for reference in evidence:

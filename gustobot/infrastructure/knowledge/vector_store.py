@@ -45,6 +45,8 @@ def _chunk_from_record(record: Mapping[str, Any]) -> "DocumentChunk":
 
 
 class DocumentChunk(BaseModel):
+    """Stored text chunk with source, ontology, and embedding identities."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
     id: str = Field(min_length=1, max_length=64)
@@ -60,11 +62,15 @@ class DocumentChunk(BaseModel):
 
 
 class VectorHit(TypedDict):
+    """A document chunk and its vector similarity score."""
+
     chunk: DocumentChunk
     score: float
 
 
 class VectorStore:
+    """Persist and retrieve document vectors with mandatory source scoping."""
+
     def __init__(
         self,
         collection_name: str = "gustobot_documents_v1",
@@ -102,6 +108,7 @@ class VectorStore:
             self._initialize()
 
     def _schema(self) -> CollectionSchema:
+        """Build the expected vector and metadata schema for document chunks."""
         return CollectionSchema(
             fields=[
                 FieldSchema("id", DataType.VARCHAR, max_length=64, is_primary=True),
@@ -127,6 +134,7 @@ class VectorStore:
         )
 
     def _initialize(self) -> None:
+        """Create the document collection if needed and validate its schema."""
         try:
             connections.connect(
                 alias=self._connection_alias, host=self.host, port=self.port, timeout=self.timeout
@@ -154,6 +162,7 @@ class VectorStore:
             raise
 
     def _ensure_index(self) -> None:
+        """Create a missing document vector index or reject incompatible settings."""
         if self.collection.has_index(timeout=self.timeout):
             index = self.collection.index(timeout=self.timeout)
             if (
@@ -179,6 +188,7 @@ class VectorStore:
         )
 
     def _validate_schema(self) -> None:
+        """Reject a persisted document collection with incompatible fields."""
         expected = self._schema()
         try:
             description = json.loads(self.collection.schema.description)
@@ -202,6 +212,7 @@ class VectorStore:
             raise ValueError("Milvus document schema requires stable application chunk IDs")
 
     def existing_ids(self, ids: Sequence[str]) -> set[str]:
+        """Return stored chunk identifiers in bounded query batches."""
         existing: set[str] = set()
         for start in range(0, len(ids), 256):
             batch = list(ids[start : start + 256])
@@ -215,6 +226,18 @@ class VectorStore:
             existing.update(row["id"] for row in rows)
         return existing
 
+    def delete_source(self, *, domain_id: str, source_id: str, versions: Sequence[str]) -> None:
+        """Remove confirmed versions across ontologies, retaining every other source."""
+        if not versions:
+            raise ValueError("Source versions are required for document deletion")
+        self.collection.delete(
+            expr=(
+                f"domain_id == {_literal(domain_id)} and source_id == {_literal(source_id)} "
+                f"and source_version in {_literal(list(versions))}"
+            ),
+            timeout=self.timeout,
+        )
+
     def read_chunk(
         self,
         chunk_id: str,
@@ -224,6 +247,7 @@ class VectorStore:
         source_version: str,
         ontology_version: str,
     ) -> DocumentChunk | None:
+        """Read a chunk only when its domain and source versions match."""
         scope = {
             "id": chunk_id,
             "domain_id": domain_id,
@@ -297,6 +321,7 @@ class VectorStore:
     def upsert(
         self, chunks: Sequence[DocumentChunk], embeddings: Sequence[Sequence[float]]
     ) -> None:
+        """Write aligned chunk and embedding batches after validating dimensions."""
         if len(chunks) != len(embeddings):
             raise ValueError("Chunk and embedding counts must match")
         if not chunks:
@@ -332,6 +357,7 @@ class VectorStore:
         entity_ids: Sequence[str] | None = None,
         top_k: int = 10,
     ) -> list[VectorHit]:
+        """Search requested published source versions and optional entity links."""
         if top_k < 0 or top_k > 1000:
             raise ValueError("top_k must be between zero and 1000")
         if top_k == 0 or not source_versions:
@@ -377,6 +403,7 @@ class VectorStore:
         return hits
 
     def get_collection_stats(self) -> dict[str, Any]:
+        """Return collection dimensions and configured embedding/index metadata."""
         return {
             "name": self.collection_name,
             "document_count": self.collection.num_entities,
@@ -387,5 +414,6 @@ class VectorStore:
         }
 
     def close(self) -> None:
+        """Disconnect the collection connection only when this store owns it."""
         if self._owns_connection:
             connections.disconnect(self._connection_alias)

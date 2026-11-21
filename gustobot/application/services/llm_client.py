@@ -58,6 +58,7 @@ class LLMClient:
         user_message: str,
         context: Sequence[ChatMessage] | None = None,
     ) -> list[ChatCompletionMessageParam]:
+        """Combine system text, supported conversation turns, and the current question."""
         messages: list[ChatCompletionMessageParam] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -153,5 +154,6 @@ class LLMClient:
         return payload
 
     async def close(self) -> None:
+        """Close the SDK client when it was initialized."""
         if self._client is not None:
             await self._client.close()

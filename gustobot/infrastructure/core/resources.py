@@ -54,10 +54,12 @@ async def acquire_in_thread(
     failure: BaseException | None = None
 
     async def wait_for_owner(operation: Coroutine[Any, Any, R]) -> R:
+        """Wait for an uninterruptible worker while retaining caller cancellation."""
         nonlocal failure
         outcome: asyncio.Future[R] = asyncio.get_running_loop().create_future()
 
         async def run() -> None:
+            """Transfer the worker result or original exception to its owner future."""
             try:
                 outcome.set_result(await operation)
             # The owner retains cancellation until the resource has been closed.

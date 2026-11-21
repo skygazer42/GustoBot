@@ -22,6 +22,7 @@ _IMAGE_EXTENSIONS = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp", "GIF": ".gi
 
 
 def _encode_image(path: Path) -> str:
+    """Read an image and encode its bytes as a base64 data payload."""
     try:
         with ExitStack() as resources:
             image = resources.enter_context(Image.open(path))
@@ -46,6 +47,7 @@ def _encode_image(path: Path) -> str:
 
 
 def _save_generated_image(encoded: str) -> str:
+    """Validate and persist generated image bytes under the managed upload folder."""
     try:
         content = base64.b64decode(encoded, validate=True)
         with Image.open(io.BytesIO(content)) as image:
@@ -69,6 +71,7 @@ def _save_generated_image(encoded: str) -> str:
 
 
 async def answer_image(message: str, *, action: str, path: Path | None) -> KnowledgeAnswer:
+    """Answer an image question or generate an image using the requested action."""
     if not message.strip():
         raise ValueError("An image question or generation prompt is required")
     if action == "knowledge" and path is not None:

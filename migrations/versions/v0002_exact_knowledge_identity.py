@@ -14,6 +14,7 @@ _FOREIGN_KEY = "fk_ingestion_jobs_source_version"
 
 
 def upgrade(connection: Connection) -> None:
+    """Add exact domain/source/version identity to stored knowledge records."""
     if connection.dialect.name != "mysql":
         return
     inspector = inspect(connection)

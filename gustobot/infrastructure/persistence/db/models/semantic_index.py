@@ -31,6 +31,8 @@ _TIME = DateTime().with_variant(DATETIME(fsp=6), "mysql")
 
 
 class SemanticIndexGeneration(Base):
+    """Build state and immutable scope identity for one candidate generation."""
+
     __tablename__ = "semantic_index_generations"
     __table_args__ = (
         UniqueConstraint("scope_key", "generation_id", name="uq_semantic_generation_scope_id"),
@@ -68,6 +70,8 @@ class SemanticIndexGeneration(Base):
 
 
 class SemanticIndexPublication(Base):
+    """Active-generation pointer and selection policy for one candidate scope."""
+
     __tablename__ = "semantic_index_publications"
     __table_args__ = (
         UniqueConstraint(

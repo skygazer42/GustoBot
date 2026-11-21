@@ -47,6 +47,8 @@ _EMPTY: CounterSnapshot = {
 
 
 class RequestTrace:
+    """Thread-safe counters and query-vector cache scoped to one request."""
+
     def __init__(self) -> None:
         self._values: TraceSnapshot = {}
         self._lock = Lock()
@@ -73,6 +75,7 @@ class RequestTrace:
                 current[name] = current.get(name, 0) + value
 
     def snapshot(self) -> TraceSnapshot:
+        """Return a detached counter snapshot without exposing mutable internals."""
         with self._lock:
             return {purpose: dict(counters) for purpose, counters in self._values.items()}
 
@@ -99,6 +102,7 @@ def capture_request_trace(trace: RequestTrace | None = None) -> Iterator[Request
 
 
 def record_provider_event(purpose: ProviderPurpose, **counters: float) -> None:
+    """Add provider counters to the trace active in the current context."""
     trace = _TRACE.get()
     if trace is not None:
         trace._record(purpose, counters)
@@ -107,6 +111,7 @@ def record_provider_event(purpose: ProviderPurpose, **counters: float) -> None:
 def request_query_vector(
     space_fingerprint: str, text: str, purpose: ProviderPurpose, compute: Callable[[], list[float]]
 ) -> list[float]:
+    """Reuse one request-local embedding for equal text and space identities."""
     trace = _TRACE.get()
     if trace is None:
         return compute()
@@ -151,10 +156,12 @@ def record_sync_http_request(request: httpx.Request) -> None:
 
 
 async def record_async_http_request(request: httpx.Request) -> None:
+    """Async HTTPX hook that records the same attempt counters as the sync hook."""
     record_sync_http_request(request)
 
 
 def _token_counts(response: LLMResult) -> dict[str, int]:
+    """Read valid provider token totals once across supported response shapes."""
     raw = None if response.llm_output is None else response.llm_output.get("token_usage")
     if isinstance(raw, Mapping):
         counts = {}
@@ -188,6 +195,7 @@ class ProviderUsageCallback(BaseCallbackHandler):
     run_inline = True
 
     def on_llm_end(self, response: LLMResult, *, run_id: UUID, **kwargs: Any) -> None:
+        """Record provider-reported token totals once for the active model phase."""
         phase = _PHASE.get()
         if phase is not None:
             counts = _token_counts(response)

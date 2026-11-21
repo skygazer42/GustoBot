@@ -1,11 +1,18 @@
 export type ChatSource = Record<string, unknown>;
 
+export interface RecipeReference {
+  id: string;
+  version: string;
+  servings?: number;
+}
+
 export interface ChatRequest {
   message: string;
   session_id?: string;
-  stream: boolean;
   file_path?: string;
-  ingest_incremental?: boolean;
+  recipe_id?: string;
+  recipe_version?: string;
+  recipe_servings?: number;
 }
 
 export interface ChatMessage {
@@ -22,6 +29,8 @@ export interface ChatMessage {
 
 export interface ChatState {
   isTyping: boolean;
+  replyProgress: string;
+  replyDraft: string;
   isUploading: boolean;
   sessionId: string;
   userInput: string;
@@ -35,6 +44,113 @@ export interface ChatState {
 interface ChatResult {
   sessionId: string;
   message: ChatMessage;
+}
+
+type ChatRunUpdate = { progress: string } | { delta: string };
+
+const chatStepLabels: Readonly<Record<string, string>> = {
+  planning: "正在理解问题…",
+  retrieving: "正在检索并核对资料…",
+  reading_recipe: "正在读取当前菜谱…",
+  reading_attachment: "正在处理附件…",
+  answering: "正在组织回答…",
+  saving: "正在保存对话…"
+};
+
+export class ChatRunError extends Error {
+  constructor(readonly status: number) {
+    super("对话请求未完成");
+  }
+}
+
+export function createChatRunId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+// SSE frames can span network chunks, including a CRLF or a UTF-8 character.
+async function* readChatEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let dataLines: string[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      buffer += decoder.decode(value, { stream: true });
+      let lineEnd = buffer.indexOf("\n");
+      while (lineEnd !== -1) {
+        const line = buffer.slice(0, lineEnd).replace(/\r$/, "");
+        buffer = buffer.slice(lineEnd + 1);
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).replace(/^ /, ""));
+        } else if (line === "" && dataLines.length > 0) {
+          const event: unknown = JSON.parse(dataLines.join("\n"));
+          dataLines = [];
+          yield event;
+        }
+        lineEnd = buffer.indexOf("\n");
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+export async function requestChatRun(
+  apiBaseUrl: string,
+  request: ChatRequest,
+  threadId: string,
+  userMessageId: string,
+  signal: AbortSignal,
+  onUpdate: (update: ChatRunUpdate) => void
+): Promise<ChatResult> {
+  const { message, ...forwardedProps } = request;
+  const runId = createChatRunId();
+  const response = await fetch(`${apiBaseUrl}/api/v1/chat/ag-ui`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({
+      threadId, runId, state: {}, tools: [], context: [],
+      messages: [{ id: userMessageId, role: "user", content: message }],
+      forwardedProps
+    }),
+    signal
+  });
+  if (!response.ok) throw new ChatRunError(response.status);
+  if (response.body === null || !response.headers.get("Content-Type")?.includes("text/event-stream")) {
+    throw new Error("对话流响应无效");
+  }
+  let messageId: string | null = null;
+  for await (const event of readChatEvents(response.body)) {
+    if (!isRecord(event)) throw new Error("对话事件无效");
+    switch (event.type) {
+      case "STEP_STARTED":
+        if (typeof event.stepName === "string" && Object.prototype.hasOwnProperty.call(chatStepLabels, event.stepName)) {
+          onUpdate({ progress: chatStepLabels[event.stepName] });
+        }
+        break;
+      case "TEXT_MESSAGE_START":
+        if (event.role === "assistant" && typeof event.messageId === "string") messageId = event.messageId;
+        break;
+      case "TEXT_MESSAGE_CONTENT":
+        if (messageId !== null && event.messageId === messageId && typeof event.delta === "string") {
+          onUpdate({ delta: event.delta });
+        }
+        break;
+      case "TEXT_MESSAGE_END":
+        if (event.messageId === messageId) messageId = null;
+        break;
+      case "RUN_ERROR":
+        throw new ChatRunError(typeof event.code === "string" ? Number(event.code) : 0);
+      case "RUN_FINISHED":
+        if (event.threadId === threadId && event.runId === runId) return parseChatResponse(event.result);
+        throw new Error("对话完成事件与当前请求不匹配");
+    }
+  }
+  throw new Error("对话流未完成");
 }
 
 interface UploadedFile {
@@ -176,6 +292,6 @@ export function formatSource(source: Readonly<ChatSource>): string {
 }
 
 export function getSourceUrl(source: Readonly<ChatSource>): string | null {
-  const url = formatSourceValue(source.url).trim();
+  const url = formatSourceValue(source.url ?? source.source).trim();
   return /^https?:\/\//i.test(url) ? url : null;
 }

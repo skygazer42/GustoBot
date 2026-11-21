@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run pytest with dotenv loading disabled for isolated configuration."""
     import dotenv
     import pytest
     from pydantic_settings import BaseSettings
@@ -18,6 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     original_init = BaseSettings.__init__
 
     def isolated_init(self, *args, **kwargs):
+        """Prevent BaseSettings from reading a developer's local dotenv file."""
         kwargs["_env_file"] = None
         original_init(self, *args, **kwargs)
 

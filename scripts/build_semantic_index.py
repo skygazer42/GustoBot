@@ -19,6 +19,7 @@ from gustobot.infrastructure.persistence.crud.semantic_index import BuildLeaseCo
 
 
 def create_service():
+    """Assemble the configured semantic indexing service."""
     from gustobot.application.services.knowledge_runtime import (
         create_semantic_indexing_service,
     )
@@ -27,12 +28,14 @@ def create_service():
 
 
 async def close_resources():
+    """Close all lazily created knowledge clients after the command exits."""
     from gustobot.application.services.knowledge_runtime import cleanup_runtime
 
     await cleanup_runtime()
 
 
 def _kinds(kind: str) -> tuple[Literal["concept", "entity"], ...]:
+    """Expand the CLI kind selector into the requested index kinds."""
     choices: dict[str, tuple[Literal["concept", "entity"], ...]] = {
         "concept": ("concept",),
         "entity": ("entity",),
@@ -51,7 +54,7 @@ async def watch(
     clock=time.monotonic,
     sleep=asyncio.sleep,
 ):
-    """A scope lease is acquired by the ordinary builder after a stable revision window."""
+    """Build after a scope and graph revision remain stable for the quiet window."""
     observed: dict[str, tuple[tuple[str, int | None], float]] = {}
     retry_after: dict[tuple[str, int | None], float] = {}
     while True:
@@ -93,6 +96,7 @@ async def watch(
 
 
 async def execute(args) -> int:
+    """Dispatch one indexing command and always release application resources."""
     try:
         service = create_service()
         if args.command == "bootstrap":
@@ -148,6 +152,7 @@ async def execute(args) -> int:
 
 
 def _batch_size(value):
+    """Parse a positive candidate batch size within the store's supported limit."""
     parsed = int(value)
     if not 1 <= parsed <= 1000:
         raise argparse.ArgumentTypeError("batch size must be between 1 and 1000")
@@ -155,6 +160,7 @@ def _batch_size(value):
 
 
 def _seconds(value):
+    """Parse a finite positive polling or stability interval."""
     parsed = float(value)
     if not math.isfinite(parsed) or parsed <= 0:
         raise argparse.ArgumentTypeError("seconds must be finite and positive")
@@ -162,6 +168,7 @@ def _seconds(value):
 
 
 def parser():
+    """Create parsers for index audit, build, status, calibration, and retirement."""
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
     bootstrap = commands.add_parser(
@@ -203,6 +210,7 @@ def parser():
 
 
 def main(argv=None) -> int:
+    """Run one semantic-index command and translate interruption to exit status."""
     args = parser().parse_args(argv)
     try:
         return asyncio.run(execute(args))

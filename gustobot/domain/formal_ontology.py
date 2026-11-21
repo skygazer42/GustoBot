@@ -48,6 +48,8 @@ B = Namespace("https://gustobot.org/ontology/binding#")
 
 @dataclass(frozen=True)
 class SemanticPropertyBinding:
+    """Executable mapping from a local property to a formal ontology path."""
+
     symbol: str
     label: str
     aliases: tuple[str, ...]
@@ -61,6 +63,8 @@ class SemanticPropertyBinding:
 
 @dataclass(frozen=True)
 class UnitSpec:
+    """Canonical unit, exact scale, and aliases for one numeric dimension."""
+
     symbol: str
     dimension: str
     scale: Decimal
@@ -70,6 +74,8 @@ class UnitSpec:
 
 @dataclass(frozen=True)
 class IdentitySpec:
+    """Formal identity strategy and key properties for a local object type."""
+
     strategy: str
     key_fields: tuple[str, ...]
     prefix: str
@@ -77,6 +83,8 @@ class IdentitySpec:
 
 @dataclass(frozen=True)
 class NativeRelationBinding:
+    """Storage mapping for one relation, including role and projection rules."""
+
     symbol: str
     uri: URIRef
     source_types: tuple[str, ...]
@@ -88,6 +96,8 @@ class NativeRelationBinding:
 
 @dataclass(frozen=True)
 class FormalOntology:
+    """Compiled ontology closure and native contracts used by graph queries."""
+
     id: str
     version: str
     namespace: str
@@ -112,9 +122,11 @@ class FormalOntology:
         return self
 
     def uri(self, local: str) -> URIRef:
+        """Expand one local term into this ontology's namespace."""
         return URIRef(self.namespace + local)
 
     def ontology_graph(self) -> Graph:
+        """Return a fresh inferred RDF graph without exposing cached storage."""
         return _snapshot(self._ontology_triples)
 
     def asserted_ontology_graph(self) -> Graph:
@@ -122,20 +134,25 @@ class FormalOntology:
         return _snapshot(self._asserted_triples)
 
     def shapes_graph(self) -> Graph:
+        """Return a fresh graph containing the compiled SHACL constraints."""
         return _snapshot(self._shape_triples)
 
     def domain_definition(self) -> DomainDefinition:
+        """Reconstruct the domain contract and attach this compiled model."""
         domain = DomainDefinition.model_validate_json(self._domain_json)
         domain._semantic_model = self
         return domain
 
     def identity_spec(self, entity_type: str) -> IdentitySpec:
+        """Return the formal identity strategy declared for an entity type."""
         return self._identities[entity_type]
 
     def identity_keys(self, entity_type: str) -> tuple[str, ...]:
+        """Return the ordered fields used to derive the entity identity."""
         return self.identity_spec(entity_type).key_fields
 
     def identity_id(self, entity_type: str, values: Mapping[str, ScalarValue]) -> str:
+        """Build a stable ID after validating and normalizing all identity keys."""
         spec = self.identity_spec(entity_type)
         parts: list[ScalarValue] = []
         for key in spec.key_fields:
@@ -154,18 +171,22 @@ class FormalOntology:
         return spec.prefix + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     def property_binding(self, symbol: str) -> SemanticPropertyBinding:
+        """Resolve a business property symbol to its executable ontology binding."""
         return self.property_bindings[symbol]
 
     @property
     def numeric_projection_version(self) -> str:
+        """Return the shared version for configured numeric projections."""
         if not self.numeric_projections:
             raise ValueError("The formal model declares no numeric projections")
         return next(iter(self.numeric_projections.values())).projection_version
 
     def field_uri(self, owner: str, field: str) -> URIRef:
+        """Resolve a declared entity or relation field to its ontology URI."""
         return self._fields[f"{owner}.{field}"]
 
     def classify_name(self, name: str, base_type: str = "Ingredient") -> URIRef | None:
+        """Match a known class name or alias that belongs to the requested type."""
         base = self.native_classes[base_type]
         candidate = self._lexical_classes.get(_normalize(name))
         if candidate is not None and (candidate == base or (candidate, base) in self._ancestors):
@@ -173,6 +194,7 @@ class FormalOntology:
         return None
 
     def expand_names(self, mention: str, base_type: str = "Ingredient") -> tuple[str, ...]:
+        """Expand a known mention into names of its class and descendant classes."""
         selected = self.classify_name(mention, base_type)
         if selected is None:
             candidate = URIRef(mention) if ":" in mention else self.uri(mention)
@@ -190,6 +212,7 @@ class FormalOntology:
         return tuple(sorted(names))
 
     def unit_spec(self, name: str) -> UnitSpec | None:
+        """Return a unit definition by normalized canonical name or alias."""
         return self._units.get(_normalize(name))
 
     def linking_records(self) -> tuple[CatalogRecord, ...]:
@@ -371,6 +394,7 @@ _SHACL_PREDICATES = {
 
 
 def _check_supported(graph: Graph, *, shapes=False) -> None:
+    """Reject ontology constructs that the bounded compiler cannot execute safely."""
     for subject, predicate, obj in graph:
         if shapes and predicate == OWL.imports:
             raise ValueError("Unsupported SHACL imports; shapes must be self-contained")
@@ -437,6 +461,7 @@ def _check_select(graph: Graph, subject, query: str) -> None:
 
 
 def _load_local_ontology(path: Path) -> Graph:
+    """Parse a local Turtle graph and reject unsupported remote or local imports."""
     graph = Graph().parse(path, format="turtle")
     _check_supported(graph)
     allowed = (path.parent / "schema-recipe-subset.ttl").resolve()
@@ -465,6 +490,7 @@ def _load_local_ontology(path: Path) -> Graph:
 def _native_properties(
     shapes: Graph, owners: Mapping[str, URIRef | None]
 ) -> tuple[dict[str, dict[str, PropertyDefinition]], dict[str, URIRef]]:
+    """Compile native property shapes into domain definitions and URI bindings."""
     properties: dict[str, dict[str, PropertyDefinition]] = {owner: {} for owner in owners}
     fields: dict[str, URIRef] = {}
     datatypes = {
@@ -510,6 +536,7 @@ def _native_properties(
 
 
 def _relation_contract(shapes: Graph, uri: URIRef, symbols: Mapping[URIRef, str]):
+    """Resolve one relation's declared endpoints, cardinality, and property shapes."""
     sources, targets = set(), set()
     bounds: set[tuple[int, int | None]] = set()
     for prop in shapes.subjects(SH.path, uri):
@@ -638,6 +665,7 @@ def _native_projections(
     symbol: str,
     namespace: str,
 ) -> tuple[str, ...]:
+    """Find supported property paths that project logical relations to native facts."""
     projections = set()
     for logical in logical_relations:
         if (logical, RDF.type, OWL.ObjectProperty) not in asserted:

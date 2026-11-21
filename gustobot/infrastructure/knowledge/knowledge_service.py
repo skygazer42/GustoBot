@@ -26,6 +26,8 @@ def source_version(text: str) -> str:
 
 
 class DocumentIngestionResult(BaseModel):
+    """Persisted document chunk identities and counts for one source version."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
     domain_id: str
@@ -37,7 +39,16 @@ class DocumentIngestionResult(BaseModel):
 
 
 class DocumentVectors(Protocol):
-    def existing_ids(self, ids: Sequence[str]) -> set[str]: ...
+    """Vector-store operations required by deterministic document ingestion."""
+
+    def existing_ids(self, ids: Sequence[str]) -> set[str]:
+        """Return the subset of chunk IDs that already exists."""
+        ...
+
+    def delete_source(self, *, domain_id: str, source_id: str, versions: Sequence[str]) -> None:
+        """Delete only the confirmed versions of one domain source."""
+        ...
+
     def read_chunk(
         self,
         chunk_id: str,
@@ -46,14 +57,22 @@ class DocumentVectors(Protocol):
         source_id: str,
         source_version: str,
         ontology_version: str,
-    ) -> DocumentChunk | None: ...
+    ) -> DocumentChunk | None:
+        """Read a chunk only when all source and ontology identities match."""
+        ...
+
     def upsert(
         self, chunks: Sequence[DocumentChunk], embeddings: Sequence[Sequence[float]]
-    ) -> None: ...
+    ) -> None:
+        """Insert or replace chunk records and their vectors."""
+        ...
 
     def refresh_entity_links(
         self, chunks: Sequence[DocumentChunk], *, replace_entity_ids: bool
-    ) -> None: ...
+    ) -> None:
+        """Refresh linked entity IDs without changing source-version identity."""
+        ...
+
     def search(
         self,
         embedding: Sequence[float],
@@ -63,17 +82,34 @@ class DocumentVectors(Protocol):
         source_versions: Mapping[str, str],
         entity_ids: Sequence[str] | None,
         top_k: int,
-    ) -> list[VectorHit]: ...
-    def close(self) -> None: ...
+    ) -> list[VectorHit]:
+        """Search only the requested domain, ontology, versions, and entities."""
+        ...
+
+    def close(self) -> None:
+        """Release the vector-store client and its connections."""
+        ...
 
 
 class DocumentEmbedder(Protocol):
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
-    def embed_query(self, text: str) -> list[float]: ...
-    def close(self) -> None: ...
+    """Embedding operations used for document batches and search queries."""
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Return one vector per input document in the same order."""
+        ...
+
+    def embed_query(self, text: str) -> list[float]:
+        """Return the query vector in the configured document embedding space."""
+        ...
+
+    def close(self) -> None:
+        """Release the embedding client's transport resources."""
+        ...
 
 
 class KnowledgeService:
+    """Chunk, embed, publish, and retrieve documents within the active domain."""
+
     def __init__(
         self,
         *,
@@ -160,9 +196,16 @@ class KnowledgeService:
                     logger.exception("Failed to close embedding client after initialization failed")
             raise
 
+    def delete_source(self, source_id: str, versions: Sequence[str]) -> None:
+        """Delete confirmed document vectors without accessing graph or upload storage."""
+        self.vector_store.delete_source(
+            domain_id=self.domain.id, source_id=source_id, versions=versions
+        )
+
     async def ingest_source(
         self, source: SourceDocument, *, entity_ids: Sequence[str] | None = None
     ) -> DocumentIngestionResult:
+        """Idempotently index one exact source version and its optional entity links."""
         if not source.text.strip():
             raise ValueError("Source text must not be empty")
         version = source_version(source.text)
@@ -170,6 +213,7 @@ class KnowledgeService:
         entities = [] if entity_ids is None else list(dict.fromkeys(entity_ids))
         chunks = []
         for index, content in enumerate(contents):
+            # 块身份包含内容版本、本体和嵌入模型，避免不同版本或向量空间互相覆盖。
             identity = json.dumps(
                 [
                     self.domain.id,
@@ -202,6 +246,7 @@ class KnowledgeService:
         )
         pending = [chunk for chunk in chunks if chunk.id not in existing]
         previous = [chunk for chunk in chunks if chunk.id in existing]
+        # 重复导入只刷新实体关联；仅为缺失的块生成向量，避免重复支付嵌入费用。
         if previous:
             await asyncio.to_thread(
                 self.vector_store.refresh_entity_links,
@@ -227,6 +272,7 @@ class KnowledgeService:
     async def ingest_text(
         self, text: str, *, metadata: dict[str, Any] | None = None
     ) -> DocumentIngestionResult:
+        """Build a source record from text metadata and index it."""
         values = {} if metadata is None else metadata
         source_id = values.get("source_id", source_version(text))
         source = SourceDocument(id=source_id, text=text, uri=values.get("uri"))
@@ -235,6 +281,7 @@ class KnowledgeService:
     def read_chunk(
         self, chunk_id: str, *, source_id: str, source_version: str, ontology_version: str
     ) -> DocumentChunk | None:
+        """Read a chunk scoped to this domain and the exact requested version."""
         return self.vector_store.read_chunk(
             chunk_id,
             domain_id=self.domain.id,
@@ -252,6 +299,7 @@ class KnowledgeService:
         similarity_threshold: float | None = None,
         filter_by_similarity: bool = True,
     ) -> list[dict[str, Any]]:
+        """Search published source versions and return ranked source-aware passages."""
         limit = settings.KB_TOP_K if top_k is None else top_k
         if limit < 0 or limit > 1000:
             raise ValueError("top_k must be between zero and 1000")
@@ -259,6 +307,7 @@ class KnowledgeService:
             return []
         if self.source_versions is None:
             raise ValueError("A published source_versions provider is required for document search")
+        # 检索范围由发布元数据决定，未发布、失败或已撤回的来源不能进入回答。
         versions = dict(await asyncio.to_thread(self.source_versions))
         if not versions:
             return []
@@ -307,6 +356,7 @@ class KnowledgeService:
             filtered = []
             for candidate in candidates:
                 score = candidate.get("rerank_score")
+                # 重排未返回分数时沿用向量阈值，不能把“未评分”误当作零分。
                 if score is not None:
                     if score < settings.KB_RERANK_SCORE_THRESHOLD:
                         continue
@@ -317,7 +367,10 @@ class KnowledgeService:
         return candidates[:limit]
 
     async def close(self) -> None:
+        """Close only the vector and embedding clients owned by this service."""
+
         async def close_embedder() -> None:
+            """Close the embedder only when the knowledge service created it."""
             if self._owns_embedder:
                 await asyncio.to_thread(self.embedder.close)
 
@@ -327,6 +380,7 @@ class KnowledgeService:
 
     @staticmethod
     def _format_recipe_document(recipe: dict[str, Any]) -> str:
+        """Render recipe fields as a stable text passage for document retrieval."""
         parts: list[str] = []
         name = recipe.get("name")
         if name:

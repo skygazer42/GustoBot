@@ -25,6 +25,8 @@ _EXACT = {"exact", "exact_id", "exactid", "id", "alias", "name"}
 
 
 class EntityLinkingService:
+    """Recall bounded ontology candidates and resolve mentions against the graph."""
+
     def __init__(
         self,
         domain,
@@ -118,9 +120,11 @@ class EntityLinkingService:
         ]
 
     async def _families(self, graph, candidates):
+        """Load bounded graph name families and validate them against entity scope."""
         semaphore = asyncio.Semaphore(4)
 
         async def family(candidate):
+            """Attach validated authoritative name-family records to one seed."""
             async with semaphore:
                 result = await graph.lookup_name_family([candidate.ref_id], limit=self.family_limit)
             for item in result.items:
@@ -156,6 +160,7 @@ class EntityLinkingService:
         return {"min_cosine": float(minimum), "margin": float(margin)}
 
     async def _recall(self, context, usable, expected_types):
+        """Search every ready candidate scope with one cached query vector."""
         if context.question in context.query_vectors:
             vector = context.query_vectors[context.question]
         else:
@@ -202,6 +207,7 @@ class EntityLinkingService:
     async def _usable_publications(
         self, context: LinkingContext, revision: GraphRevision
     ) -> dict[str, IndexPublicationStatus]:
+        """Keep only ready publications compatible with this graph revision."""
         publications = await asyncio.gather(
             *(asyncio.to_thread(self.publication_provider, scope) for scope in self.scopes.values())
         )
@@ -234,6 +240,7 @@ class EntityLinkingService:
         recalled: dict[str, list[CandidateHit]],
         publications: dict[str, IndexPublicationStatus],
     ) -> tuple[list[LinkedCandidate], dict[str, CandidateHit]]:
+        """Apply publication policy and type constraints before candidate fusion."""
         concepts = []
         entity_hits: dict[str, CandidateHit] = {}
         catalog = {record.ref_id: record for record in self.concepts}
@@ -273,12 +280,14 @@ class EntityLinkingService:
         expected_types: Sequence[str],
         diagnostics: list[str],
     ) -> list[LinkedCandidate]:
+        """Replace stale entity projections with records from the authoritative graph."""
         if not hits:
             return []
         ranked_hits = sorted(
             hits.values(), key=lambda hit: (-hit.vector_score, hit.record.record_id)
         )
         semantic_entities = []
+        # 向量命中只是候选，必须回查事实图并核对内容哈希，防止使用过期投影。
         for candidate in await graph.hydrate_candidates([hit.ref_id for hit in ranked_hits[:40]]):
             hit = hits.get(candidate.ref_id)
             if hit is None or candidate.record.record_hash != hit.record.record_hash:
@@ -314,6 +323,7 @@ class EntityLinkingService:
         )
 
     async def _prepare_attempt(self, context, expected_types, *, lexical=None):
+        """Run recall phases once and merge only scope-valid candidates into context."""
         started = time.monotonic()
         lexical_concepts = self._lexical_concepts(context.question)
         context.concepts = lexical_concepts
@@ -374,6 +384,7 @@ class EntityLinkingService:
             context.status = "stale"
             context.diagnostics.append("Graph changed while linking candidates")
         if self.mode == "shadow":
+            # 影子模式只记录语义召回效果，正式查询仍使用原来的字面匹配结果。
             context.timings["shadow_entity_candidates"] = float(len(context.entities))
             context.timings["shadow_concept_candidates"] = float(len(context.concepts))
             context.entities, context.concepts = lexical, lexical_concepts
@@ -384,6 +395,7 @@ class EntityLinkingService:
     async def prepare(
         self, question: str, *, history: Sequence[BaseMessage], expected_types: Sequence[str] = ()
     ) -> LinkingContext:
+        """Collect question candidates within the configured retrieval deadline."""
         if not question.strip():
             raise ValueError("Candidate retrieval requires a question")
         if set(expected_types) - set(ENTITY_CATALOG_TYPES):
@@ -424,6 +436,7 @@ class EntityLinkingService:
             context.diagnostics.append("Candidate retrieval deadline exceeded")
 
     async def _refresh_for_resolution(self, context, expected_types):
+        """Refresh candidate context when the authoritative graph revision has changed."""
         if context.graph_revision is None or self.mode == "off":
             return
         graph = await self._resource(self.graph)
@@ -454,6 +467,7 @@ class EntityLinkingService:
     async def supplement(
         self, references: Sequence[ObjectReference], *, context: LinkingContext
     ) -> LinkingContext:
+        """Add candidates for plan references while honoring the original deadline."""
         started = time.monotonic()
         remaining = self.deadline - context.timings.get("total_ms", 0) / 1000
         try:
@@ -474,6 +488,7 @@ class EntityLinkingService:
     async def _find_missing_references(
         self, references: Sequence[ObjectReference], *, context: LinkingContext
     ) -> dict[str, ObjectReference]:
+        """Collect plan references that lack usable candidates in the current context."""
         missing = {}
         graph = None
         for reference in references:
@@ -512,6 +527,7 @@ class EntityLinkingService:
     async def _embed_supplement_mentions(
         self, mentions: Sequence[LinkingContext], context: LinkingContext
     ) -> bool:
+        """Embed previously unseen plan mentions and cache vectors per request."""
         if not mentions:
             return True
         if context.provider_calls.get("candidate_embedding_batches", 0) >= 2:
@@ -543,6 +559,7 @@ class EntityLinkingService:
     async def _supplement(
         self, references: Sequence[ObjectReference], *, context: LinkingContext
     ) -> LinkingContext:
+        """Recall candidates for missing plan references within the remaining budget."""
         missing = await self._find_missing_references(references, context=context)
         if not missing or self.mode != "on":
             return context
@@ -611,6 +628,7 @@ class EntityLinkingService:
     def _candidates_for_reference(
         self, reference: ObjectReference, context: LinkingContext
     ) -> list[LinkedCandidate]:
+        """Select compatible candidates for an explicit identity or named mention."""
         pool = [
             item
             for item in context.entities
@@ -656,6 +674,7 @@ class EntityLinkingService:
         candidates: list[LinkedCandidate],
         context: LinkingContext,
     ) -> tuple[list[LinkedCandidate], bool]:
+        """Expand a mention through known name families and report unresolved ambiguity."""
         ids = {item.ref_id for item in candidates}
         ambiguous = False
         for family in context.families:
@@ -673,6 +692,7 @@ class EntityLinkingService:
             elif len(uniquely_named) == 1 and not family.has_more:
                 candidates = uniquely_named
             elif family.has_more or len(family.items) > 1:
+                # 同名家族未查全或有多个版本时保留歧义，不能仅凭最高分替用户选一份。
                 candidates = family.items
                 ambiguous = True
         return candidates, ambiguous
@@ -680,6 +700,7 @@ class EntityLinkingService:
     async def resolve(
         self, references: Sequence[ObjectReference], *, context: LinkingContext
     ) -> LinkResolution:
+        """Bind only unambiguous mentions to authoritative graph identities."""
         await self._refresh_for_resolution(
             context,
             list(

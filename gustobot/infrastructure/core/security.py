@@ -9,6 +9,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    """Sign a JWT payload with the configured key and optional expiry override."""
     if not settings.SECRET_KEY:
         raise ValueError("SECRET_KEY must be configured before signing access tokens")
     to_encode = data.copy()

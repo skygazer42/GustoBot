@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def parser() -> argparse.ArgumentParser:
+    """Define the read-only audit and explicit numeric projection publish modes."""
     result = argparse.ArgumentParser(description=__doc__)
     mode = result.add_mutually_exclusive_group()
     mode.add_argument(
@@ -28,6 +29,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 async def rebuild(arguments: argparse.Namespace) -> None:
+    """Audit or rebuild scoped numeric projections and always close runtime clients."""
     from gustobot.application.services.knowledge_runtime import (
         cleanup_runtime,
         get_graph_store,

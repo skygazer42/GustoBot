@@ -23,22 +23,28 @@ from gustobot.infrastructure.knowledge.semantic_runtime import (
     SemanticValidationError,
     get_semantic_runtime,
 )
+from gustobot.interfaces.http.admin_session import require_admin
 
 router = APIRouter(prefix="/ontology", tags=["Domain knowledge"])
 
 
 class ExtractionRequest(BaseModel):
+    """Source documents supplied to the ontology fact extractor."""
+
     model_config = ConfigDict(extra="forbid")
     sources: list[SourceDocument] = Field(min_length=1, max_length=100)
 
 
 class FactCounts(BaseModel):
+    """Counts of entities, relations, and sources in a validated graph."""
+
     entities: int
     relations: int
     sources: int
 
 
 def get_fact_model() -> BaseChatModel:
+    """Return the configured extraction model or report missing configuration."""
     from gustobot.application.services.knowledge_runtime import get_model
 
     model = get_model()
@@ -48,6 +54,7 @@ def get_fact_model() -> BaseChatModel:
 
 
 async def get_fact_service() -> OntologyService:
+    """Build the ontology service for the active domain and graph store."""
     from gustobot.application.services.knowledge_runtime import get_graph_store
 
     return OntologyService(get_domain_definition(), graph_store=get_graph_store())
@@ -55,13 +62,15 @@ async def get_fact_service() -> OntologyService:
 
 @router.get("/domain")
 def read_domain() -> DomainDefinition:
+    """Return the active domain definition used to validate ontology facts."""
     return get_domain_definition()
 
 
-@router.post("/extract")
+@router.post("/extract", dependencies=[Depends(require_admin)])
 async def extract_facts(
     request: ExtractionRequest, model: Annotated[BaseChatModel, Depends(get_fact_model)]
 ) -> KnowledgeGraph:
+    """Extract candidate ontology facts from the submitted source documents."""
     service = OntologyService(get_domain_definition(), model=model)
     try:
         return await service.extract(request.sources)
@@ -76,6 +85,7 @@ async def extract_facts(
 
 @router.post("/validate")
 def validate_facts(graph: KnowledgeGraph) -> FactCounts:
+    """Validate a fact graph against the active domain and report its counts."""
     try:
         domain = get_domain_definition()
         semantic = get_semantic_runtime(domain)
@@ -95,10 +105,11 @@ def validate_facts(graph: KnowledgeGraph) -> FactCounts:
     )
 
 
-@router.post("/facts")
+@router.post("/facts", dependencies=[Depends(require_admin)])
 async def insert_facts(
     graph: KnowledgeGraph, service: Annotated[OntologyService, Depends(get_fact_service)]
 ) -> GraphWriteResult:
+    """Validate and write the submitted facts to the graph store."""
     try:
         return await service.insert(graph)
     except SemanticValidationError as exc:
@@ -115,6 +126,7 @@ async def query_facts(
     request: FactQuery,
     service: Annotated[OntologyService, Depends(get_fact_service)],
 ) -> FactResult:
+    """Query domain facts using the supplied graph-query constraints."""
     try:
         return await service.query(request)
     except ValueError as exc:

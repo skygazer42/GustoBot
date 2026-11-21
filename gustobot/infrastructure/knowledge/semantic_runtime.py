@@ -46,6 +46,8 @@ from gustobot.domain.numeric import (
 
 
 class SemanticSelection(BaseModel):
+    """Requested business property and optional target, unit, and grain."""
+
     model_config = ConfigDict(extra="forbid")
     property: str = Field(min_length=1)
     target: str | None = None
@@ -54,6 +56,8 @@ class SemanticSelection(BaseModel):
 
 
 class SemanticIssue(BaseModel):
+    """One native or SHACL validation issue with its affected focus and path."""
+
     focus_node: str | None = None
     path: str | None = None
     source_shape: str | None = None
@@ -63,6 +67,8 @@ class SemanticIssue(BaseModel):
 
 
 class SemanticValidationReport(BaseModel):
+    """Conformance result tied to the exact ontology version and fingerprint."""
+
     conforms: bool
     ontology_version: str
     ontology_fingerprint: str
@@ -70,12 +76,16 @@ class SemanticValidationReport(BaseModel):
 
 
 class SemanticValidationError(ValueError):
+    """Validation exception that retains the structured issue report."""
+
     def __init__(self, report: SemanticValidationReport):
         self.report = report
         super().__init__("; ".join(issue.message for issue in report.issues))
 
 
 class SemanticEvaluation(BaseModel):
+    """Evidence-backed answer and derivation diagnostics from semantic evaluation."""
+
     message: str
     status: str
     sources: list[dict[str, Any]] = Field(default_factory=list)
@@ -86,6 +96,8 @@ class SemanticEvaluation(BaseModel):
 
 
 class _Quantity(BaseModel):
+    """Parsed quantity range retaining its original text and unit."""
+
     kind: str
     original: str
     unit_text: str | None = None
@@ -145,6 +157,8 @@ def _exact_decimal(value: Fraction) -> Decimal:
 
 
 class SemanticRuntime:
+    """Bind graph assertions, validate ontology constraints, and derive answers."""
+
     def __init__(self, model: FormalOntology):
         self.model = model
         self.domain = model.domain_definition()
@@ -175,6 +189,7 @@ class SemanticRuntime:
         visiting: set[str] = set()
 
         def identity(identifier: str) -> str:
+            """Resolve owning entity identities recursively and detect cycles."""
             if identifier in resolved:
                 return resolved[identifier]
             if identifier in visiting:
@@ -256,6 +271,7 @@ class SemanticRuntime:
         )
 
     def _quantity(self, raw: str, separate_unit: str | None) -> _Quantity:
+        """Parse exact scalar or ranged amounts while retaining source unit text."""
         match = _RANGE.fullmatch(raw)
         if match is not None:
             start, end, suffix = match.groups()
@@ -290,6 +306,7 @@ class SemanticRuntime:
     def _numeric_projection(
         self, minimum: Fraction, maximum: Fraction, dimension: str
     ) -> NumericValue:
+        """Project an exact range to ticks or mark it outside the declared bounds."""
         spec = self.model.numeric_projections[dimension]
         tick = self.model.unit_spec(spec.tick_unit)
         assert tick is not None
@@ -313,6 +330,7 @@ class SemanticRuntime:
         )
 
     def project_quantity(self, raw: str | None, separate_unit: str | None = None) -> NumericValue:
+        """Convert a source amount to its declared exact fixed-point projection."""
         version = self.model.numeric_projection_version
         if raw is None:
             return NumericValue(status="unknown", projection_version=version)
@@ -330,6 +348,7 @@ class SemanticRuntime:
         )
 
     def project_duration(self, raw: str | None) -> NumericValue:
+        """Project a supported duration expression or mark it as unknown."""
         components = duration_components(raw)
         if components is None:
             return NumericValue(
@@ -346,6 +365,7 @@ class SemanticRuntime:
         return self._numeric_projection(total, total, "time")
 
     def request_ticks(self, value: str | int, unit_name: str) -> tuple[int, str]:
+        """Convert an exact query value to integer ticks and its dimension."""
         unit = self.model.unit_spec(unit_name)
         if unit is None or unit.dimension not in self.model.numeric_projections:
             raise ValueError(f"No declared numeric projection for unit {unit_name}")
@@ -358,6 +378,7 @@ class SemanticRuntime:
     def native_numeric_projection(
         self, owner: str, properties: dict[str, ScalarValue]
     ) -> dict[str, Any]:
+        """Derive numeric storage fields for one entity or relation property map."""
         projections = {}
         if owner == self.model.property_binding("reportedDuration").anchor_type:
             projections = {
@@ -534,6 +555,7 @@ class SemanticRuntime:
     def _validate(
         self, data: Graph, *, shape: URIRef | None = None, focus: URIRef | None = None
     ) -> SemanticValidationReport:
+        """Run SHACL validation and normalize violations into a stable report."""
         shapes = self.model.shapes_graph()
         if shape is not None:
             if (shape, RDF.type, SH.NodeShape) not in shapes:
@@ -563,6 +585,7 @@ class SemanticRuntime:
         for result in report_graph.subjects(RDF.type, SH.ValidationResult):
 
             def value(predicate, result=result):
+                """Read an optional SHACL result term as text for the report."""
                 item = report_graph.value(result, predicate)
                 return None if item is None else str(item)
 
@@ -581,6 +604,8 @@ class SemanticRuntime:
         return self._report(issues)
 
     def validate_input(self, graph: KnowledgeGraph) -> SemanticValidationReport:
+        """Validate native facts and formal shapes without claiming completeness."""
+        # 先校验原始断言，不能先靠 OWL 推理补齐类型，再掩盖来源本身缺失的信息。
         self._native_validation(graph, complete=False)
         try:
             raw = self.project(graph)
@@ -599,6 +624,8 @@ class SemanticRuntime:
         return self._validate(data)
 
     def _inferred(self, raw: Graph) -> Graph:
+        """Apply cached OWL-RL closure to an isolated graph of raw assertions."""
+        # 推理只作用于独立副本，原始事实仍保留，回答时才能区分记载与推导。
         key = self.model.fingerprint, frozenset(raw)
         with self._inference_lock:
             triples = self._inference_cache.get(key)
@@ -641,6 +668,7 @@ class SemanticRuntime:
     def _hierarchy_trace(
         self, graph: Graph, node: URIRef, target: str, edge: KnowledgeRelation
     ) -> dict[str, Any] | None:
+        """Explain an inferred target through the declared hierarchy relations."""
         target_type = self.model.classify_name(target, "Ingredient")
         if target_type is None:
             return None
@@ -674,6 +702,7 @@ class SemanticRuntime:
     def _amount_text(
         self, edge: KnowledgeRelation, target_unit: str | None
     ) -> tuple[str, dict[str, Any] | None]:
+        """Convert a source amount to the requested declared unit with evidence."""
         raw = cast(str, edge.properties["amount_text"])
         original_unit = cast(str, edge.properties["unit"]) if "unit" in edge.properties else None
         parsed = self._quantity(raw, original_unit)
@@ -714,6 +743,7 @@ class SemanticRuntime:
         return text + " " + destination.symbol, detail
 
     def _relation_trace(self, edge: KnowledgeRelation, logical: URIRef) -> dict[str, Any] | None:
+        """Trace one logical relation to its authoritative stored assertion."""
         native = self.model.native_relations[edge.type].uri
         if native == logical:
             return None
@@ -740,6 +770,7 @@ class SemanticRuntime:
         return None
 
     def _numeric_measurement_text(self, value: NumericMeasurement, unit_name: str | None) -> str:
+        """Format a projected amount with its requested display unit and precision."""
         if (
             value.dimension is None
             or value.projection_version != self.model.numeric_projection_version
@@ -771,6 +802,8 @@ class SemanticRuntime:
         truncated: bool = False,
         numeric_values: Sequence[NumericMeasurement] = (),
     ) -> SemanticEvaluation:
+        """Answer property selections from a graph with traceable evidence."""
+        # 先执行本体绑定和确定性求值，模型只负责后续表达，不负责裁定用量等事实。
         result = SemanticEvaluation(message="", status="success", model_version=self.model.version)
         try:
             self._native_validation(graph, complete=False)
@@ -927,6 +960,7 @@ class SemanticRuntime:
                 ]
 
                 def edge_order(edge, ordering=ordering):
+                    """Sort projected relation edges by their mapped order field."""
                     target = entities[edge.target_id]
                     values = [
                         target.properties[key] if owner == target.type else edge.properties[key]
@@ -1089,5 +1123,6 @@ class SemanticRuntime:
 
 
 def get_semantic_runtime(domain: DomainDefinition) -> SemanticRuntime | None:
+    """Create a runtime only when the domain includes a compiled formal ontology."""
     model = domain.semantic_model
     return None if model is None else SemanticRuntime(model)

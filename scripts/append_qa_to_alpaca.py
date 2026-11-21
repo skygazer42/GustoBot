@@ -13,6 +13,7 @@ from scripts.dataset_io import read_any
 
 
 def qa_to_alpaca(obj: dict[str, Any]) -> dict[str, str]:
+    """Convert one source/target pair into an Alpaca instruction record."""
     question = obj["src"]
     answer = obj["tgt"]
     if not isinstance(question, str) or not isinstance(answer, str):
@@ -21,6 +22,7 @@ def qa_to_alpaca(obj: dict[str, Any]) -> dict[str, str]:
 
 
 def main() -> None:
+    """Append valid QA records from JSON or JSONL input to an Alpaca file."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--qa", required=True, help="问答样本文件（JSON/JSONL），或 '-' 从标准输入读取"

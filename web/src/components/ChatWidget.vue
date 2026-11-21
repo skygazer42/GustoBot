@@ -1,20 +1,18 @@
 <template>
-  <section id="chat-panel" class="chat-panel" :class="[variant === 'widget' ? 'widget-panel' : 'workspace-panel', { 'is-compact': isCompact }]" aria-label="陶陶对话">
-    <header v-if="variant === 'widget'" class="widget-header">
-      <span class="bot-seal"><UiIcon name="bot" /></span>
-      <div><h2 class="widget-name">陶陶</h2><p class="widget-subtitle">陪你把这一餐做好</p></div>
+  <section id="chat-panel" class="chat-panel widget-panel" aria-label="陶陶对话">
+    <header class="widget-header">
+      <img class="bot-seal" src="/taotao-mark.png" width="34" height="34" alt="" />
+      <div><h2 class="widget-name">陶陶</h2><p class="widget-subtitle">{{ recipe ? '陪你把这一餐做好' : '菜谱助手' }}</p></div>
       <div class="widget-actions">
-        <button type="button" class="minimize-button" aria-label="展开到完整工作台" title="展开到完整工作台" @click="emit('expand')"><UiIcon name="expand" />展开</button>
         <button type="button" class="minimize-button" aria-label="收起对话，保留草稿" title="收起对话 · Esc" @click="emit('close')"><UiIcon name="down" />收起</button>
       </div>
     </header>
-    <div v-if="variant === 'widget'" class="recipe-context-bar" role="group" aria-label="当前食谱">
-      <img :src="recipe.photo" alt="" /><strong>{{ recipe.title }}</strong><span>当前食谱 · {{ servings }} 人份</span>
+    <div v-if="recipe" class="recipe-context-bar" role="group" aria-label="当前食谱">
+      <img v-if="recipe.cover_image" :src="recipe.cover_image.url" alt="" /><strong>{{ recipe.name }}</strong><span>{{ servings !== null ? `${servings} 人份` : '按原文做法' }}</span>
     </div>
     <div
       ref="history"
-      class="conversation-history"
-      :class="variant === 'widget' ? 'widget-history' : 'workspace-history'"
+      class="conversation-history widget-history"
       :data-more="hasMore"
       tabindex="0"
       role="log"
@@ -24,14 +22,14 @@
       @scroll.passive="syncHistoryCue"
     >
       <div v-if="state.messages.length === 0" class="welcome-message">
-        <p class="assistant-label"><UiIcon name="bot" />陶陶</p>
-        <h2 class="welcome-title">今天这道菜，一起慢慢做。</h2>
-        <p class="answer-copy">火候拿不准，食材想换一换，<br />都可以和我聊聊。</p>
+        <p class="assistant-label"><img src="/taotao-mark.png" width="16" height="16" alt="" />陶陶</p>
+        <h2 class="welcome-title">{{ recipe ? '这份做法，一起慢慢看。' : '今天想聊点什么？' }}</h2>
+        <p class="answer-copy">{{ recipe ? '可以问当前做法，也可以了解相关背景。回答会结合已关联的图谱和文章，并区分不同来源。' : '可以直接提问，也可以选一道菜，结合具体做法、图谱和相关文章一起聊。' }}</p>
       </div>
       <template v-for="message in state.messages" :key="message.id">
         <p v-if="message.role === 'user'" class="message-user"><span v-if="message.attachmentName" class="message-attachment"><UiIcon name="attachment" />{{ message.attachmentName }}</span>{{ message.content }}<span v-if="message.delivery === 'failed'" class="message-delivery">发送未成功</span></p>
         <article v-else class="assistant-message" :data-message-id="message.id">
-          <p class="assistant-label"><UiIcon name="bot" />陶陶</p>
+          <p class="assistant-label"><img src="/taotao-mark.png" width="16" height="16" alt="" />陶陶</p>
           <div class="answer-copy"><template v-for="(part, index) in linkify(message.content)" :key="index"><a v-if="part.href" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><template v-else>{{ part.text }}</template></template></div>
           <div v-if="message.clarificationOptions?.length" class="clarification-options" aria-label="选择具体做法">
             <button v-for="option in message.clarificationOptions" :key="option.question" type="button" :disabled="state.isTyping || state.isUploading || message.id !== state.messages[state.messages.length - 1]?.id" @click="emit('ask', option.question)">{{ option.label }}</button>
@@ -47,11 +45,14 @@
           </details>
         </article>
       </template>
-      <p v-if="state.isTyping" class="typing-status" role="status"><span class="spinner" aria-hidden="true"></span>陶陶正在想一想…</p>
+      <article v-if="state.replyDraft" class="assistant-message" aria-live="off">
+        <p class="assistant-label"><img src="/taotao-mark.png" width="16" height="16" alt="" />陶陶</p>
+        <div class="answer-copy">{{ state.replyDraft }}</div>
+      </article>
+      <p v-if="state.replyProgress" class="typing-status" role="status"><span class="spinner" aria-hidden="true"></span>{{ state.replyProgress }}</p>
     </div>
     <ChatComposer
       ref="composer"
-      :variant="variant"
       :draft="state.userInput"
       :busy="state.isTyping || state.isUploading"
       :file-name="state.attachedFileName"
@@ -59,6 +60,7 @@
       :error="state.error"
       :has-conversation="state.messages.length > 0 || state.sessionId.length > 0"
       :followups="followups"
+      :allow-upload="recipe === null"
       @update-draft="emit('update-draft', $event)"
       @submit="emit('submit')"
       @ask="emit('ask', $event)"
@@ -72,18 +74,15 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { recipe } from "../data/recipe";
-import { availablePrompts, formatSource, getSourceUrl, linkify } from "../lib/chat";
-import type { ChatState } from "../lib/chat";
+import type { RecipeDetail } from "../data/recipe";
+import { availablePrompts, formatSource, getSourceUrl, linkify, type ChatState } from "../lib/chat";
 import ChatComposer from "./ChatComposer.vue";
 import UiIcon from "./UiIcon.vue";
 
-const props = defineProps<{ variant: "widget" | "workspace"; state: Readonly<ChatState>; servings: number }>();
-const followups = computed(() => availablePrompts(["这道菜有哪些食材？", "鸡蛋什么时候盛出？"], props.state.messages));
-const isCompact = computed(() => props.state.messages.filter((message) => message.role === "user").length <= 1);
+const props = defineProps<{ state: Readonly<ChatState>; recipe: RecipeDetail | null; servings: number | null }>();
+const followups = computed(() => availablePrompts(props.recipe ? ["这道菜有哪些食材？", "这份做法有哪些关键步骤？"] : [], props.state.messages));
 const emit = defineEmits<{
   (event: "close"): void;
-  (event: "expand"): void;
   (event: "update-draft", value: string): void;
   (event: "submit"): void;
   (event: "ask", question: string): void;
@@ -120,7 +119,15 @@ watch(() => [props.state.messages.length, props.state.isTyping], async () => {
   }
   syncHistoryCue();
 });
-watch(() => [props.state.error, props.state.uploadStatus, props.variant], () => nextTick(syncHistoryCue));
+watch(() => [props.state.error, props.state.uploadStatus], () => nextTick(syncHistoryCue));
+watch(() => [props.state.replyDraft, props.state.replyProgress], async () => {
+  const element = history.value;
+  if (!element || !props.state.isTyping) return;
+  const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
+  await nextTick();
+  if (atBottom) element.scrollTop = element.scrollHeight;
+  syncHistoryCue();
+});
 onMounted(() => {
   resizeObserver = new ResizeObserver(syncHistoryCue);
   if (history.value) {

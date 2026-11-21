@@ -31,12 +31,15 @@ class ChatSessionUpdate(BaseModel):
     @field_validator("title", "is_active")
     @classmethod
     def _reject_null_stored_fields(cls, value):
+        """Reject explicit nulls for fields that must remain stored values."""
         if value is None:
             raise ValueError("title and is_active cannot be null")
         return value
 
 
 class SessionListQuery(BaseModel):
+    """Filters and pagination bounds for a user's session list."""
+
     user_id: str | None = Field(default=None, max_length=255)
     skip: int = Field(default=0, ge=0)
     limit: int = Field(default=50, ge=1)
@@ -110,5 +113,7 @@ class ChatSessionSnapshotResponse(ChatSessionSnapshotBase):
 
 
 class UserSessionCountResponse(BaseModel):
+    """Number of stored sessions associated with one user identifier."""
+
     user_id: str
     session_count: int

@@ -2,7 +2,7 @@
 
 ## 默认服务
 
-`docker-compose.yml` 默认包含后端、MySQL、Neo4j、Milvus。Milvus 的内嵌 etcd 与本地存储配置取自 [Milvus v2.5.12 官方单机脚本](https://github.com/milvus-io/milvus/blob/v2.5.12/scripts/standalone_embed.sh)，配置文件只读挂载，不另起 etcd 或 MinIO。
+`docker-compose.yml` 默认启动应用、MySQL、Neo4j、Milvus 及一次性迁移任务。应用镜像打包 Vue 产物，FastAPI 在同一端口提供网页、后台和接口。Milvus 的内嵌 etcd 与本地存储配置只读挂载。[Milvus v2.5.12 官方单机脚本](https://github.com/milvus-io/milvus/blob/v2.5.12/scripts/standalone_embed.sh)
 
 | 服务 | 镜像/运行时 | 默认宿主机端口 | 持久化 |
 | --- | --- | --- | --- |
@@ -11,7 +11,7 @@
 | neo4j | `neo4j:5.26-community` | 7474、7687 | `facts_neo4j_data` |
 | milvus | `milvusdb/milvus:v2.5.12` | 19530、9091 | `documents_milvus_data`，包含内嵌 etcd |
 | redis | `redis:7.2-alpine`；仅 `cache` profile | 无默认宿主机端口 | `redis_data` |
-| migrate | 后端镜像；仅 `setup` profile | 无 | 显式应用 MySQL 版本迁移后退出 |
+| migrate | 应用镜像 | 无 | 等待 MySQL 健康，应用版本迁移后退出 |
 | semantic-indexer | 后端镜像；仅 `semantic` profile | 无 | 复用 MySQL generation 与 Milvus 候选集合 |
 
 Redis 不属于当前知识请求的必需依赖。旧 pgvector、KB ingest、LightRAG 索引初始化不在默认部署中。
@@ -24,18 +24,15 @@ Redis 不属于当前知识请求的必需依赖。旧 pgvector、KB ingest、Li
 Copy-Item .env.example .env
 # 编辑密码和需要使用的模型服务配置。
 docker compose --env-file .env config --quiet
-docker compose --env-file .env --profile setup build backend migrate
-docker compose --env-file .env up -d mysql neo4j milvus
-docker compose --env-file .env --profile setup run --rm migrate
-docker compose --env-file .env up -d backend
+docker compose --env-file .env up -d --build
 docker compose --env-file .env ps
 ```
 
 `DATABASE_URL` 必须使用 `mysql+pymysql://`。示例连接 Compose 的 `mysql:3306`；宿主机程序通过 `localhost:13306` 连接。保持 `MYSQL_*` 与连接串一致，对连接串中的保留字符做 URL 编码。现有 MySQL/Neo4j 卷的账号密码不会因修改环境变量而自动更改。
 
-模型凭据只在运行时通过环境配置提供，不作为镜像 build args。Dockerfile 安装依赖并复制代码和迁移文件；不打包历史知识索引，不执行模型调用或数据导入。`migrate` 使用空 entrypoint，只依赖 MySQL 健康，显式运行幂等迁移后退出。后端入口仅运行 `scripts/migrate_database.py --check`；缺表、缺少迁移或未知版本会阻止 API 启动，不在启动时静默建表。
+模型凭据在运行时通过环境变量提供。Dockerfile 构建 Vue 页面并复制 Python 代码和迁移文件。Compose 等待 `migrate` 成功退出后启动应用，应用入口继续使用 `scripts/migrate_database.py --check` 核对版本。
 
-已有部署必须先完成停写与一致备份，再运行上述显式迁移。单纯启动 `backend` 或 `semantic-indexer` 不等于批准 schema 更新。
+已有部署升级时，先完成停写与一致备份，再使用上述 Compose 命令更新镜像和应用迁移。
 
 ## 候选 worker 与健康状态
 
@@ -51,6 +48,8 @@ worker 与后端使用相同配置，等待后端健康后执行 `watch`。默�
 发布就绪需要检查 `status` 中的领域、本体版本、模型指纹、embedding 指纹、generation 与图 revision。图变化导致实体候选 stale 时，名称／ID 路径仍可工作；旧向量不会冒充当前图。完整审计、投影、发布和模式切换见 [运行手册](RUNBOOK_SEMANTIC_INDEX.md)。
 
 ## 显式知识导入
+
+以下命令读取本机 `data/`。先将源文件放到对应路径，再执行需要的导入命令。
 
 ```powershell
 docker compose --env-file .env exec backend python scripts/import_knowledge.py recipes --path data/recipe.json --limit 10
@@ -81,7 +80,7 @@ docker compose --env-file .env exec backend python scripts/import_knowledge.py d
 
 ```powershell
 docker compose --env-file .env config --quiet
-docker compose --env-file .env logs --tail 100 backend mysql neo4j milvus
+docker compose --env-file .env logs --tail 100 migrate backend mysql neo4j milvus
 python -m pip install -r requirements-dev.txt
 python -m pytest tests/test_backend_deployment.py
 ```

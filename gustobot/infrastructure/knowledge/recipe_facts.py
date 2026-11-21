@@ -23,22 +23,30 @@ from gustobot.domain.knowledge import (
 
 
 class _Binding(BaseModel):
+    """Base class for strict source-to-ontology mapping records."""
+
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
 
 
 class IngredientBinding(_Binding):
+    """Mapping from recipe source fields to one ingredient relation and role."""
+
     source_fields: list[str]
     relation: str
     role: str
 
 
 class ClassificationBinding(_Binding):
+    """Mapping from source fields to a recipe classification relation."""
+
     source_fields: list[str]
     entity_type: str
     relation: str
 
 
 class RecipeSourceMapping(_Binding):
+    """Complete field mapping used to convert source recipes into graph facts."""
+
     ontology_id: str
     record_fields: dict[str, list[str]]
     ingredient_fields: dict[str, list[str]]
@@ -58,6 +66,7 @@ def _recipe_mapping() -> RecipeSourceMapping:
 
 
 def load_recipe_mapping() -> RecipeSourceMapping:
+    """Return a validated copy of the cached recipe mapping configuration."""
     return _recipe_mapping().model_copy(deep=True)
 
 
@@ -93,6 +102,7 @@ def _aliases(name: str) -> list[str]:
 
 
 def _ingredient(item: Any, fields: dict[str, list[str]]) -> tuple[str, dict[str, ScalarValue]]:
+    """Extract an ingredient label and mapped scalar properties from source data."""
     amount = None
     unit = None
     amount_is_text = False
@@ -189,9 +199,11 @@ def recipe_to_facts(
     source = SourceDocument(id=source_id, text=source_text, uri=source_uri)
 
     def evidence(value: Any) -> list[EvidenceReference]:
+        """Bind the exact serialized source value to its stable source ID."""
         return [EvidenceReference(source_id=source_id, quote=_json(value))]
 
     def entity_id(entity_type: str, legacy_kind: str, *parts: Any, **values: ScalarValue) -> str:
+        """Derive the configured ontology identity or legacy deterministic ID."""
         if semantic_model is None:
             return _identifier(legacy_kind, *parts)
         return semantic_model.identity_id(entity_type, {"source_id": source_id, **values})

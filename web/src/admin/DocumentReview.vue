@@ -120,26 +120,45 @@
         </li>
       </ol>
     </details>
-    <div class="review-actions">
-      <slot name="actions" />
-      <button
-        class="admin-text-button"
-        type="button"
-        :disabled="busy"
-        @click="emit('retry')"
-      >
-        {{ busy ? "处理中…" : source.status === "withdrawn" ? "恢复文档入库" : "重新入库" }}
-      </button>
-      <button
-        v-if="source.status !== 'withdrawn'"
-        class="admin-text-button"
-        type="button"
-        :disabled="busy"
-        @click="emit('withdraw')"
-      >
-        撤回文档检索
-      </button>
+    <div class="review-actions" role="group" aria-label="文档操作">
+      <div v-if="$slots.actions" class="review-action-group review-action-group--review" role="group" aria-label="核对资料">
+        <slot name="actions" />
+      </div>
+      <div class="review-action-group review-action-group--processing" role="group" aria-label="入库与检索">
+        <button class="admin-text-button" type="button" :disabled="busy || hasActiveIngestion" @click="emit('edit')">编辑原文</button>
+        <button
+          class="admin-text-button"
+          type="button"
+          :disabled="busy"
+          @click="emit('retry')"
+        >
+          {{ busy ? "处理中…" : source.status === "withdrawn" ? "恢复文档入库" : "重新入库" }}
+        </button>
+        <button
+          v-if="source.status !== 'withdrawn'"
+          class="admin-text-button"
+          type="button"
+          :disabled="busy"
+          @click="emit('withdraw')"
+        >
+          撤回文档检索
+        </button>
+      </div>
+      <div class="review-action-group review-action-group--danger" role="group" aria-label="删除记录">
+        <button
+          class="admin-text-button admin-delete-button"
+          type="button"
+          :disabled="busy || hasActiveIngestion"
+          :aria-describedby="hasActiveIngestion ? 'document-delete-unavailable' : undefined"
+          @click="emit('delete')"
+        >
+          删除文档记录
+        </button>
+      </div>
     </div>
+    <p v-if="hasActiveIngestion" id="document-delete-unavailable" class="admin-helper delete-unavailable">
+      入库任务尚未完成，结束后可删除文档记录。
+    </p>
   </footer>
 </template>
 
@@ -156,9 +175,14 @@ import {
 import type { SourceChunk, SourceDetail } from "./contracts";
 
 const props = defineProps<{ detail: SourceDetail; busy: boolean }>();
-const emit = defineEmits<{ retry: []; withdraw: [] }>();
+const emit = defineEmits<{ retry: []; withdraw: []; delete: []; edit: [] }>();
 
 const source = computed(() => props.detail.source);
+const hasActiveIngestion = computed(
+  () => ["pending", "processing"].includes(source.value.status) ||
+    ["pending", "processing"].includes(source.value.latest_job?.status ?? "") ||
+    props.detail.jobs.some((job) => ["pending", "processing"].includes(job.status)),
+);
 const latestJob = computed(() => source.value.latest_job ?? props.detail.jobs[0]);
 const earlierJobs = computed(() =>
   props.detail.jobs.filter((job) => job.id !== latestJob.value?.id),
@@ -193,7 +217,7 @@ const stages = computed(() => {
   const count = chunk.value?.total ?? (recordedCount || source.value.chunks || 0);
   const indexed = Boolean(successfulJob.value || chunk.value);
   let indexStatus = "暂无入库记录";
-  if (source.value.status === "withdrawn") indexStatus = "已撤回";
+  if (source.value.status === "withdrawn") indexStatus = stateLabel("withdrawn");
   else if (source.value.status === "ready") indexStatus = "可检索";
   else if (indexed) indexStatus = "曾完成入库";
 
@@ -260,16 +284,26 @@ onUnmounted(() => controller?.abort());
 
 <style scoped>
 .document-review-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
 }
 .review-slices,
 .ingestion-record {
   min-width: 0;
-  padding: 16px 18px 18px;
+  padding: 22px 24px;
+}
+.review-slices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
 }
 .ingestion-record {
-  border-left: 1px solid var(--line);
+  flex: none;
+  border-top: 1px solid var(--line);
 }
 .document-review-grid h3 {
   margin: 0;
@@ -300,8 +334,8 @@ onUnmounted(() => controller?.abort());
   font-variant-numeric: tabular-nums;
 }
 .slice-arrow {
-  width: 32px;
-  min-height: 32px;
+  width: 44px;
+  min-height: 44px;
   padding: 0;
 }
 .slice-arrow .ui-icon {
@@ -312,37 +346,34 @@ onUnmounted(() => controller?.abort());
   transform: rotate(180deg);
 }
 .admin-chunk-text {
-  max-height: 168px;
-  margin: 9px 0 0;
-  padding: 13px 16px 15px;
+  flex: none;
+  min-height: 0;
+  max-height: min(42dvh, max(160px, calc(100dvh - 520px)), 420px);
+  margin: 12px 0 0;
+  padding: 20px 22px;
   overflow: auto;
-  border-left: 2px solid var(--clay);
+  border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--paper);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 16px/1.75 var(--sans);
+  font: 16px/1.9 var(--sans);
 }
 .ingestion-stages {
-  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 16px 0 0;
   padding: 0;
   list-style: none;
 }
 .ingestion-stage {
-  position: relative;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: start;
   gap: 9px;
-  min-height: 35px;
-  padding: 2px 0;
-}
-.ingestion-stage:not(:last-child)::after {
-  position: absolute;
-  top: 27px;
-  bottom: 0;
-  left: 11px;
-  border-left: 1px solid var(--line);
-  content: "";
+  min-width: 0;
+  padding: 0;
 }
 .stage-icon {
   display: grid;
@@ -363,9 +394,14 @@ onUnmounted(() => controller?.abort());
   height: 14px;
 }
 .stage-heading strong {
+  display: block;
   font-size: 14px;
 }
+.stage-heading {
+  display: block;
+}
 .stage-heading span {
+  display: block;
   color: var(--muted);
   font-size: 13px;
 }
@@ -374,10 +410,10 @@ onUnmounted(() => controller?.abort());
   color: #42533e;
 }
 .stage-detail {
-  margin: 0;
+  margin: 4px 0 0;
 }
 .last-job {
-  margin: 7px 0 0;
+  margin: 14px 0 0;
 }
 .last-job-failed {
   color: var(--clay);
@@ -385,9 +421,12 @@ onUnmounted(() => controller?.abort());
 .review-tools {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 0 18px;
-  padding: 2px 18px;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 10px 24px;
+  flex: none;
+  max-height: min(50vh, 380px);
+  overflow: auto;
   border-top: 1px solid var(--line);
 }
 .review-disclosure {
@@ -400,26 +439,71 @@ onUnmounted(() => controller?.abort());
   flex-basis: 100%;
 }
 .review-disclosure summary {
-  padding-block: 10px;
+  min-height: 44px;
+  padding-block: 12px;
+  box-sizing: border-box;
   cursor: pointer;
 }
-.review-actions {
+.review-actions,
+.review-action-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 14px;
+  align-items: center;
+  gap: 4px 12px;
+}
+.review-actions {
   margin-left: auto;
 }
+.review-actions .admin-text-button,
+.review-action-group--review :slotted(.admin-text-button) {
+  min-height: 44px;
+  padding-inline: 6px;
+}
+.review-action-group--review :slotted(.admin-text-button) {
+  padding-inline: 10px;
+  border: 1px solid var(--control-line);
+  border-radius: 6px;
+  color: var(--muted);
+}
+.review-action-group--processing .admin-text-button {
+  color: var(--muted);
+}
+.review-action-group--danger {
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.delete-unavailable {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
+}
+@media (max-width: 1100px) {
+  .document-review-grid { overflow: visible; }
+  .admin-chunk-text { max-height: 420px; }
+}
 @media (max-width: 700px) {
-  .document-review-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  .review-slices,
   .ingestion-record {
+    padding: 18px 16px;
+  }
+  .review-slices { min-height: 0; }
+  .admin-chunk-text { max-height: 320px; padding: 16px; }
+  .ingestion-stages { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .stage-heading { display: flex; }
+  .review-tools {
+    padding: 10px 16px;
+  }
+  .review-actions {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 0;
+  }
+  .review-action-group--danger {
+    flex-basis: 100%;
+    padding: 4px 0 0;
     border-top: 1px solid var(--line);
     border-left: 0;
   }
-  .slice-arrow {
-    width: 44px;
-    min-height: 44px;
-  }
+  .delete-unavailable { text-align: left; }
 }
 </style>

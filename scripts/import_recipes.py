@@ -65,6 +65,7 @@ def _iter_payloads_from_json(
 
 
 def _chunked(iterable: Iterable[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
+    """Yield input records in fixed-size batches without retaining all input."""
     if size <= 0:
         raise ValueError("batch size must be positive")
     batch: list[dict[str, Any]] = []
@@ -83,6 +84,7 @@ def _post_batch(
     api_base_url: str,
     recipes: list[dict[str, Any]],
 ) -> tuple[int, list[dict[str, Any]]]:
+    """Post one recipe batch and verify the API returned a ready receipt per row."""
     url = api_base_url.rstrip("/") + "/api/v1/knowledge/recipes/batch"
     response = client.post(url, json=recipes)
     response.raise_for_status()
@@ -98,6 +100,7 @@ def _post_batch(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Convert and optionally post recipe batches from a source JSON file."""
     parser = argparse.ArgumentParser(description="Batch import recipes into KB")
     parser.add_argument("--file", required=True, help="Path to recipe JSON file")
     parser.add_argument("--batch-size", type=int, default=100, help="Recipes per request")

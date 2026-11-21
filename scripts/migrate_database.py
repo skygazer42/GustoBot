@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check schema readiness or apply all pending application migrations."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check", action="store_true", help="Read schema readiness without applying migrations"

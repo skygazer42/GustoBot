@@ -1,0 +1,5 @@
+# The evaluation manifest verifies these files byte for byte.
+/eval/knowledge/questions.jsonl text eol=lf
+/eval/knowledge/calibration.jsonl text eol=lf
+/eval/knowledge/controlled_sources.json text eol=lf
+/eval/knowledge/controlled_edge_sources.json text eol=lf

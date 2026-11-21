@@ -20,6 +20,7 @@ from gustobot.infrastructure.knowledge.recipe_catalog import (
 
 
 def main() -> None:
+    """Export normalized recipe and ingredient graph assets as CSV files."""
     args = _parse_args()
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +37,7 @@ def main() -> None:
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse recipe, ingredient, and output paths for the CSV export."""
     parser = argparse.ArgumentParser(
         description="Generate Neo4j CSV import files from recipe JSON data."
     )
@@ -64,6 +66,7 @@ def _build_graph_assets(
     recipes: list["RecipeRecord"],
     profiles: list["IngredientProfile"],
 ) -> dict[str, list[dict[str, object]]]:
+    """Build deterministic node and relationship rows from normalized recipes."""
     dish_registry: dict[str, dict[str, object]] = {}
     ingredient_registry: dict[str, dict[str, object]] = {}
     flavor_registry: dict[str, dict[str, object]] = {}
@@ -239,6 +242,7 @@ def _build_graph_assets(
 
 
 def _write_csv(output_dir: Path, assets: dict[str, list[dict[str, object]]]) -> None:
+    """Write each graph asset collection with a stable header and row order."""
     writers = {
         "nodes_dish": (
             "dish_nodes.csv",
@@ -327,6 +331,7 @@ def _write_csv(output_dir: Path, assets: dict[str, list[dict[str, object]]]) -> 
 
 
 def _encode_row(headers: list[str], row: dict[str, object]) -> dict[str, object]:
+    """Serialize nested values consistently for one Neo4j CSV row."""
     encoded: dict[str, object] = {}
     for header in headers:
         key = header

@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import JSON, case, func, select, tuple_, type_coerce
+from sqlalchemy import JSON, case, delete, func, select, tuple_, type_coerce
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session, aliased
 
@@ -17,6 +17,7 @@ from gustobot.application.services.knowledge_ingestion import (
     IngestionJobStatus,
     IngestionReceipt,
     KnowledgeIngestionService,
+    document_revision,
 )
 from gustobot.domain.knowledge import DomainDefinition
 from gustobot.infrastructure.core.database import session_scope
@@ -32,9 +33,12 @@ from gustobot.infrastructure.persistence.db.models.knowledge import (
 )
 
 SourceListState = Literal["all", "ready", "pending", "withdrawn", "processing", "failed"]
+MAX_DOCUMENT_EDIT_CHARS = 1_000_000
 
 
 class SourceListQuery(BaseModel):
+    """Validated filters and pagination for the source administration list."""
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     q: str = Field(default="", max_length=200)
@@ -45,12 +49,16 @@ class SourceListQuery(BaseModel):
 
 
 class DomainSummary(BaseModel):
+    """Identity and active version of the domain owning a source catalog."""
+
     id: str
     name: str
     version: str
 
 
 class SourceStats(BaseModel):
+    """Counts of current source versions grouped by retrieval and job state."""
+
     total: int
     ready: int
     pending: int
@@ -60,6 +68,8 @@ class SourceStats(BaseModel):
 
 
 class LatestJob(BaseModel):
+    """Most recent ingestion job associated with a source version."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -70,6 +80,8 @@ class LatestJob(BaseModel):
 
 
 class SourceSummary(BaseModel):
+    """Safe list projection of one source version and its ingestion state."""
+
     domain_id: str
     source_id: str
     version: str
@@ -87,6 +99,8 @@ class SourceSummary(BaseModel):
 
 
 class SourceCatalog(BaseModel):
+    """Paginated source summaries, domain identity, and aggregate counts."""
+
     domain: DomainSummary
     items: list[SourceSummary]
     total: int
@@ -96,6 +110,8 @@ class SourceCatalog(BaseModel):
 
 
 class SourceDetail(BaseModel):
+    """Source summary, bounded text preview, and recent ingestion attempts."""
+
     source: SourceSummary
     text: str
     text_truncated: bool
@@ -103,9 +119,28 @@ class SourceDetail(BaseModel):
 
 
 class SourceChunk(BaseModel):
+    """One numbered document chunk and its total position count."""
+
     number: int
     total: int
     content: str
+
+
+class DocumentContent(BaseModel):
+    """Complete original text and title used by the version-aware document editor."""
+
+    source_id: str
+    version: str
+    revision: str
+    title: str
+    text: str
+
+
+class SourceDeletion(BaseModel):
+    """Receipt for permanently removed document source versions."""
+
+    source_id: str
+    versions: int = Field(ge=1)
 
 
 class SourceConflict(ValueError):
@@ -116,12 +151,21 @@ class ChunkUnavailable(RuntimeError):
     """An indexed chunk or its receipt could not be read consistently."""
 
 
+class SourceDeletionUnavailable(RuntimeError):
+    """Document records remain when vector cleanup cannot be confirmed."""
+
+
+class DocumentTooLarge(ValueError):
+    """The complete source exceeds the explicitly supported editing boundary."""
+
+
 def _public_error(error: str | None) -> str | None:
     # Provider exceptions may contain credentials or server file paths.
     return None if error is None else "入库失败，请检查服务日志后重试"
 
 
 def _public_details(details: dict[str, Any]) -> dict[str, Any]:
+    """Remove internal metadata keys and failures before exposing job details."""
     public = {
         name: details[name]
         for name in (
@@ -145,6 +189,7 @@ def _public_details(details: dict[str, Any]) -> dict[str, Any]:
 
 
 def public_receipt(receipt: IngestionReceipt) -> IngestionReceipt:
+    """Remove private ingestion details before returning a receipt to an API client."""
     return receipt.model_copy(
         update={
             "details": _public_details(receipt.details),
@@ -161,6 +206,8 @@ def _public_uri(uri: str) -> str:
 
 
 class KnowledgeAdminService:
+    """Read source status and retry document versions within one domain."""
+
     def __init__(
         self,
         domain: DomainDefinition,
@@ -175,6 +222,7 @@ class KnowledgeAdminService:
         self.session_factory = session_factory
 
     def _source_columns(self):
+        """Build the shared source projection used by catalog and detail queries."""
         metadata = KnowledgeSource.source_metadata
         recorded_kind = metadata["kind"].as_string()
         kind = case((recorded_kind.in_(("document", "recipe")), recorded_kind), else_="unknown")
@@ -205,6 +253,7 @@ class KnowledgeAdminService:
         )
 
     def _latest_jobs(self, session: Session, sources: list[RowMapping]):
+        """Fetch the latest job for each page source without per-row queries."""
         ranked = (
             select(
                 IngestionJob,
@@ -228,6 +277,7 @@ class KnowledgeAdminService:
         return {(job.source_id, job.source_version): job for job in jobs}
 
     def _summary(self, source: RowMapping, job: IngestionJob | None) -> SourceSummary:
+        """Project a source row and optional job into safe list response fields."""
         metadata = {} if source["source_metadata"] is None else source["source_metadata"]
         document = cast(dict[str, Any], {} if job is None else job.details.get("document", {}))
         graph = cast(dict[str, Any], {} if job is None else job.details.get("graph", {}))
@@ -262,6 +312,7 @@ class KnowledgeAdminService:
         )
 
     def list_sources(self, query: SourceListQuery) -> SourceCatalog:
+        """List each source's latest version with state counts and bounded pagination."""
         ranked = (
             select(
                 *self._source_columns(),
@@ -322,6 +373,7 @@ class KnowledgeAdminService:
         )
 
     def read_source(self, source_id: str, version: str | None = None) -> SourceDetail:
+        """Return one source version, limiting exposed text and recent job history."""
         statement = select(
             *self._source_columns(),
             func.substr(KnowledgeSource.text, 1, 20000).label("text"),
@@ -364,6 +416,7 @@ class KnowledgeAdminService:
             )
 
     def read_chunk(self, source_id: str, version: str, number: int) -> SourceChunk:
+        """Read a chunk only when its stored receipt matches the selected source."""
         with self.session_factory() as session:
             source = session.execute(
                 select(
@@ -422,6 +475,66 @@ class KnowledgeAdminService:
             raise ChunkUnavailable("Stored vector row does not match the receipt position")
         return SourceChunk(number=number, total=manifest.chunks, content=chunk.content)
 
+    def read_document(self, source_id: str, version: str) -> DocumentContent:
+        """Read the whole editable body or reject it; never turn a preview into input."""
+        metadata = KnowledgeSource.source_metadata
+        statement = select(
+            KnowledgeSource.source_id,
+            KnowledgeSource.version,
+            KnowledgeSource.updated_at,
+            KnowledgeSource.source_metadata,
+            metadata["kind"].as_string().label("kind"),
+            func.coalesce(
+                func.nullif(metadata["metadata"]["title"].as_string(), ""),
+                func.nullif(metadata["original_name"].as_string(), ""),
+                KnowledgeSource.source_id,
+            ).label("title"),
+            case(
+                (
+                    func.char_length(KnowledgeSource.text) <= MAX_DOCUMENT_EDIT_CHARS,
+                    KnowledgeSource.text,
+                ),
+                else_=None,
+            ).label("text"),
+        ).where(
+            KnowledgeSource.domain_id == self.domain.id,
+            KnowledgeSource.source_id == source_id,
+            KnowledgeSource.version == version,
+        )
+        with self.session_factory() as session:
+            source = session.execute(statement).mappings().one_or_none()
+            if source is None:
+                raise LookupError("找不到指定的文档版本。")
+            if source["kind"] != "document":
+                raise SourceConflict("只能编辑文档原文，图谱资料请单独管理。")
+            if source["text"] is None:
+                raise DocumentTooLarge(
+                    f"文档超过 {MAX_DOCUMENT_EDIT_CHARS} 字符，暂不支持在线编辑。"
+                )
+            return DocumentContent(
+                source_id=source["source_id"],
+                version=source["version"],
+                revision=document_revision(
+                    self.domain.id,
+                    source["source_id"],
+                    source["version"],
+                    source["updated_at"],
+                    source["source_metadata"],
+                ),
+                title=_public_uri(source["title"]),
+                text=source["text"],
+            )
+
+    async def update_document(
+        self, source_id: str, version: str, *, revision: str, title: str, text: str
+    ) -> IngestionReceipt:
+        """Register a guarded revision through the existing indexing publication lifecycle."""
+        return await self.ingestion.ingest_document(
+            DocumentIngestionRequest(source_id=source_id, text=text, metadata={"title": title}),
+            expected_version=version,
+            expected_revision=revision,
+        )
+
     def _retry_request(self, source_id: str, version: str) -> DocumentIngestionRequest:
         with self.session_factory() as session:
             source = KnowledgeRepository(session).get_source(self.domain.id, source_id, version)
@@ -441,5 +554,81 @@ class KnowledgeAdminService:
             )
 
     async def retry(self, source_id: str, version: str) -> IngestionReceipt:
+        """Retry ingestion from the exact persisted document version."""
         request = await asyncio.to_thread(self._retry_request, source_id, version)
-        return await self.ingestion.ingest_document(request)
+        return await self.ingestion.ingest_document(request, require_existing=True)
+
+    def _lock_deletable_sources(
+        self, session: Session, source_id: str, version: str
+    ) -> list[KnowledgeSource]:
+        """Lock the exact source family and reject stale or active operations."""
+        sources = list(
+            session.scalars(
+                select(KnowledgeSource)
+                .where(
+                    KnowledgeSource.domain_id == self.domain.id,
+                    KnowledgeSource.source_id == source_id,
+                )
+                .order_by(KnowledgeSource.created_at.desc(), KnowledgeSource.version.desc())
+                .with_for_update()
+            )
+        )
+        if not sources:
+            raise LookupError("找不到这份文档记录。")
+        if sources[0].version != version:
+            raise SourceConflict("文档已有新版本，请刷新后重新确认删除。")
+        if any(
+            source.source_metadata is None or source.source_metadata.get("kind") != "document"
+            for source in sources
+        ):
+            raise SourceConflict("只能删除文档记录，图谱资料请在图谱中管理。")
+        active_job = session.scalar(
+            select(IngestionJob.id)
+            .where(
+                IngestionJob.domain_id == self.domain.id,
+                IngestionJob.source_id == source_id,
+                IngestionJob.status.in_(("pending", "processing")),
+            )
+            .limit(1)
+            .with_for_update()
+        )
+        if active_job is not None or any(
+            source.status in {"pending", "processing"} for source in sources
+        ):
+            raise SourceConflict("文档正在入库，请等待任务结束后再删除。")
+        return sources
+
+    def delete_source(self, source_id: str, version: str) -> SourceDeletion:
+        """Withdraw confirmed versions before deleting vectors and their SQL records."""
+        with self.session_factory() as session:
+            sources = self._lock_deletable_sources(session, source_id, version)
+            versions = {source.version for source in sources}
+            for source in sources:
+                source.status = "withdrawn"
+
+        # SQL and Milvus cannot share a transaction. Keep failed deletions unpublished.
+        with self.session_factory() as session:
+            sources = self._lock_deletable_sources(session, source_id, version)
+            if {source.version for source in sources} != versions or any(
+                source.status != "withdrawn" for source in sources
+            ):
+                raise SourceConflict("文档状态已变化，请刷新后重新确认删除。")
+            session.execute(
+                delete(IngestionJob).where(
+                    IngestionJob.domain_id == self.domain.id,
+                    IngestionJob.source_id == source_id,
+                    IngestionJob.source_version.in_(versions),
+                )
+            )
+            session.execute(
+                delete(KnowledgeSource).where(
+                    KnowledgeSource.domain_id == self.domain.id,
+                    KnowledgeSource.source_id == source_id,
+                    KnowledgeSource.version.in_(versions),
+                )
+            )
+            try:
+                self.documents().delete_source(source_id, sorted(versions))
+            except Exception as error:
+                raise SourceDeletionUnavailable("Document vector cleanup failed") from error
+        return SourceDeletion(source_id=source_id, versions=len(versions))

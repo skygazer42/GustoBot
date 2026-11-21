@@ -7,11 +7,17 @@ import {
   ingestRecipe,
   ingestText,
   parseRecipeRecord,
+  readDocument,
+  updateDocument,
   uploadDocument,
 } from "./api";
-import type { IngestionReceipt } from "./contracts";
+import type { DocumentContent, IngestionReceipt, SourceSummary } from "./contracts";
 
-const props = defineProps<{ open: boolean; kind: "document" | "recipe" }>();
+const props = defineProps<{
+  open: boolean;
+  kind: "document" | "recipe";
+  source: Pick<SourceSummary, "source_id" | "version"> | null;
+}>();
 const emit = defineEmits<{ close: []; created: [receipt: IngestionReceipt] }>();
 
 const dialog = ref<HTMLDialogElement | null>(null);
@@ -23,17 +29,33 @@ const text = ref("");
 const recipeName = ref("");
 const recipeRecord = ref("");
 const error = ref("");
-const busy = ref<"upload" | "ingest" | null>(null);
+const busy = ref<"load" | "upload" | "ingest" | null>(null);
+const originalDocument = ref<DocumentContent | null>(null);
+const isEditing = computed(() => props.source !== null);
 const isSubmitting = computed(() => busy.value !== null);
-defineExpose({ isSubmitting });
+const hasUnsavedChanges = computed(
+  () => isEditing.value && originalDocument.value !== null && (
+    textTitle.value !== originalDocument.value.title || text.value !== originalDocument.value.text
+  ),
+);
+defineExpose({ isSubmitting, hasUnsavedChanges });
+let contentController: AbortController | null = null;
 let assetId: string | null = null;
 let manualSourceId = `manual:${crypto.randomUUID()}`;
 let returnFocus: HTMLElement | null = null;
 let active = true;
+let addDraft: {
+  title: string;
+  text: string;
+  sourceId: string;
+  mode: typeof mode.value;
+} | null = null;
 
 const submitLabel = computed(() => {
+  if (busy.value === "load") return "正在读取原文…";
   if (busy.value === "upload") return "正在上传…";
   if (busy.value === "ingest") return "正在入库…";
+  if (isEditing.value) return "保存并更新检索";
   return mode.value === "recipe"
     ? "添加菜谱记录"
     : mode.value === "text"
@@ -47,15 +69,33 @@ watch(
     await nextTick();
     if (!active || !dialog.value) return;
     if (open && !dialog.value.open) {
-      if (props.kind === "recipe") selectMode("recipe");
+      if (isEditing.value) {
+        addDraft = {
+          title: textTitle.value,
+          text: text.value,
+          sourceId: manualSourceId,
+          mode: mode.value,
+        };
+        selectMode("text");
+      } else if (props.kind === "recipe") selectMode("recipe");
       else if (mode.value === "recipe") selectMode("document");
       returnFocus =
         document.activeElement instanceof HTMLElement
           ? document.activeElement
           : null;
       dialog.value.showModal();
+      if (isEditing.value) void loadDocument();
     } else if (!open && dialog.value.open) {
+      contentController?.abort();
+      if (busy.value === "load") busy.value = null;
       dialog.value.close();
+      if (addDraft !== null) {
+        textTitle.value = addDraft.title;
+        text.value = addDraft.text;
+        manualSourceId = addDraft.sourceId;
+        mode.value = addDraft.mode;
+        addDraft = null;
+      }
       returnFocus?.focus();
     }
   },
@@ -64,11 +104,36 @@ watch(
 
 onBeforeUnmount(() => {
   active = false;
+  contentController?.abort();
   dialog.value?.close();
 });
 
 function close(): void {
-  if (!busy.value) emit("close");
+  if (busy.value === null || busy.value === "load") emit("close");
+}
+
+async function loadDocument(): Promise<void> {
+  const source = props.source;
+  if (source === null) return;
+  contentController?.abort();
+  const request = new AbortController();
+  contentController = request;
+  originalDocument.value = null;
+  textTitle.value = "";
+  text.value = "";
+  busy.value = "load";
+  error.value = "";
+  try {
+    const document = await readDocument(source, request.signal);
+    if (!active || request.signal.aborted) return;
+    originalDocument.value = document;
+    textTitle.value = document.title;
+    text.value = document.text;
+  } catch (failure) {
+    if (active && !request.signal.aborted) error.value = errorMessage(failure);
+  } finally {
+    if (active && !request.signal.aborted) busy.value = null;
+  }
 }
 
 function selectMode(nextMode: "document" | "text" | "recipe"): void {
@@ -119,7 +184,17 @@ async function submit(): Promise<void> {
   error.value = "";
   try {
     let receipt: IngestionReceipt;
-    if (mode.value === "document") {
+    if (isEditing.value) {
+      if (originalDocument.value === null) throw new Error("请先读取完整原文。");
+      if (!textTitle.value.trim() || !text.value.trim())
+        throw new Error("请填写资料名称和正文。");
+      busy.value = "ingest";
+      receipt = await updateDocument({
+        ...originalDocument.value,
+        title: textTitle.value.trim(),
+        text: text.value,
+      });
+    } else if (mode.value === "document") {
       if (!file.value) throw new Error("请先选择文档。");
       if (!fileTitle.value.trim()) throw new Error("请填写资料名称。");
       busy.value = assetId ? "ingest" : "upload";
@@ -149,6 +224,7 @@ async function submit(): Promise<void> {
       throw new Error(receipt.error || "入库未完成，请核对输入后重试。");
     }
     resetDraft();
+    originalDocument.value = null;
     emit("created", receipt);
   } catch (reason) {
     if (active) {
@@ -174,20 +250,20 @@ async function submit(): Promise<void> {
     <form class="source-form" @submit.prevent="submit">
       <header class="dialog-heading">
         <div>
-          <h2 id="add-source-title">{{ kind === "recipe" ? "添加菜谱" : "添加文档" }}</h2>
+          <h2 id="add-source-title">{{ isEditing ? "编辑文档" : kind === "recipe" ? "添加菜谱" : "添加文档" }}</h2>
         </div>
         <button
           class="dialog-close admin-text-button"
           type="button"
-          :disabled="!!busy"
-          :aria-label="kind === 'recipe' ? '关闭添加菜谱' : '关闭添加文档'"
+          :disabled="busy === 'upload' || busy === 'ingest'"
+          :aria-label="isEditing ? '关闭编辑文档' : kind === 'recipe' ? '关闭添加菜谱' : '关闭添加文档'"
           @click="close"
         >
           <UiIcon name="close" />
         </button>
       </header>
       <div class="dialog-body">
-        <div v-if="kind === 'document'" class="input-modes" aria-label="添加方式">
+        <div v-if="kind === 'document' && !isEditing" class="input-modes" aria-label="添加方式">
           <button
             type="button"
             :aria-pressed="mode === 'document'"
@@ -213,11 +289,14 @@ async function submit(): Promise<void> {
               }}</strong
               ><span>TXT、Markdown、CSV、JSON、LOG、PDF、DOCX · 最大 50 MB</span
               ><input
+                class="sr-only"
                 type="file"
                 accept=".txt,.md,.markdown,.csv,.json,.log,.pdf,.docx"
                 aria-label="选择文档"
                 @change="selectFile"
-            /></label>
+              />
+              <span class="file-picker-action">{{ file ? "重新选择文件" : "选择文件" }}</span>
+            </label>
             <label class="admin-field"
               >资料名称<input
                 v-model="fileTitle"
@@ -235,7 +314,8 @@ async function submit(): Promise<void> {
               >资料名称<input
                 v-model="textTitle"
                 required
-                maxlength="500"
+                :disabled="busy !== null || (isEditing && !originalDocument)"
+                maxlength="512"
                 autocomplete="off"
                 placeholder="为这段资料起个名字"
             /></label>
@@ -243,12 +323,14 @@ async function submit(): Promise<void> {
               >原文<textarea
                 v-model="text"
                 required
+                :disabled="busy !== null || (isEditing && !originalDocument)"
+                :maxlength="isEditing ? 1000000 : undefined"
                 rows="9"
                 placeholder="粘贴需要长期检索的完整原文"
               ></textarea>
             </label>
             <p class="form-explanation">
-              粘贴的原文直接参与切块和向量入库。
+              {{ isEditing ? "保存成功后，新正文将参与检索。图谱事实与旧证据保留，需单独核对。" : "粘贴的原文直接参与切块和向量入库。" }}
             </p>
           </template>
           <template v-else>
@@ -276,20 +358,22 @@ async function submit(): Promise<void> {
             </p>
           </template>
         </fieldset>
+        <p v-if="busy === 'load'" class="admin-helper" role="status">正在读取完整原文…</p>
         <p v-if="error" class="admin-error" role="alert">{{ error }}</p>
+        <button v-if="isEditing && !originalDocument && busy === null" class="admin-text-button" type="button" @click="loadDocument">重试读取原文</button>
       </div>
       <footer class="dialog-footer">
         <button
           class="admin-secondary"
           type="button"
-          :disabled="!!busy"
+          :disabled="busy === 'upload' || busy === 'ingest'"
           @click="close"
         >
           取消</button
         ><button
           class="admin-primary"
           type="submit"
-          :disabled="!!busy"
+          :disabled="!!busy || (isEditing && !originalDocument)"
           :aria-busy="!!busy"
         >
           {{ submitLabel }}
@@ -415,11 +499,18 @@ fieldset {
   font-size: 13px;
   line-height: 1.6;
 }
-.file-picker input {
-  max-width: 100%;
-  margin-top: 5px;
-  font: inherit;
-  font-size: 13px;
+.file-picker .file-picker-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 3px;
+  padding: 8px 16px;
+  border: 1px solid var(--control-line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--clay);
+  font-size: 14px;
 }
 .admin-field + .admin-field {
   margin-top: 18px;

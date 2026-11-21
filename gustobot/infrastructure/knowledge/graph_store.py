@@ -51,10 +51,14 @@ from gustobot.domain.numeric import (
 
 
 class _GraphModel(BaseModel):
+    """Base class for strict graph query and result records."""
+
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
 
 
 class EntityCandidate(_GraphModel):
+    """Authoritative graph entity plus source metadata for candidate resolution."""
+
     id: str = Field(min_length=1)
     type: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -65,6 +69,8 @@ class EntityCandidate(_GraphModel):
 
 
 class FactFilter(_GraphModel):
+    """One typed predicate applied to a formal graph property."""
+
     property: str = Field(min_length=1)
     op: Literal["eq", "ne", "lt", "lte", "gt", "gte", "in"]
     value: ScalarValue | list[ScalarValue]
@@ -91,6 +97,8 @@ class FactProjection(_GraphModel):
 
 
 class FactQuery(_GraphModel):
+    """Bounded fact, relation, and numeric retrieval request for one domain."""
+
     expected_graph_revision: int | None = Field(default=None, ge=0)
     numeric_conditions: list[NumericCondition] = Field(default_factory=list, max_length=10)
     order: list[OrderSpec] = Field(default_factory=list, max_length=5)
@@ -137,6 +145,8 @@ class FactQuery(_GraphModel):
 
 
 class FactResult(_GraphModel):
+    """Graph evidence and truncation metadata returned by a fact query."""
+
     entities: list[KnowledgeEntity]
     relations: list[KnowledgeRelation]
     sources: list[SourceDocument]
@@ -148,6 +158,8 @@ class FactResult(_GraphModel):
 
 
 class GraphWriteResult(_GraphModel):
+    """Counts of entities, relations, and sources accepted by a graph write."""
+
     entities: int = Field(ge=0)
     relations: int = Field(ge=0)
     sources: int = Field(ge=0)
@@ -271,6 +283,7 @@ def _decode_properties(record: Mapping[str, Any]) -> dict[str, ScalarValue]:
 
 
 def validate_filter_value(value: ScalarValue, definition: PropertyDefinition) -> None:
+    """Require a query operand to match the declared property type exactly."""
     expected = {
         "string": (str,),
         "integer": (int,),
@@ -315,6 +328,7 @@ class Neo4jGraphStore:
             raise RuntimeError("The graph store is closed")
 
     async def close(self) -> None:
+        """Close the Neo4j driver only when this store owns it."""
         if self._closed:
             return
         if self._owns_driver:
@@ -359,11 +373,13 @@ class Neo4jGraphStore:
         return GraphRevision(**scope, state=rows[0]["state"], revision=rows[0]["revision"])
 
     async def graph_revision(self) -> GraphRevision:
+        """Read the current initialization state and revision for this domain."""
         self._check_open()
         async with self._driver.session(database=self.database) as session:
             return await session.execute_read(self._read_revision)
 
     async def _lock_scope(self, transaction: AsyncManagedTransaction) -> GraphRevision:
+        """Acquire the domain write lock and return its current graph revision."""
         scope = self._linking_scope()
         rows = await (
             await transaction.run(
@@ -383,6 +399,7 @@ class Neo4jGraphStore:
             raise ValueError("Catalog limit must be between 1 and 1000")
 
     def _catalog_record(self, row: Mapping[str, Any], revision: GraphRevision) -> CatalogRecord:
+        """Convert one graph row into a scope-bound semantic candidate record."""
         entity = row["entity"]
         qualifiers = {}
         if entity.get("p__cook_time") is not None:
@@ -411,6 +428,7 @@ class Neo4jGraphStore:
         parameters: Mapping[str, Any],
         revision: GraphRevision,
     ) -> list[CatalogRecord]:
+        """Read catalog rows for a parameterized selection in the current transaction."""
         rows = await (
             await transaction.run(selection + _CATALOG_PROJECTION, dict(parameters))
         ).data()
@@ -430,12 +448,14 @@ class Neo4jGraphStore:
     async def export_linking_records(
         self, *, after_id: str | None = None, limit: int
     ) -> CatalogPage:
+        """Export one stable, revision-tagged page of entity candidates."""
         self._check_open()
         self._catalog_limit(limit)
         if after_id is not None and (not isinstance(after_id, str) or not after_id):
             raise ValueError("The catalog cursor must be a nonempty entity ID")
 
         async def export(transaction: AsyncManagedTransaction) -> CatalogPage:
+            """Read one catalog page and its graph revision in the same transaction."""
             revision = await self._read_revision(transaction)
             if revision.revision is None:
                 raise RuntimeError(
@@ -464,6 +484,7 @@ class Neo4jGraphStore:
             return await session.execute_read(export)
 
     async def hydrate_candidates(self, ids: Sequence[str]) -> list[LinkedCandidate]:
+        """Load current authoritative candidates for the requested entity IDs."""
         self._check_open()
         if not ids:
             return []
@@ -471,6 +492,7 @@ class Neo4jGraphStore:
         async def hydrate(
             transaction: AsyncManagedTransaction,
         ) -> list[LinkedCandidate]:
+            """Hydrate requested candidate IDs from one ready graph revision."""
             revision = await self._read_revision(transaction)
             if revision.state != "ready":
                 raise RuntimeError(
@@ -495,12 +517,14 @@ class Neo4jGraphStore:
     async def lookup_name_family(
         self, candidate_ids: Sequence[str], limit: int = 40
     ) -> NameFamilyResult:
+        """Return bounded same-name or alias candidates around the provided seeds."""
         self._check_open()
         self._catalog_limit(limit)
         if not candidate_ids:
             return NameFamilyResult(items=[])
 
         async def family(transaction: AsyncManagedTransaction) -> NameFamilyResult:
+            """Read a bounded family around the supplied entity identities."""
             revision = await self._read_revision(transaction)
             records = await self._catalog_records(
                 transaction,
@@ -537,6 +561,7 @@ WITH DISTINCT entity ORDER BY entity.id LIMIT $limit
     async def lexical_candidates(
         self, question: str, *, expected_types: Sequence[str] = (), limit: int = 40
     ) -> list[LinkedCandidate]:
+        """Find deterministic name and alias matches in the current graph scope."""
         self._check_open()
         self._catalog_limit(limit)
         if not isinstance(question, str) or not _name_key(question):
@@ -562,6 +587,7 @@ WITH DISTINCT entity ORDER BY entity.id LIMIT $limit
         async def lexical(
             transaction: AsyncManagedTransaction,
         ) -> list[LinkedCandidate]:
+            """Resolve exact identifiers and lexical names within the graph snapshot."""
             revision = await self._read_revision(transaction)
             parameters["strict_scope"] = revision.state == "ready"
             rows = await (
@@ -654,6 +680,7 @@ ORDER BY edge.id
         return {"nodes": nodes, "relations": relations}
 
     def _validate_scope_graph(self, graph: KnowledgeGraph) -> None:
+        """Ensure stored graph facts belong to the domain identity and revision scope."""
         from gustobot.infrastructure.knowledge.semantic_runtime import SemanticRuntime
 
         model = self.domain.semantic_model
@@ -664,6 +691,7 @@ ORDER BY edge.id
         bound = runtime.bind_graph(graph)
 
         def identities(entities: Sequence[KnowledgeEntity]) -> dict[str, Any]:
+            """Index current entity identities and identity keys for scope auditing."""
             return {
                 entity.id: (
                     entity.type,
@@ -683,6 +711,7 @@ ORDER BY edge.id
     def _audit_snapshot(
         self, snapshot: dict[str, Any], revision: GraphRevision
     ) -> ScopeAuditReport:
+        """Validate stored identity claims against the declared scope and revision."""
         report = ScopeAuditReport(
             scope=revision, existing=len(snapshot["nodes"]) + len(snapshot["relations"])
         )
@@ -792,12 +821,14 @@ ORDER BY edge.id
         return report
 
     async def bootstrap_graph_scope(self, *, audit_only: bool) -> ScopeAuditReport:
+        """Audit existing graph identity, or initialize it when audit_only is false."""
         self._check_open()
         self._linking_scope()
         if type(audit_only) is not bool:
             raise ValueError("audit_only must be a boolean")
 
         async def audit(transaction: AsyncManagedTransaction) -> ScopeAuditReport:
+            """Audit source identities and optionally lock the scope for initialization."""
             revision = (
                 await self._read_revision(transaction)
                 if audit_only
@@ -897,6 +928,7 @@ ORDER BY edge.id
         runtime = SemanticRuntime(model)
 
         async def rebuild(transaction: AsyncManagedTransaction) -> NumericRebuildReport:
+            """Recompute numeric projections against one locked graph revision."""
             revision = (
                 await self._read_revision(transaction)
                 if dry_run
@@ -985,6 +1017,7 @@ ORDER BY edge.id
     async def resolve_entities(
         self, name: str, entity_types: list[str] | None = None, limit: int = 10
     ) -> list[EntityCandidate]:
+        """Resolve a display name to bounded authoritative entity candidates."""
         self._check_open()
         if not isinstance(name, str) or not _name_key(name):
             raise ValueError("An entity mention must not be blank")
@@ -1043,6 +1076,7 @@ ORDER BY rank, mention_length DESC, entity.id
         async def resolve(
             transaction: AsyncManagedTransaction,
         ) -> list[EntityCandidate]:
+            """Return name-matched entity records from one graph transaction."""
             rows = await (await transaction.run(statement, parameters)).data()
             candidates = []
             for row in rows:
@@ -1068,6 +1102,7 @@ ORDER BY rank, mention_length DESC, entity.id
             return await session.execute_read(resolve)
 
     def _validate_query(self, request: FactQuery) -> None:
+        """Reject query fields and combinations outside the formal graph contract."""
         if request.entity_type is not None and request.entity_type not in self.domain.entity_types:
             raise ValueError(f"Unknown entity type: {request.entity_type}")
         unknown_relations = set(request.relation_types) - self.domain.relation_types.keys()
@@ -1120,6 +1155,7 @@ ORDER BY rank, mention_length DESC, entity.id
         )
 
     def _compile(self, request: FactQuery) -> tuple[str, dict[str, Any]]:
+        """Compile a validated fact request into parameterized Cypher and bindings."""
         parameters: dict[str, Any] = {
             "domain_id": self.domain.id,
             "ontology_version": self.domain.version,
@@ -1244,6 +1280,7 @@ ORDER BY rank, mention_length DESC, entity.id
         name: str,
         parameters: dict[str, Any],
     ) -> str:
+        """Build the scoped Cypher expression for one requested numeric measure."""
         model = self.domain.semantic_model
         assert model is not None
         if reference.property == "reportedDuration":
@@ -1364,6 +1401,7 @@ CALL (anchor) {{
     def _compile_numeric(
         self, request: FactQuery, anchor_match: str, parameters: dict[str, Any]
     ) -> tuple[str, dict[str, Any]]:
+        """Add fixed-point measurements, coverage, filtering, and ordering to a query."""
         from gustobot.infrastructure.knowledge.semantic_runtime import SemanticRuntime
 
         model = self.domain.semantic_model
@@ -1600,15 +1638,19 @@ RETURN size(matched) AS total, path_total, numeric_coverage, numeric_values,
         return statement, parameters
 
     async def query(self, request: FactQuery) -> FactResult:
+        """Validate and execute a typed fact query against one graph snapshot."""
         self._check_open()
         # Revalidate nested mutable models, including in-place list edits.
         request = FactQuery.model_validate(request.model_dump())
         self._validate_query(request)
+        # 将受约束的查询模型编译为参数化 Cypher，不执行模型返回的任意查询字符串。
         statement, parameters = self._compile(request)
         numeric = bool(request.numeric_conditions or request.order or request.numeric_selections)
 
         async def read(transaction: AsyncManagedTransaction) -> FactResult:
+            """Execute the compiled query and gather its evidence within one snapshot."""
             expected_revision = request.expected_graph_revision
+            # 实体绑定和事实读取必须对应同一修订号，更新期间宁可要求重试也不混用。
             if expected_revision is not None or numeric:
                 revision = await self._read_revision(transaction)
                 if (
@@ -1790,6 +1832,7 @@ RETURN 'relation' AS kind, properties(edge) AS item, properties(origin) AS origi
 """
 
         async def read(transaction: AsyncManagedTransaction) -> FactResult:
+            """Read facts attached to the requested source version in one snapshot."""
             rows = await (
                 await transaction.run(
                     source_scope + "CALL (source) {" + selection + "} RETURN count(*) AS total",
@@ -1890,6 +1933,7 @@ RETURN owner.kind AS owner_kind, owner.id AS owner_id, references
     def _write_rows(
         self, graph: KnowledgeGraph
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        """Convert validated graph objects into source, entity, and relation write rows."""
         entities = []
         relations = []
         evidence = []
@@ -2037,6 +2081,7 @@ WHERE relation.relation_type = $relation_type
             )
 
     async def upsert(self, graph: KnowledgeGraph) -> GraphWriteResult:
+        """Validate and write source-backed graph facts under the domain scope."""
         self._check_open()
         graph = KnowledgeGraph.model_validate(graph.model_dump())
         validate_graph(self.domain, graph)
@@ -2046,6 +2091,8 @@ WHERE relation.relation_type = $relation_type
         await self._ensure_schema()
 
         async def write(transaction: AsyncManagedTransaction) -> GraphWriteResult:
+            """Write source-backed facts and advance the domain revision atomically."""
+            # 事实和修订号在同一事务提交，候选索引据此识别自己是否已经过期。
             scope_revision = None
             if self.domain.semantic_model is not None:
                 scope_revision = await self._lock_scope(transaction)

@@ -14,14 +14,11 @@ Compose worker 显式使用 `SEMANTIC_INDEX_BATCH_SIZE=512`；embedding SDK 仍�
 
 ```powershell
 docker compose --env-file .env config --quiet
-docker compose --env-file .env --profile setup build backend migrate
-docker compose --env-file .env up -d mysql neo4j milvus
-docker compose --env-file .env --profile setup run --rm migrate
-docker compose --env-file .env up -d backend
+docker compose --env-file .env up -d --build
 docker compose --env-file .env exec backend python scripts/migrate_database.py --check
 ```
 
-后端和 worker 入口只执行 `--check`，缺少或未知 schema 时停止。`migrate` 是 `setup` profile 下的一次性显式操作。Redis 仅属于可选 `cache` profile。镜像构建和正常启动不调用模型、不导入业务数据、不建立索引。
+Compose 等待一次性 `migrate` 任务成功后启动应用。后端和 worker 入口均执行 `--check`。Redis 仍使用可选 `cache` profile，候选索引通过后续发布流程建立。
 
 ## 建立当前事实范围
 

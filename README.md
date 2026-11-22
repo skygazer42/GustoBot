@@ -73,7 +73,6 @@ cd GustoBot
 cp .env.example .env
 ```
 
-Windows PowerShell 使用 `Copy-Item .env.example .env` 复制配置。编辑 `.env`，填写以下设置：
 
 - **聊天模型**：填写 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`。
 - **向量模型**：填写 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_MODEL`，并让 `EMBEDDING_DIMENSION` 匹配实际输出维度。
